@@ -19,31 +19,18 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/" element={<Navigate to="/poster" replace />} />
         <Route
-          path="/"
+          path="/3d"
           element={
             <ProtectedRoute>
               <AppLayout />
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/poster"
-          element={
-            <ProtectedRoute>
-              <PosterLayout />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/poster/templates"
-          element={
-            <ProtectedRoute>
-              <TemplateGalleryPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/poster" element={<PosterLayout />} />
+        <Route path="/poster/templates" element={<TemplateGalleryPage />} />
+        <Route path="*" element={<Navigate to="/poster" replace />} />
       </Routes>
     </HashRouter>
   );

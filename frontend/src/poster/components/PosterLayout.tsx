@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { PosterTopBar } from './PosterTopBar';
 import { PosterLeftSidebar } from './PosterLeftSidebar';
 import { PosterCanvas } from './PosterCanvas';
@@ -77,6 +77,7 @@ export function PosterLayout() {
   const loadProject = usePosterStore((s) => s.loadProject);
   const user = useAuthStore((s) => s.user);
   const authReady = useAuthStore((s) => s.initState) === 'ready';
+  const readOnly = !user;
 
   // Load auto-saved project when opening editor (cloud if logged in, else localStorage; skip if editing a template)
   useEffect(() => {
@@ -291,6 +292,7 @@ export function PosterLayout() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (readOnly) return;
       const tag = (e.target as HTMLElement)?.tagName;
       const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 
@@ -378,7 +380,7 @@ export function PosterLayout() {
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [duplicateElements, removeElements, pushHistory, undo, redo, setSelected]);
+  }, [readOnly, duplicateElements, removeElements, pushHistory, undo, redo, setSelected]);
 
   const reservedKeysForLabel = new Set(
     (templateAuthoring?.fields ?? [])
@@ -391,7 +393,19 @@ export function PosterLayout() {
 
   return (
     <div className="flex h-screen w-full flex-col bg-zinc-100 dark:bg-zinc-950">
+      {readOnly && (
+        <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+          <span>Explore the poster editor. Login to edit, download, and use AI features.</span>
+          <Link
+            to="/login"
+            className="rounded bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-500"
+          >
+            Login
+          </Link>
+        </div>
+      )}
       <PosterTopBar
+        readOnly={readOnly}
         onOpenCanvasSize={() => setShowCanvasSizeModal(true)}
         onOpenAiWizard={() => setAiWizardOpen(true)}
         onOpenAiChat={() => setAiChatOpen(true)}
@@ -470,13 +484,13 @@ export function PosterLayout() {
       )}
       <div className="flex flex-1 min-h-0">
         <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-          <PosterLeftSidebar onOpen3DModal={(m) => setThreeTextModal(m)} />
+          <PosterLeftSidebar readOnly={readOnly} onOpen3DModal={(m) => setThreeTextModal(m)} />
         </aside>
         <main ref={mainRef} className="flex min-w-0 flex-1 overflow-auto p-6">
-          <PosterCanvas viewportWidth={viewportSize.width} viewportHeight={viewportSize.height} />
+          <PosterCanvas readOnly={readOnly} viewportWidth={viewportSize.width} viewportHeight={viewportSize.height} />
         </main>
         <aside className="flex w-64 shrink-0 flex-col overflow-y-auto border-l border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-          <PosterRightSidebar onOpenEdit3D={(id) => setThreeTextModal({ editId: id })} />
+          <PosterRightSidebar readOnly={readOnly} onOpenEdit3D={(id) => setThreeTextModal({ editId: id })} />
         </aside>
       </div>
       {threeTextModal && (

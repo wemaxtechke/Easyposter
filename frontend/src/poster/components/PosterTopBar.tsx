@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { UserMenu } from '../../auth/UserMenu';
 import { usePosterStore } from '../store/posterStore';
@@ -7,6 +7,7 @@ import { getFabricCanvasRef } from '../canvasRef';
 import { isSolidBackground, canvasBackgroundToCanvas2D } from '../types';
 
 interface PosterTopBarProps {
+  readOnly?: boolean;
   onOpenCanvasSize?: () => void;
   onOpenAiWizard?: () => void;
   /** Open AI chat panel for poster editing. */
@@ -24,6 +25,7 @@ interface PosterTopBarProps {
 }
 
 export function PosterTopBar({
+  readOnly = false,
   onOpenCanvasSize,
   onOpenAiWizard,
   onOpenAiChat,
@@ -33,6 +35,7 @@ export function PosterTopBar({
   cloudDirty = false,
   savingToCloud = false,
 }: PosterTopBarProps = {}) {
+  const navigate = useNavigate();
   const undo = usePosterStore((s) => s.undo);
   const redo = usePosterStore((s) => s.redo);
   const history = usePosterStore((s) => s.history);
@@ -136,17 +139,28 @@ export function PosterTopBar({
     input.click();
   }, [loadProject]);
 
+  const guard = useCallback(
+    (fn: () => void) => () => {
+      if (readOnly) {
+        navigate('/login');
+        return;
+      }
+      fn();
+    },
+    [readOnly, navigate]
+  );
+
   return (
     <header className="flex h-12 shrink-0 items-center gap-4 border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900">
-      <a
-        href="/"
+      <Link
+        to="/3d"
         className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
       >
         ← 3D Text
-      </a>
+      </Link>
       <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
       <button
-        onClick={undo}
+        onClick={guard(undo)}
         disabled={!canUndo}
         className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
         title="Undo"
@@ -154,7 +168,7 @@ export function PosterTopBar({
         Undo
       </button>
       <button
-        onClick={redo}
+        onClick={guard(redo)}
         disabled={!canRedo}
         className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
         title="Redo"
@@ -163,14 +177,14 @@ export function PosterTopBar({
       </button>
       <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
       <button
-        onClick={handleSave}
+        onClick={guard(handleSave)}
         className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
         title="Download as JSON file"
       >
         Download JSON
       </button>
       <button
-        onClick={handleLoad}
+        onClick={guard(handleLoad)}
         className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
       >
         Load JSON
@@ -193,7 +207,7 @@ export function PosterTopBar({
       {onOpenAiWizard && (
         <button
           type="button"
-          onClick={onOpenAiWizard}
+          onClick={guard(onOpenAiWizard)}
           className="rounded px-2 py-1 text-sm font-medium text-accent-600 hover:bg-accent-50 dark:text-accent-300 dark:hover:bg-accent-950/50"
         >
           Create with AI
@@ -202,7 +216,7 @@ export function PosterTopBar({
       {onOpenAiChat && (
         <button
           type="button"
-          onClick={onOpenAiChat}
+          onClick={guard(onOpenAiChat)}
           className="rounded px-2 py-1 text-sm font-medium text-accent-600 hover:bg-accent-50 dark:text-accent-300 dark:hover:bg-accent-950/50"
           title="Edit poster with AI"
         >
@@ -216,22 +230,24 @@ export function PosterTopBar({
       >
         Poster templates
       </Link>
-      <button
-        type="button"
-        onClick={onBeginTemplateAuthoring}
-        disabled={!onBeginTemplateAuthoring || templateAuthoringActive}
-        className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
-        title={
-          templateAuthoringActive
-            ? 'Finish or cancel template labeling first'
-            : 'Label text layers on the canvas, then save as a reusable template (this browser)'
-        }
-      >
-        Save as template
-      </button>
+      {onBeginTemplateAuthoring && (
+        <button
+          type="button"
+          onClick={guard(onBeginTemplateAuthoring)}
+          disabled={templateAuthoringActive}
+          className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          title={
+            templateAuthoringActive
+              ? 'Finish or cancel template labeling first'
+              : 'Label text layers on the canvas, then save as a reusable template (this browser)'
+          }
+        >
+          Save as template
+        </button>
+      )}
       {onOpenCanvasSize && (
         <button
-          onClick={onOpenCanvasSize}
+          onClick={guard(onOpenCanvasSize)}
           className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           title="Change canvas size"
         >
@@ -267,7 +283,7 @@ export function PosterTopBar({
         <UserMenu />
         <ThemeToggle size="md" />
         <button
-          onClick={handleExport}
+          onClick={guard(handleExport)}
           disabled={exporting}
           className="rounded bg-accent-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
         >

@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Textbox } from 'fabric';
 import { usePosterStore } from '../store/posterStore';
 import { useAuthStore } from '../../auth/authStore';
@@ -61,10 +62,12 @@ function layerKindLabel(el: PosterElement): string {
 }
 
 interface PosterLeftSidebarProps {
-  onOpen3DModal: (mode: 'add') => void;
+  readOnly?: boolean;
+  onOpen3DModal?: (mode: 'add') => void;
 }
 
-export function PosterLeftSidebar({ onOpen3DModal }: PosterLeftSidebarProps) {
+export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLeftSidebarProps) {
+  const navigate = useNavigate();
   const addElement = usePosterStore((s) => s.addElement);
   const elements = usePosterStore((s) => s.elements);
   const selectedIds = usePosterStore((s) => s.selectedIds);
@@ -81,7 +84,22 @@ export function PosterLeftSidebar({ onOpen3DModal }: PosterLeftSidebarProps) {
     setSelected([id]);
   };
 
+  const guard = useCallback(
+    (fn: () => void) => () => {
+      if (readOnly) {
+        navigate('/login');
+        return;
+      }
+      fn();
+    },
+    [readOnly, navigate]
+  );
+
   const tryEnterTextEdit = (id: string) => {
+    if (readOnly) {
+      navigate('/login');
+      return;
+    }
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const canvas = getFabricCanvasRef();
@@ -155,21 +173,21 @@ export function PosterLeftSidebar({ onOpen3DModal }: PosterLeftSidebarProps) {
         </h3>
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={handleAddText}
+            onClick={guard(handleAddText)}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700"
           >
             Text
           </button>
           <button
             type="button"
-            onClick={() => setShapesModalOpen(true)}
+            onClick={guard(() => setShapesModalOpen(true))}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700"
           >
             Shapes
           </button>
           <button
             type="button"
-            onClick={() => setCustomElementsModalOpen(true)}
+            onClick={guard(() => setCustomElementsModalOpen(true))}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700"
           >
             Custom Elements
@@ -251,6 +269,10 @@ export function PosterLeftSidebar({ onOpen3DModal }: PosterLeftSidebarProps) {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (readOnly) {
+                          navigate('/login');
+                          return;
+                        }
                         updateElement(el.id, { locked: !locked });
                       }}
                       title={locked ? 'Unlock (allow movement)' : 'Lock (prevent movement)'}
@@ -291,24 +313,26 @@ export function PosterLeftSidebar({ onOpen3DModal }: PosterLeftSidebarProps) {
           onChange={handleImageUpload}
         />
         <button
-          onClick={() => imageInputRef.current?.click()}
+          onClick={guard(() => imageInputRef.current?.click())}
           className="w-full rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-3 py-4 text-sm text-zinc-600 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
         >
           Upload Image
         </button>
       </div>
 
+      {onOpen3DModal && (
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           3D Text
         </h3>
         <button
-          onClick={() => onOpen3DModal('add')}
+          onClick={guard(() => onOpen3DModal('add'))}
           className="w-full rounded-lg bg-amber-500 px-3 py-3 text-sm font-medium text-white hover:bg-amber-600"
         >
           Add 3D Text
         </button>
       </div>
+      )}
     </div>
   );
 }

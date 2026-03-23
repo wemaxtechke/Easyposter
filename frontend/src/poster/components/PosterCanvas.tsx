@@ -111,11 +111,12 @@ function applyImageFlip(
 const posterFabricSrcRecreatePending = new Set<string>();
 
 interface PosterCanvasProps {
+  readOnly?: boolean;
   viewportWidth: number;
   viewportHeight: number;
 }
 
-export function PosterCanvas({ viewportWidth, viewportHeight }: PosterCanvasProps) {
+export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }: PosterCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<Canvas | null>(null);
   const zoomWrapperRef = useRef<HTMLDivElement>(null);
@@ -222,6 +223,33 @@ export function PosterCanvas({ viewportWidth, viewportHeight }: PosterCanvasProp
   useEffect(() => {
     return initCanvas();
   }, [initCanvas]);
+
+  // When readOnly: allow selection (viewing) but lock movement/scale/rotation so guests can't modify
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const els = usePosterStore.getState().elements;
+    for (const obj of canvas.getObjects()) {
+      const id = (obj as { data?: { posterId?: string } }).data?.posterId;
+      const el = id ? els.find((e) => e.id === id) : null;
+      const locked = !!el?.locked;
+      const lockAll = locked || readOnly;
+      const updates: Record<string, unknown> = {
+        selectable: true,
+        evented: true,
+        lockMovementX: lockAll,
+        lockMovementY: lockAll,
+        lockScalingX: lockAll,
+        lockScalingY: lockAll,
+        lockRotation: lockAll,
+      };
+      if (obj instanceof Textbox) {
+        updates.editable = !readOnly;
+      }
+      obj.set(updates);
+    }
+    canvas.requestRenderAll();
+  }, [readOnly, elements]);
 
   const creatingRef = useRef<Set<string>>(new Set());
   /**
@@ -423,6 +451,7 @@ export function PosterCanvas({ viewportWidth, viewportHeight }: PosterCanvasProp
 
         if (existing && !needsSrcRecreate) {
           const locked = !!el.locked;
+          const lockAll = locked || readOnly;
           const imgEl = el as PosterImageElement;
           const w = existing.width ?? 1;
           const h = existing.height ?? 1;
@@ -440,11 +469,11 @@ export function PosterCanvas({ viewportWidth, viewportHeight }: PosterCanvasProp
             originX: 'left',
             originY: 'top',
             shadow: toFabricShadow(el.shadow) ?? null,
-            lockMovementX: locked,
-            lockMovementY: locked,
-            lockScalingX: locked,
-            lockScalingY: locked,
-            lockRotation: locked,
+            lockMovementX: lockAll,
+            lockMovementY: lockAll,
+            lockScalingX: lockAll,
+            lockScalingY: lockAll,
+            lockRotation: lockAll,
           };
           if (el.type === 'text') {
             const t = el as PosterTextElement;
@@ -588,7 +617,7 @@ export function PosterCanvas({ viewportWidth, viewportHeight }: PosterCanvasProp
           .find((o) => (o as { data?: { posterId?: string } }).data?.posterId === el.id);
         if (!stillExists && !creatingRef.current.has(el.id)) {
           creatingRef.current.add(el.id);
-          createFabricObject(el)
+          createFabricObject(el, readOnly)
             .then((obj) => {
               creatingRef.current.delete(el.id);
               if (obj && canvasRef.current) {
@@ -698,7 +727,7 @@ export function PosterCanvas({ viewportWidth, viewportHeight }: PosterCanvasProp
     } finally {
       syncingSelectionFromStoreRef.current = false;
     }
-  }, [elements, updateElement]);
+  }, [elements, updateElement, readOnly]);
 
   // Update selection in Fabric (skip if Fabric already matches store to avoid discard→cleared→loop)
   useEffect(() => {
@@ -926,7 +955,8 @@ function syncFabricStackOrder(canvas: Canvas, elements: PosterElement[]) {
 }
 
 async function createFabricObject(
-  el: PosterElement
+  el: PosterElement,
+  readOnly = false
 ): Promise<
   | InstanceType<typeof Rect>
   | InstanceType<typeof Path>
@@ -941,7 +971,8 @@ async function createFabricObject(
 > {
   const locked = !!el.locked;
   // Fabric 7+ defaults to originX/originY 'center' - use 'left'/'top' so left/top match our stored coords
-  // When locked: prevent move/scale/rotate but keep selectable so user can select and unlock from layers
+  // When locked or readOnly: prevent move/scale/rotate but keep selectable so user can select
+  const lockAll = locked || readOnly;
   const common: Record<string, unknown> = {
     left: el.left,
     top: el.top,
@@ -951,11 +982,11 @@ async function createFabricObject(
     opacity: el.opacity,
     selectable: true,
     evented: true,
-    lockMovementX: locked,
-    lockMovementY: locked,
-    lockScalingX: locked,
-    lockScalingY: locked,
-    lockRotation: locked,
+    lockMovementX: lockAll,
+    lockMovementY: lockAll,
+    lockScalingX: lockAll,
+    lockScalingY: lockAll,
+    lockRotation: lockAll,
     originX: 'left' as const,
     originY: 'top' as const,
   };
@@ -1127,6 +1158,7 @@ async function createFabricObject(
       const strokeWidth = stroke ? (t.strokeWidth ?? 2) : 0;
       const text = new Textbox(t.text, {
         ...common,
+        editable: !readOnly,
         fontSize: t.fontSize,
         fontFamily: t.fontFamily,
         fill: textFill,

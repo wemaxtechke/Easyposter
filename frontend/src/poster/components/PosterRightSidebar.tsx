@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePosterStore } from '../store/posterStore';
 import type {
   PosterElement,
@@ -26,7 +27,8 @@ import { MaskEditorModal } from './MaskEditorModal';
 import { BUILT_IN_TEXTURES } from '../posterTextures';
 
 interface PosterRightSidebarProps {
-  onOpenEdit3D: (id: string) => void;
+  readOnly?: boolean;
+  onOpenEdit3D?: (id: string) => void;
 }
 
 function GradientStopsEditor({
@@ -1473,7 +1475,8 @@ function ShadowControls({
   );
 }
 
-export function PosterRightSidebar({ onOpenEdit3D }: PosterRightSidebarProps) {
+export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRightSidebarProps) {
+  const navigate = useNavigate();
   const elements = usePosterStore((s) => s.elements);
   const selectedIds = usePosterStore((s) => s.selectedIds);
   const canvasBackground = usePosterStore((s) => s.canvasBackground);
@@ -1496,7 +1499,15 @@ export function PosterRightSidebar({ onOpenEdit3D }: PosterRightSidebarProps) {
 
   if (selected.length === 0) {
     return (
-      <div className="flex flex-col gap-4 p-4">
+      <div className="relative flex flex-col gap-4 p-4">
+        {readOnly && (
+          <div
+            className="absolute inset-0 z-10 cursor-pointer"
+            onClick={() => navigate('/login')}
+            title="Login to edit"
+            aria-label="Login to edit properties"
+          />
+        )}
         <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           Canvas
         </h3>
@@ -1646,7 +1657,15 @@ export function PosterRightSidebar({ onOpenEdit3D }: PosterRightSidebarProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="relative flex flex-col gap-4 p-4">
+      {readOnly && (
+        <div
+          className="absolute inset-0 z-10 cursor-pointer"
+          onClick={() => navigate('/login')}
+          title="Login to edit"
+          aria-label="Login to edit properties"
+        />
+      )}
       <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
         Properties
       </h3>
@@ -1755,7 +1774,7 @@ export function PosterRightSidebar({ onOpenEdit3D }: PosterRightSidebarProps) {
             />
           )}
 
-          {single.type === '3d-text' && (
+          {single.type === '3d-text' && onOpenEdit3D && (
             <button
               onClick={() => onOpenEdit3D(single.id)}
               className="mt-2 w-full rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600"
