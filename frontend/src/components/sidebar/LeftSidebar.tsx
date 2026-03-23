@@ -1,4 +1,5 @@
 import { memo, useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import type { EditorState } from '../../core/types';
 import { useEditorStore } from '../../store/editorStore';
 import { PRESETS } from '../../data/presets';
@@ -77,12 +78,12 @@ export const LeftSidebar = memo(function LeftSidebar() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-4">
-      <a
-        href="/poster"
+      <Link
+        to="/poster"
         className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
       >
         Poster Editor →
-      </a>
+      </Link>
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <UserMenu compact />
