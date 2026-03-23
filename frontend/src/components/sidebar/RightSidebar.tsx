@@ -1,0 +1,1341 @@
+import { memo, useState, useEffect, useRef, useCallback, type CSSProperties } from 'react';
+import opentype from 'opentype.js';
+import { useEditorStore } from '../../store/editorStore';
+import { renderMetallicText } from '../../core/renderer/metallicTextRenderer';
+import { exportPNG, exportWebP } from '../../core/export/pngExport';
+import {
+  addCustomFont,
+  ensureFontPreviewFromUrl,
+  getCustomFont,
+  releaseFontPreview,
+  removeCustomFont,
+} from '../../core/font/customFontCache';
+import { FRONT_TEXTURE_PRESETS } from '../../core/textures/frontTextureCache';
+import { apiUrl } from '../../lib/apiUrl';
+import { apiFetch } from '../../lib/api';
+import { useAuthStore } from '../../auth/authStore';
+
+const EMPTY_FONT_IDS: string[] = [];
+
+export interface SavedFontEntry {
+  id: string;
+  label: string;
+  fontUrl: string;
+  fileName?: string | null;
+}
+
+export interface CloudTextureEntry {
+  id: string;
+  label: string;
+  mapUrl: string;
+  roughnessUrl?: string | null;
+  normalUrl?: string | null;
+  metalnessUrl?: string | null;
+}
+
+const FONT_OPTIONS = [
+  { name: 'Arial Black', value: 'Arial Black, sans-serif' },
+  { name: 'Impact', value: 'Impact, sans-serif' },
+  { name: 'Georgia', value: 'Georgia, serif' },
+  { name: 'Times New Roman', value: 'Times New Roman, serif' },
+  { name: 'Courier New', value: 'Courier New, monospace' },
+  { name: 'Verdana', value: 'Verdana, sans-serif' },
+  { name: 'Trebuchet MS', value: '"Trebuchet MS", sans-serif' },
+  { name: 'Palatino', value: 'Palatino Linotype, Book Antiqua, serif' },
+  { name: 'Century Gothic', value: 'Century Gothic, sans-serif' },
+  { name: 'Franklin Gothic', value: 'Franklin Gothic Medium, sans-serif' },
+  { name: 'Brush Script MT', value: 'Brush Script MT, cursive' },
+  { name: 'Lucida Handwriting', value: 'Lucida Handwriting, cursive' },
+  { name: 'Segoe Script', value: 'Segoe Script, cursive' },
+  { name: 'Bradley Hand', value: 'Bradley Hand, cursive' },
+  { name: 'Great Vibes', value: '"Great Vibes", cursive' },
+  { name: 'Dancing Script', value: '"Dancing Script", cursive' },
+  { name: 'Allura', value: '"Allura", cursive' },
+  { name: 'Sacramento', value: '"Sacramento", cursive' },
+  { name: 'Satisfy', value: '"Satisfy", cursive' },
+  { name: 'Pacifico', value: '"Pacifico", cursive' },
+  { name: 'Tangerine', value: '"Tangerine", cursive' },
+];
+
+const Slider = memo(function Slider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex justify-between text-xs">
+        <span className="text-zinc-600 dark:text-zinc-400">{label}</span>
+        <span className="font-mono text-zinc-500 dark:text-zinc-500">{value}</span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step ?? 1}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 dark:bg-zinc-700 accent-zinc-700 dark:accent-zinc-400"
+      />
+    </div>
+  );
+});
+
+export const RightSidebar = memo(function RightSidebar() {
+  const isAdmin = useAuthStore((s) => s.isAdmin());
+  const [exportingPng, setExportingPng] = useState(false);
+  const text = useEditorStore((s) => s.text);
+  const extrusion = useEditorStore((s) => s.extrusion);
+  const lighting = useEditorStore((s) => s.lighting);
+  const extrusionLighting = useEditorStore((s) => s.extrusionLighting);
+  const filters = useEditorStore((s) => s.filters);
+  const setText = useEditorStore((s) => s.setText);
+  const setExtrusion = useEditorStore((s) => s.setExtrusion);
+  const setLighting = useEditorStore((s) => s.setLighting);
+  const setExtrusionLighting = useEditorStore((s) => s.setExtrusionLighting);
+  const setFilters = useEditorStore((s) => s.setFilters);
+  const state = useEditorStore.getState();
+  const renderEngine = useEditorStore((s) => s.renderEngine);
+  const webglExportAPI = useEditorStore((s) => s.webglExportAPI);
+  const environmentId = useEditorStore((s) => s.environmentId ?? 'studio');
+  const hdrPresets = useEditorStore((s) => s.hdrPresets);
+  const customFontIds = useEditorStore((s) => s.customFontIds ?? EMPTY_FONT_IDS);
+  const selectedCustomFontId = useEditorStore((s) => s.selectedCustomFontId);
+  const frontTextureEnabled = useEditorStore((s) => s.frontTextureEnabled ?? false);
+  const frontTextureId = useEditorStore((s) => s.frontTextureId ?? '');
+  const textureIntensity = useEditorStore((s) => s.textureIntensity ?? 0.5);
+  const textureRepeatX = useEditorStore((s) => s.textureRepeatX ?? 2);
+  const textureRepeatY = useEditorStore((s) => s.textureRepeatY ?? 2);
+  const frontNormalStrength = useEditorStore((s) => s.frontNormalStrength ?? 1);
+  const textureRoughnessIntensity = useEditorStore((s) => s.textureRoughnessIntensity ?? 1);
+  const customFrontTextureUrl = useEditorStore((s) => s.customFrontTextureUrl);
+  const customFrontTextureRoughnessUrl = useEditorStore((s) => s.customFrontTextureRoughnessUrl);
+  const customFrontTextureNormalUrl = useEditorStore((s) => s.customFrontTextureNormalUrl);
+  const customFrontTextureMetalnessUrl = useEditorStore((s) => s.customFrontTextureMetalnessUrl);
+  const setState = useEditorStore((s) => s.setState);
+  const textureFileRef = useRef<HTMLInputElement>(null);
+  const roughnessFileRef = useRef<HTMLInputElement>(null);
+  const normalFileRef = useRef<HTMLInputElement>(null);
+  const metalnessFileRef = useRef<HTMLInputElement>(null);
+  const prevUrlsRef = useRef<{ map?: string | null; rough?: string | null; normal?: string | null; metal?: string | null }>({});
+  useEffect(() => {
+    const prev = prevUrlsRef.current;
+    const revoke = (url: string | null | undefined) => {
+      if (url && url.startsWith('blob:')) URL.revokeObjectURL(url);
+    };
+    if (prev.map !== (customFrontTextureUrl ?? null)) {
+      revoke(prev.map);
+      prev.map = customFrontTextureUrl ?? null;
+    }
+    if (prev.rough !== (customFrontTextureRoughnessUrl ?? null)) {
+      revoke(prev.rough);
+      prev.rough = customFrontTextureRoughnessUrl ?? null;
+    }
+    if (prev.normal !== (customFrontTextureNormalUrl ?? null)) {
+      revoke(prev.normal);
+      prev.normal = customFrontTextureNormalUrl ?? null;
+    }
+    if (prev.metal !== (customFrontTextureMetalnessUrl ?? null)) {
+      revoke(prev.metal);
+      prev.metal = customFrontTextureMetalnessUrl ?? null;
+    }
+  }, [customFrontTextureUrl, customFrontTextureRoughnessUrl, customFrontTextureNormalUrl, customFrontTextureMetalnessUrl]);
+
+  const [expanded, setExpanded] = useState<string | null>('text');
+  const [fontError, setFontError] = useState<string | null>(null);
+  const fontInputRef = useRef<HTMLInputElement>(null);
+  const [customFontsMenuOpen, setCustomFontsMenuOpen] = useState(false);
+  const customFontsMenuRef = useRef<HTMLDivElement>(null);
+  const [customFontPreviewFamilies, setCustomFontPreviewFamilies] = useState<Record<string, string>>(
+    {}
+  );
+
+  const [cloudTextures, setCloudTextures] = useState<CloudTextureEntry[]>([]);
+  const [cloudLoading, setCloudLoading] = useState(false);
+  const [cloudMsg, setCloudMsg] = useState<string | null>(null);
+  const [cloudUploading, setCloudUploading] = useState(false);
+  const [cloudUploadLabel, setCloudUploadLabel] = useState('');
+  const cloudMapInputRef = useRef<HTMLInputElement>(null);
+  const cloudRoughInputRef = useRef<HTMLInputElement>(null);
+  const cloudNormalInputRef = useRef<HTMLInputElement>(null);
+  const cloudMetalInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (renderEngine !== 'webgl' || expanded !== 'frontTexture') return;
+    let cancelled = false;
+    setCloudLoading(true);
+    setCloudMsg(null);
+    fetch(apiUrl('/api/textures'))
+      .then((r) => r.json())
+      .then((data: unknown) => {
+        if (cancelled) return;
+        setCloudTextures(Array.isArray(data) ? (data as CloudTextureEntry[]) : []);
+      })
+      .catch(() => {
+        if (!cancelled) setCloudMsg('Could not reach texture API. Run npm run server and set MONGODB_URI.');
+      })
+      .finally(() => {
+        if (!cancelled) setCloudLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [renderEngine, expanded]);
+
+  const applyCloudTexture = useCallback(
+    (t: CloudTextureEntry) => {
+      setState({
+        frontTextureId: '',
+        customFrontTextureUrl: t.mapUrl,
+        customFrontTextureRoughnessUrl: t.roughnessUrl || null,
+        customFrontTextureNormalUrl: t.normalUrl || null,
+        customFrontTextureMetalnessUrl: t.metalnessUrl || null,
+      });
+    },
+    [setState]
+  );
+
+  const deleteCloudTexture = async (id: string, mapUrl: string) => {
+    setCloudMsg(null);
+    try {
+      const res = await apiFetch(apiUrl(`/api/textures/${encodeURIComponent(id)}`), { method: 'DELETE' });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(j.error || res.statusText);
+      setCloudTextures((prev) => prev.filter((x) => x.id !== id));
+      const curUrl = useEditorStore.getState().customFrontTextureUrl;
+      if (curUrl === mapUrl) {
+        setState({
+          customFrontTextureUrl: null,
+          customFrontTextureRoughnessUrl: null,
+          customFrontTextureNormalUrl: null,
+          customFrontTextureMetalnessUrl: null,
+        });
+      }
+    } catch (e) {
+      setCloudMsg(e instanceof Error ? e.message : 'Delete failed');
+    }
+  };
+
+  const handleCloudUpload = async () => {
+    const map = cloudMapInputRef.current?.files?.[0];
+    if (!map) {
+      setCloudMsg('Choose a color map file to upload to Cloudinary.');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('label', cloudUploadLabel.trim() || map.name.replace(/\.[^.]+$/, '') || 'Texture');
+    fd.append('map', map);
+    const r = cloudRoughInputRef.current?.files?.[0];
+    const n = cloudNormalInputRef.current?.files?.[0];
+    const m = cloudMetalInputRef.current?.files?.[0];
+    if (r) fd.append('roughness', r);
+    if (n) fd.append('normal', n);
+    if (m) fd.append('metalness', m);
+    setCloudUploading(true);
+    setCloudMsg(null);
+    try {
+      const res = await apiFetch(apiUrl('/api/textures/upload'), { method: 'POST', body: fd });
+      const j = (await res.json()) as CloudTextureEntry & { error?: string };
+      if (!res.ok) throw new Error(j.error || res.statusText);
+      setCloudTextures((prev) => [j, ...prev.filter((x) => x.id !== j.id)]);
+      applyCloudTexture(j);
+      setCloudUploadLabel('');
+      if (cloudMapInputRef.current) cloudMapInputRef.current.value = '';
+      if (cloudRoughInputRef.current) cloudRoughInputRef.current.value = '';
+      if (cloudNormalInputRef.current) cloudNormalInputRef.current.value = '';
+      if (cloudMetalInputRef.current) cloudMetalInputRef.current.value = '';
+    } catch (e) {
+      setCloudMsg(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setCloudUploading(false);
+    }
+  };
+
+  const [angleInput, setAngleInput] = useState(() => extrusion.angle ?? 0);
+  const angleDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    setAngleInput(extrusion.angle ?? 0);
+  }, [extrusion.angle]);
+  const setAngleDebounced = useCallback(
+    (value: number) => {
+      setAngleInput(value);
+      if (angleDebounceRef.current) clearTimeout(angleDebounceRef.current);
+      angleDebounceRef.current = setTimeout(() => {
+        angleDebounceRef.current = null;
+        setExtrusion({ angle: value });
+      }, 280);
+    },
+    [setExtrusion]
+  );
+  useEffect(() => () => {
+    if (angleDebounceRef.current) clearTimeout(angleDebounceRef.current);
+  }, []);
+
+  const toggle = (id: string) =>
+    setExpanded((v) => (v === id ? null : id));
+
+  const prevRenderEngine = useRef(renderEngine);
+  useEffect(() => {
+    if (renderEngine === 'webgl' && prevRenderEngine.current !== 'webgl') {
+      setExpanded('lighting');
+    }
+    prevRenderEngine.current = renderEngine;
+  }, [renderEngine]);
+
+  useEffect(() => {
+    if (hdrPresets && hdrPresets.length > 0) return;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch(apiUrl('/api/hdrs'), { signal: controller.signal });
+        if (!res.ok) return;
+        const data = (await res.json()) as { id: string; label: string; path: string }[];
+        if (!Array.isArray(data) || data.length === 0) return;
+        const currentId = useEditorStore.getState().environmentId;
+        setState({
+          hdrPresets: data,
+          environmentId: currentId ?? data[0]?.id ?? 'studio',
+        });
+      } catch {
+        // ignore fetch errors (backend might not be running)
+      }
+    })();
+    return () => controller.abort();
+  }, [hdrPresets, setState]);
+
+  const [savedFonts, setSavedFonts] = useState<SavedFontEntry[]>([]);
+  const [savedFontsLoading, setSavedFontsLoading] = useState(false);
+  const [fontLibMsg, setFontLibMsg] = useState<string | null>(null);
+  const [fontLibUploadLabel, setFontLibUploadLabel] = useState('');
+  const [fontLibUploading, setFontLibUploading] = useState(false);
+  const fontLibFileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (expanded !== 'text') return;
+    let cancelled = false;
+    setSavedFontsLoading(true);
+    setFontLibMsg(null);
+    fetch(apiUrl('/api/fonts'))
+      .then((r) => r.json())
+      .then((data: unknown) => {
+        if (cancelled) return;
+        setSavedFonts(Array.isArray(data) ? (data as SavedFontEntry[]) : []);
+      })
+      .catch(() => {
+        if (!cancelled) setFontLibMsg('Font library needs the backend (npm run server) + MongoDB + Cloudinary.');
+      })
+      .finally(() => {
+        if (!cancelled) setSavedFontsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded]);
+
+  const savedFontCacheId = (id: string) => `cloud-font-${id}`;
+
+  useEffect(() => {
+    if (!customFontsMenuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const el = customFontsMenuRef.current;
+      if (el && !el.contains(e.target as Node)) setCustomFontsMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [customFontsMenuOpen]);
+
+  useEffect(() => {
+    if (expanded !== 'text') return;
+    let cancelled = false;
+    (async () => {
+      const updates: Record<string, string> = {};
+      for (const f of savedFonts) {
+        const key = savedFontCacheId(f.id);
+        try {
+          updates[key] = await ensureFontPreviewFromUrl(key, f.fontUrl);
+        } catch {
+          // CORS / offline
+        }
+      }
+      for (const id of customFontIds) {
+        if (!id.startsWith('custom-')) continue;
+        const c = getCustomFont(id);
+        if (!c?.previewSourceUrl) continue;
+        try {
+          updates[id] = await ensureFontPreviewFromUrl(id, c.previewSourceUrl);
+        } catch {
+          // ignore
+        }
+      }
+      if (!cancelled) {
+        setCustomFontPreviewFamilies((prev) => ({ ...prev, ...updates }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, savedFonts, customFontIds]);
+
+  const applySavedFont = async (entry: SavedFontEntry) => {
+    setFontError(null);
+    setFontLibMsg(null);
+    const cacheId = savedFontCacheId(entry.id);
+    const existing = getCustomFont(cacheId);
+    if (existing) {
+      setState({ selectedCustomFontId: cacheId });
+      return;
+    }
+    try {
+      const res = await fetch(entry.fontUrl);
+      if (!res.ok) throw new Error('Could not download font file');
+      const buf = await res.arrayBuffer();
+      const font = opentype.parse(buf);
+      const name =
+        font.names?.fontFamily?.en || font.names?.fullName?.en || entry.label;
+      addCustomFont(cacheId, name, font, entry.fontUrl);
+      const ids = useEditorStore.getState().customFontIds ?? [];
+      const nextIds = ids.includes(cacheId) ? ids : [...ids, cacheId];
+      setState({ customFontIds: nextIds, selectedCustomFontId: cacheId });
+    } catch {
+      setFontLibMsg('Could not load this font. Check Cloudinary URL / CORS.');
+    }
+  };
+
+  const deleteSavedFont = async (entry: SavedFontEntry) => {
+    setFontLibMsg(null);
+    try {
+      const res = await apiFetch(apiUrl(`/api/fonts/${encodeURIComponent(entry.id)}`), { method: 'DELETE' });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(j.error || res.statusText);
+      setSavedFonts((prev) => prev.filter((f) => f.id !== entry.id));
+      const cacheId = savedFontCacheId(entry.id);
+      releaseFontPreview(cacheId);
+      removeCustomFont(cacheId);
+      const ids = useEditorStore.getState().customFontIds ?? [];
+      if (ids.includes(cacheId)) {
+        const next = ids.filter((x) => x !== cacheId);
+        const sel = useEditorStore.getState().selectedCustomFontId;
+        setState({
+          customFontIds: next,
+          selectedCustomFontId: sel === cacheId ? null : sel,
+        });
+      }
+    } catch (e) {
+      setFontLibMsg(e instanceof Error ? e.message : 'Delete failed');
+    }
+  };
+
+  const handleFontLibUpload = async () => {
+    const file = fontLibFileRef.current?.files?.[0];
+    if (!file) {
+      setFontLibMsg('Choose a TTF or OTF file.');
+      return;
+    }
+    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (ext !== '.ttf' && ext !== '.otf') {
+      setFontLibMsg('Only TTF or OTF.');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('label', fontLibUploadLabel.trim() || file.name.replace(/\.(ttf|otf)$/i, '') || 'Font');
+    fd.append('font', file);
+    setFontLibUploading(true);
+    setFontLibMsg(null);
+    try {
+      const res = await apiFetch(apiUrl('/api/fonts/upload'), { method: 'POST', body: fd });
+      const j = (await res.json()) as SavedFontEntry & { error?: string };
+      if (!res.ok) throw new Error(j.error || res.statusText);
+      setSavedFonts((prev) => [j, ...prev.filter((f) => f.id !== j.id)]);
+      await applySavedFont(j);
+      setFontLibUploadLabel('');
+      if (fontLibFileRef.current) fontLibFileRef.current.value = '';
+    } catch (e) {
+      setFontLibMsg(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setFontLibUploading(false);
+    }
+  };
+
+  const handleFontUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFontError(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (ext !== '.ttf' && ext !== '.otf') {
+      setFontError('Please upload a valid TTF or OTF file.');
+      return;
+    }
+    const previewBlobUrl = URL.createObjectURL(file);
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const arrayBuffer = reader.result as ArrayBuffer;
+        const font = opentype.parse(arrayBuffer);
+        const name = font.names?.fontFamily?.en || font.names?.fullName?.en || file.name.replace(/\.(ttf|otf)$/i, '');
+        const id = `custom-${Date.now()}-${name.replace(/\s+/g, '_')}`;
+        addCustomFont(id, name, font, previewBlobUrl);
+        const ids = useEditorStore.getState().customFontIds ?? [];
+        if (!ids.includes(id)) {
+          setState({ customFontIds: [...ids, id], selectedCustomFontId: id });
+        } else {
+          setState({ selectedCustomFontId: id });
+        }
+      } catch {
+        URL.revokeObjectURL(previewBlobUrl);
+        setFontError('Font could not be parsed. Please upload a valid TTF or OTF file.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
+  const EXPORT_SCALE = 3;
+  const handleExportWebP = async () => {
+    const WEBP_QUALITY = 0.95;
+    try {
+      if (renderEngine === 'webgl' && webglExportAPI) {
+        const dataUrl = webglExportAPI.toDataURL(EXPORT_SCALE);
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error('Failed to load image'));
+          img.src = dataUrl;
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Could not get canvas context');
+        ctx.drawImage(img, 0, 0);
+        const blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, 'image/webp', WEBP_QUALITY)
+        );
+        if (!blob) throw new Error('Failed to create WebP');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'metallic-text.webp';
+        a.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+      const svg = renderMetallicText(state);
+      const blob = await exportWebP(svg);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'metallic-text.webp';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export WebP failed:', err);
+    }
+  };
+
+  const handleExportPNG = async () => {
+    setExportingPng(true);
+    try {
+      if (renderEngine === 'webgl' && webglExportAPI) {
+        const dataUrl = webglExportAPI.toDataURL(EXPORT_SCALE);
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'metallic-text.png';
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const svg = renderMetallicText(state);
+        const blob = await exportPNG(svg, 2);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'metallic-text.png';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      console.error('Export PNG failed:', err);
+    } finally {
+      setExportingPng(false);
+    }
+  };
+
+  const localCustomFontIds = customFontIds.filter((id) => id.startsWith('custom-'));
+
+  const customFontTriggerLabel = (() => {
+    if (!selectedCustomFontId) return 'Default (builtin font)';
+    const cached = getCustomFont(selectedCustomFontId);
+    if (cached) return cached.name;
+    const cloud = savedFonts.find((f) => savedFontCacheId(f.id) === selectedCustomFontId);
+    return cloud?.label ?? selectedCustomFontId;
+  })();
+
+  const customFontTriggerStyle: CSSProperties | undefined =
+    selectedCustomFontId && customFontPreviewFamilies[selectedCustomFontId]
+      ? {
+          fontFamily: `${customFontPreviewFamilies[selectedCustomFontId]}, system-ui, sans-serif`,
+        }
+      : undefined;
+
+  return (
+    <div className="flex h-full flex-col overflow-y-auto">
+      <div className="flex flex-col border-b border-zinc-200 dark:border-zinc-800">
+        {[
+          {
+            id: 'text',
+            label: 'Text',
+            children: (
+              <div className="flex flex-col gap-3 py-3">
+                <div>
+                  <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">
+                    Content
+                  </label>
+                  <input
+                    type="text"
+                    value={text.content}
+                    onChange={(e) => setText({ content: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">
+                    Font
+                  </label>
+                  <select
+                    value={text.fontFamily}
+                    onChange={(e) => setText({ fontFamily: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800"
+                  >
+                    {FONT_OPTIONS.map((f) => (
+                      <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                    <label
+                      className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400"
+                      id="editor-custom-fonts-label"
+                    >
+                      Custom fonts
+                    </label>
+                    <div className="relative" ref={customFontsMenuRef}>
+                      <button
+                        type="button"
+                        aria-haspopup="listbox"
+                        aria-expanded={customFontsMenuOpen}
+                        aria-labelledby="editor-custom-fonts-label"
+                        onClick={() => setCustomFontsMenuOpen((o) => !o)}
+                        style={customFontTriggerStyle}
+                        className="flex w-full max-w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                      >
+                        <span className="min-w-0 truncate">{customFontTriggerLabel}</span>
+                        <span className="shrink-0 text-zinc-400" aria-hidden>
+                          ▾
+                        </span>
+                      </button>
+                      {customFontsMenuOpen && (
+                        <ul
+                          className="absolute left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-900"
+                          role="listbox"
+                          aria-label="Custom fonts"
+                        >
+                          <li>
+                            <button
+                              type="button"
+                              role="option"
+                              aria-selected={selectedCustomFontId == null}
+                              className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+                                selectedCustomFontId == null ? 'bg-zinc-100 dark:bg-zinc-800' : ''
+                              }`}
+                              onClick={() => {
+                                setState({ selectedCustomFontId: null });
+                                setCustomFontsMenuOpen(false);
+                              }}
+                            >
+                              Default (builtin font)
+                            </button>
+                          </li>
+                          {savedFontsLoading && (
+                            <li className="px-3 py-2 text-xs text-zinc-500">Loading library…</li>
+                          )}
+                          {savedFonts.map((f) => {
+                            const cacheId = savedFontCacheId(f.id);
+                            const fam = customFontPreviewFamilies[cacheId];
+                            const rowStyle: CSSProperties | undefined = fam
+                              ? { fontFamily: `${fam}, system-ui, sans-serif` }
+                              : undefined;
+                            const selected = selectedCustomFontId === cacheId;
+                            return (
+                              <li key={cacheId}>
+                                <div
+                                  className={`flex items-center gap-1 px-1 py-0.5 ${
+                                    selected ? 'bg-zinc-100 dark:bg-zinc-800' : ''
+                                  }`}
+                                >
+                                  <button
+                                    type="button"
+                                    role="option"
+                                    aria-selected={selected}
+                                    style={rowStyle}
+                                    className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                                    onClick={() => {
+                                      void applySavedFont(f).then(() => setCustomFontsMenuOpen(false));
+                                    }}
+                                  >
+                                    {f.label}
+                                  </button>
+                                  {isAdmin && (
+                                    <button
+                                      type="button"
+                                      title="Remove from library"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void deleteSavedFont(f);
+                                      }}
+                                      className="shrink-0 rounded border border-zinc-300 px-2 py-1 text-[11px] text-zinc-600 hover:bg-red-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-red-950/40"
+                                      aria-label={`Delete ${f.label} from library`}
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </div>
+                              </li>
+                            );
+                          })}
+                          {localCustomFontIds.map((id) => {
+                            const cached = getCustomFont(id);
+                            const fam = customFontPreviewFamilies[id];
+                            const rowStyle: CSSProperties | undefined = fam
+                              ? { fontFamily: `${fam}, system-ui, sans-serif` }
+                              : undefined;
+                            const selected = selectedCustomFontId === id;
+                            return (
+                              <li key={id}>
+                                <button
+                                  type="button"
+                                  role="option"
+                                  aria-selected={selected}
+                                  style={rowStyle}
+                                  className={`w-full truncate px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+                                    selected ? 'bg-zinc-100 dark:bg-zinc-800' : ''
+                                  }`}
+                                  onClick={() => {
+                                    setState({ selectedCustomFontId: id });
+                                    setCustomFontsMenuOpen(false);
+                                  }}
+                                >
+                                  {cached?.name ?? id}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                <Slider
+                  label="Size"
+                  value={text.fontSize}
+                  min={24}
+                  max={120}
+                  onChange={(v) => setText({ fontSize: v })}
+                />
+                <div>
+                  <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">
+                    Upload
+                  </label>
+                  <input
+                    ref={fontInputRef}
+                    type="file"
+                    accept=".ttf,.otf"
+                    onChange={handleFontUpload}
+                    className="w-full text-xs file:mr-2 file:rounded file:border-0 file:bg-zinc-200 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-800 dark:file:bg-zinc-700 dark:file:text-zinc-200"
+                  />
+                </div>
+                {isAdmin && (
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                    <p className="mb-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                      Font library (admin)
+                    </p>
+                    <p className="mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      Save a font to the cloud to reuse it here and in the list above.
+                    </p>
+                    <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">Name</label>
+                    <input
+                      type="text"
+                      value={fontLibUploadLabel}
+                      onChange={(e) => setFontLibUploadLabel(e.target.value)}
+                      placeholder="Label"
+                      className="mb-2 w-full rounded border border-zinc-200 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
+                    />
+                    <input
+                      ref={fontLibFileRef}
+                      type="file"
+                      accept=".ttf,.otf"
+                      className="mb-2 block w-full text-xs file:mr-1 file:rounded file:border-0 file:bg-zinc-200 file:px-2 file:py-1 dark:file:bg-zinc-700"
+                    />
+                    <button
+                      type="button"
+                      disabled={fontLibUploading}
+                      onClick={handleFontLibUpload}
+                      className="w-full rounded-lg bg-accent-600 py-1.5 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+                    >
+                      {fontLibUploading ? 'Saving…' : 'Save'}
+                    </button>
+                    {fontLibMsg && (
+                      <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-400">{fontLibMsg}</p>
+                    )}
+                  </div>
+                )}
+                {fontError && (
+                  <p className="rounded bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                    {fontError}
+                  </p>
+                )}
+              </div>
+            ),
+          },
+          {
+            id: 'lighting',
+            label: 'Lighting',
+            children: (
+              <div className="flex flex-col gap-3 py-3">
+                <div>
+                  <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">
+                    Environment
+                  </label>
+                  {hdrPresets && hdrPresets.length > 0 ? (
+                    <select
+                      value={environmentId}
+                      onChange={(e) => setState({ environmentId: e.target.value })}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800"
+                    >
+                      {hdrPresets.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
+                      {renderEngine === 'webgl'
+                        ? 'Start the HDR server (npm run server) to load environments.'
+                        : 'Switch to WebGL preset to use HDR environments.'}
+                    </p>
+                  )}
+                </div>
+                <Slider
+                  label="Azimuth"
+                  value={lighting.azimuth}
+                  min={0}
+                  max={360}
+                  onChange={(v) => setLighting({ azimuth: v })}
+                />
+                <Slider
+                  label="Elevation"
+                  value={lighting.elevation}
+                  min={0}
+                  max={90}
+                  onChange={(v) => setLighting({ elevation: v })}
+                />
+                <Slider
+                  label="Intensity"
+                  value={lighting.intensity}
+                  min={0.5}
+                  max={2}
+                  step={0.1}
+                  onChange={(v) => setLighting({ intensity: v })}
+                />
+                <Slider
+                  label="Ambient"
+                  value={lighting.ambient}
+                  min={0.2}
+                  max={0.8}
+                  step={0.05}
+                  onChange={(v) => setLighting({ ambient: v })}
+                />
+              </div>
+            ),
+          },
+          ...(renderEngine === 'webgl'
+            ? [
+                {
+                  id: 'frontTexture',
+                  label: 'Front texture',
+                  children: (
+                    <div className="flex flex-col gap-3 py-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-zinc-600 dark:text-zinc-400">Texture</span>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={frontTextureEnabled}
+                          onClick={() => setState({ frontTextureEnabled: !frontTextureEnabled })}
+                          className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border transition-colors ${
+                            frontTextureEnabled ? 'border-zinc-400 bg-zinc-600 dark:bg-zinc-500' : 'border-zinc-300 bg-zinc-200 dark:bg-zinc-700'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
+                              frontTextureEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                          {frontTextureEnabled && (
+                        <>
+                          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                            <p className="mb-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                              Saved textures {isAdmin && '(admin: add/remove)'}
+                            </p>
+                            {cloudLoading && (
+                              <p className="mb-2 text-xs text-zinc-500">Loading…</p>
+                            )}
+                            {!cloudLoading && cloudTextures.length === 0 && (
+                              <p className="mb-2 text-xs text-zinc-500">None yet</p>
+                            )}
+                            {cloudTextures.length > 0 && (
+                              <ul className="mb-2 max-h-32 space-y-1 overflow-y-auto text-xs">
+                                {cloudTextures.map((t) => (
+                                  <li
+                                    key={t.id}
+                                    className="flex items-center justify-between gap-2 rounded border border-zinc-200 bg-white px-2 py-1 dark:border-zinc-600 dark:bg-zinc-900"
+                                  >
+                                    <span className="min-w-0 truncate font-medium text-zinc-800 dark:text-zinc-200">
+                                      {t.label}
+                                    </span>
+                                    <span className="flex shrink-0 gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => applyCloudTexture(t)}
+                                        className="rounded bg-accent-600 px-2 py-0.5 text-[10px] font-semibold text-white dark:bg-gold-500 dark:text-zinc-950"
+                                      >
+                                        Use
+                                      </button>
+                                      {isAdmin && (
+                                        <button
+                                          type="button"
+                                          onClick={() => deleteCloudTexture(t.id, t.mapUrl)}
+                                          className="rounded border border-zinc-300 px-1.5 py-0.5 text-[10px] text-zinc-600 hover:bg-red-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-red-950/40"
+                                          aria-label={`Remove ${t.label}`}
+                                        >
+                                          ×
+                                        </button>
+                                      )}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            {isAdmin && (
+                              <>
+                                <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">Name</label>
+                                <input
+                                  type="text"
+                                  value={cloudUploadLabel}
+                                  onChange={(e) => setCloudUploadLabel(e.target.value)}
+                                  placeholder="Label"
+                                  className="mb-2 w-full rounded border border-zinc-200 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
+                                />
+                                <label className="mb-0.5 block text-xs text-zinc-600 dark:text-zinc-400">Diffuse *</label>
+                                <input
+                                  ref={cloudMapInputRef}
+                                  type="file"
+                                  accept="image/*"
+                                  className="mb-2 block w-full text-xs file:mr-1 file:rounded file:border-0 file:bg-zinc-200 file:px-2 file:py-1 dark:file:bg-zinc-700"
+                                />
+                                <div className="mb-2 space-y-2">
+                                  <div>
+                                    <label className="mb-0.5 block text-xs text-zinc-600 dark:text-zinc-400">Roughness</label>
+                                    <input
+                                      ref={cloudRoughInputRef}
+                                      type="file"
+                                      accept="image/*,.exr"
+                                      className="block w-full text-xs file:mr-1 file:rounded file:border-0 file:bg-zinc-200 file:px-2 file:py-1 dark:file:bg-zinc-700"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="mb-0.5 block text-xs text-zinc-600 dark:text-zinc-400">Normal</label>
+                                    <input
+                                      ref={cloudNormalInputRef}
+                                      type="file"
+                                      accept="image/*,.exr"
+                                      className="block w-full text-xs file:mr-1 file:rounded file:border-0 file:bg-zinc-200 file:px-2 file:py-1 dark:file:bg-zinc-700"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="mb-0.5 block text-xs text-zinc-600 dark:text-zinc-400">Metalness</label>
+                                    <input
+                                      ref={cloudMetalInputRef}
+                                      type="file"
+                                      accept="image/*,.exr"
+                                      className="block w-full text-xs file:mr-1 file:rounded file:border-0 file:bg-zinc-200 file:px-2 file:py-1 dark:file:bg-zinc-700"
+                                    />
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={cloudUploading}
+                                  onClick={handleCloudUpload}
+                                  className="w-full rounded-lg bg-accent-600 py-1.5 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+                                >
+                                  {cloudUploading ? 'Saving…' : 'Save'}
+                                </button>
+                                {cloudMsg && (
+                                  <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-400">{cloudMsg}</p>
+                                )}
+                              </>
+                            )}
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">Style</label>
+                            <select
+                              value={customFrontTextureUrl ? '__custom__' : frontTextureId}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === '__custom__') return;
+                                setState({ frontTextureId: v, customFrontTextureUrl: null });
+                              }}
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800"
+                            >
+                              <option value="">None</option>
+                              {FRONT_TEXTURE_PRESETS.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.label}
+                                </option>
+                              ))}
+                              {customFrontTextureUrl && <option value="__custom__">Custom</option>}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">Diffuse</label>
+                            <div className="flex gap-1">
+                              <input
+                                ref={textureFileRef}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  const url = URL.createObjectURL(file);
+                                  setState({ customFrontTextureUrl: url, frontTextureId: '' });
+                                  e.target.value = '';
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => textureFileRef.current?.click()}
+                                className="rounded border border-zinc-200 px-2 py-1.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                              >
+                                Choose file
+                              </button>
+                              {customFrontTextureUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setState({ customFrontTextureUrl: null })}
+                                  className="rounded border border-zinc-200 px-2 py-1.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">PBR</p>
+                            <div className="space-y-2">
+                              <div>
+                                <p className="mb-1 text-xs text-zinc-600 dark:text-zinc-400">Roughness</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <input
+                                    ref={roughnessFileRef}
+                                    type="file"
+                                    accept="image/*,.exr"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      setState({ customFrontTextureRoughnessUrl: URL.createObjectURL(file) });
+                                      e.target.value = '';
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => roughnessFileRef.current?.click()}
+                                    className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                                  >
+                                    File…
+                                  </button>
+                                  {customFrontTextureRoughnessUrl && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setState({ customFrontTextureRoughnessUrl: null })}
+                                      className="text-xs text-zinc-500 hover:underline"
+                                    >
+                                      Clear
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <div>
+                                <p className="mb-1 text-xs text-zinc-600 dark:text-zinc-400">Normal</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <input
+                                    ref={normalFileRef}
+                                    type="file"
+                                    accept="image/*,.exr"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      setState({ customFrontTextureNormalUrl: URL.createObjectURL(file) });
+                                      e.target.value = '';
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => normalFileRef.current?.click()}
+                                    className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                                  >
+                                    File…
+                                  </button>
+                                  {customFrontTextureNormalUrl && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setState({ customFrontTextureNormalUrl: null })}
+                                      className="text-xs text-zinc-500 hover:underline"
+                                    >
+                                      Clear
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <div>
+                                <p className="mb-1 text-xs text-zinc-600 dark:text-zinc-400">Metalness</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <input
+                                    ref={metalnessFileRef}
+                                    type="file"
+                                    accept="image/*,.exr"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      setState({ customFrontTextureMetalnessUrl: URL.createObjectURL(file) });
+                                      e.target.value = '';
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => metalnessFileRef.current?.click()}
+                                    className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                                  >
+                                    File…
+                                  </button>
+                                  {customFrontTextureMetalnessUrl && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setState({ customFrontTextureMetalnessUrl: null })}
+                                      className="text-xs text-zinc-500 hover:underline"
+                                    >
+                                      Clear
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <Slider
+                            label="Intensity"
+                            value={textureIntensity}
+                            min={0}
+                            max={1}
+                            step={0.05}
+                            onChange={(v) => setState({ textureIntensity: v })}
+                          />
+                          <Slider
+                            label="Normal strength"
+                            value={frontNormalStrength}
+                            min={0}
+                            max={10}
+                            step={0.1}
+                            onChange={(v) => setState({ frontNormalStrength: v })}
+                          />
+                          <Slider
+                            label="Rough mix"
+                            value={textureRoughnessIntensity}
+                            min={0}
+                            max={1}
+                            step={0.05}
+                            onChange={(v) => setState({ textureRoughnessIntensity: v })}
+                          />
+                          <Slider
+                            label="Scale (repeat)"
+                            value={textureRepeatX}
+                            min={0.5}
+                            max={8}
+                            step={0.5}
+                            onChange={(v) => setState({ textureRepeatX: v, textureRepeatY: v })}
+                          />
+                        </>
+                      )}
+                    </div>
+                  ),
+                },
+              ]
+            : []),
+          {
+            id: 'extrusion',
+            label: 'Extrusion',
+            children: (
+              <div className="flex flex-col gap-3 py-3">
+                <Slider
+                  label="Depth"
+                  value={extrusion.depth}
+                  min={5}
+                  max={50}
+                  onChange={(v) => setExtrusion({ depth: v })}
+                />
+                <Slider
+                  label="Steps"
+                  value={extrusion.steps}
+                  min={4}
+                  max={20}
+                  onChange={(v) => setExtrusion({ steps: Math.round(v) })}
+                />
+                <Slider
+                  label="Shine"
+                  value={extrusion.shine}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => setExtrusion({ shine: v })}
+                />
+                <Slider
+                  label="Angle (show extrusion)"
+                  value={angleInput}
+                  min={-45}
+                  max={45}
+                  onChange={(v) => setAngleDebounced(v)}
+                />
+                <div className="mt-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+                  <p className="mb-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">Lighting (extrusion only)</p>
+                  <div className="flex flex-col gap-3">
+                    <Slider
+                      label="Azimuth"
+                      value={extrusionLighting?.azimuth ?? 270}
+                      min={0}
+                      max={360}
+                      onChange={(v) => setExtrusionLighting({ azimuth: v })}
+                    />
+                    <Slider
+                      label="Elevation"
+                      value={extrusionLighting?.elevation ?? 45}
+                      min={0}
+                      max={90}
+                      onChange={(v) => setExtrusionLighting({ elevation: v })}
+                    />
+                    <Slider
+                      label="Ambient"
+                      value={extrusionLighting?.ambient ?? 0.35}
+                      min={0.2}
+                      max={0.8}
+                      step={0.05}
+                      onChange={(v) => setExtrusionLighting({ ambient: v })}
+                    />
+                  </div>
+                </div>
+              </div>
+            ),
+          },
+          {
+            id: 'filters',
+            label: 'Filters',
+            children: (
+              <div className="flex flex-col gap-3 py-3">
+                <Slider
+                  label="Shine"
+                  value={filters.shine}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => setFilters({ shine: v })}
+                />
+                <Slider
+                  label="Metallic"
+                  value={filters.metallic}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => setFilters({ metallic: v })}
+                />
+                <Slider
+                  label="Edge Roundness"
+                  value={filters.edgeRoundness ?? 0}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => setFilters({ edgeRoundness: v })}
+                />
+              </div>
+            ),
+          },
+          {
+            id: 'export',
+            label: 'Export',
+            children: (
+              <div className="flex flex-col gap-2 py-3">
+                <button
+                  type="button"
+                  onClick={handleExportWebP}
+                  className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  Export WebP
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportPNG}
+                  disabled={exportingPng}
+                  className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  {exportingPng ? 'Exporting...' : 'Export PNG'}
+                </button>
+              </div>
+            ),
+          },
+        ].map(({ id, label, children }) => (
+          <div key={id} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
+            <button
+              type="button"
+              onClick={() => toggle(id)}
+              className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-zinc-800 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              {label}
+              <span
+                className={`inline-block transition-transform ${expanded === id ? 'rotate-180' : ''}`}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M2 4l4 4 4-4"/></svg>
+              </span>
+            </button>
+            {expanded === id && <div className="px-4">{children}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+});
