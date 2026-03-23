@@ -1,4 +1,5 @@
 import { apiFetch } from '../../lib/api';
+import { apiUrl } from '../../lib/apiUrl';
 
 export type CustomElementCategory =
   | 'icons'
@@ -24,7 +25,7 @@ export const CUSTOM_ELEMENT_CATEGORIES: { value: CustomElementCategory; label: s
 ];
 
 export async function listCustomElements(): Promise<CustomElement[]> {
-  const res = await fetch('/api/custom-elements');
+  const res = await fetch(apiUrl('/api/custom-elements'));
   if (!res.ok) throw new Error(`Failed to load custom elements (${res.status})`);
   const data = (await res.json()) as CustomElement[];
   return Array.isArray(data) ? data : [];

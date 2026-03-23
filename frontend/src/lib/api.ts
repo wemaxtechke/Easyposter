@@ -1,3 +1,5 @@
+import { apiUrl } from './apiUrl';
+
 const TOKEN_KEY = 'auth_token';
 
 export function getToken(): string | null {
@@ -23,5 +25,5 @@ export async function apiFetch(
   if (token) {
     (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
   }
-  return fetch(url, { ...options, headers });
+  return fetch(apiUrl(url), { ...options, headers });
 }

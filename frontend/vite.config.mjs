@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     root: __dirname,
-    build: { outDir: path.resolve(__dirname, '..', 'dist') },
+    build: { outDir: 'dist' },
     plugins: [react()],
     server: {
       proxy: apiProxy,

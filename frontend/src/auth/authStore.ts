@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { getToken, setToken, clearToken } from '../lib/api';
+import { apiUrl } from '../lib/apiUrl';
 
 export type UserRole = 'user' | 'creator' | 'admin';
 
@@ -38,7 +39,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     set({ initState: 'loading', initError: null });
     try {
-      const res = await fetch('/api/auth/me', {
+      const res = await fetch(apiUrl('/api/auth/me'), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -68,7 +69,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (email, password) => {
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ email, password }),
@@ -94,7 +95,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signup: async (email, password, name) => {
     try {
-      const res = await fetch('/api/auth/signup', {
+      const res = await fetch(apiUrl('/api/auth/signup'), {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ email, password, name: name || '' }),
@@ -129,7 +130,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const token = getToken();
     if (!token) return;
     try {
-      const res = await fetch('/api/auth/me', {
+      const res = await fetch(apiUrl('/api/auth/me'), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
