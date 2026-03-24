@@ -1,6 +1,18 @@
 import type { PosterElement, PosterImageElement, PosterProject, PosterTextElement } from './types';
 import type { PosterTemplateDefinition, PosterTemplateFieldBinding } from './templateTypes';
 
+function getImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth || 1, height: img.naturalHeight || 1 });
+    img.onerror = () => reject(new Error('Failed to load image'));
+    if (/^https?:\/\//i.test(src)) {
+      img.crossOrigin = 'anonymous';
+    }
+    img.src = src;
+  });
+}
+
 function generateElementId(): string {
   return `el_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -95,13 +107,14 @@ export function applyFieldBindings(
 
 /**
  * Apply image field bindings: set `src` when data[key] is non-empty (URL or data URL).
+ * Adjusts scaleX/scaleY so the displayed size matches the template placeholder.
  */
-export function applyImageFieldBindings(
+export async function applyImageFieldBindings(
   elements: PosterElement[],
   bindings: PosterTemplateFieldBinding[],
   idMap: Record<string, string>,
   data: Record<string, string>
-): PosterElement[] {
+): Promise<PosterElement[]> {
   const imageBindings = bindings.filter((b) => (b.kind ?? 'text') === 'image');
   const byNewId = new Map<string, PosterTemplateFieldBinding[]>();
   for (const b of imageBindings) {
@@ -112,19 +125,42 @@ export function applyImageFieldBindings(
     byNewId.set(newId, list);
   }
 
-  return elements.map((el) => {
+  const result: PosterElement[] = [];
+  for (const el of elements) {
     const bs = byNewId.get(el.id);
-    if (!bs?.length || el.type !== 'image') return el;
+    if (!bs?.length || el.type !== 'image') {
+      result.push(el);
+      continue;
+    }
     const img = el as PosterImageElement;
-    let next = img;
+    let newSrc: string | null = null;
     for (const b of bs) {
       const v = data[b.key];
       if (v != null && String(v).trim() !== '') {
-        next = { ...next, src: String(v) };
+        newSrc = String(v);
+        break;
       }
     }
-    return next;
-  });
+    if (!newSrc) {
+      result.push(img);
+      continue;
+    }
+
+    try {
+      const [oldDims, newDims] = await Promise.all([
+        getImageDimensions(img.src),
+        getImageDimensions(newSrc),
+      ]);
+      const displayedW = oldDims.width * img.scaleX;
+      const displayedH = oldDims.height * img.scaleY;
+      const scaleX = newDims.width > 0 ? displayedW / newDims.width : img.scaleX;
+      const scaleY = newDims.height > 0 ? displayedH / newDims.height : img.scaleY;
+      result.push({ ...img, src: newSrc, scaleX, scaleY });
+    } catch {
+      result.push({ ...img, src: newSrc });
+    }
+  }
+  return result;
 }
 
 /**
@@ -162,10 +198,10 @@ function humanizeFieldLabel(key: string): string {
  * Clone template project, new element ids, apply field bindings and/or {{}} placeholders.
  * Returns { project, fieldBindings } with bindings remapped to new element IDs for AI context.
  */
-export function instantiateTemplate(
+export async function instantiateTemplate(
   template: PosterTemplateDefinition,
   data: Record<string, string>
-): { project: PosterProject; fieldBindings: PosterTemplateFieldBinding[] } {
+): Promise<{ project: PosterProject; fieldBindings: PosterTemplateFieldBinding[] }> {
   const clone = deepCloneProject(template.project);
   const { elements, idMap } = regenerateElementIdsWithMap(clone.elements);
 
@@ -176,7 +212,7 @@ export function instantiateTemplate(
 
   if (template.fields && template.fields.length > 0) {
     clone.elements = applyFieldBindings(elements, template.fields, idMap, data);
-    clone.elements = applyImageFieldBindings(clone.elements, template.fields, idMap, data);
+    clone.elements = await applyImageFieldBindings(clone.elements, template.fields, idMap, data);
     clone.elements = applyPlaceholders(clone.elements, data);
   } else {
     clone.elements = applyPlaceholders(elements, data);

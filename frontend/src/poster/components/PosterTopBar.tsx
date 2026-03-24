@@ -139,6 +139,15 @@ export function PosterTopBar({
     input.click();
   }, [loadProject]);
 
+  const handleNewProject = useCallback(() => {
+    loadProject({
+      elements: [],
+      canvasWidth: 800,
+      canvasHeight: 600,
+      canvasBackground: { type: 'solid', color: '#ffffff' },
+    });
+  }, [loadProject]);
+
   const guard = useCallback(
     (fn: () => void) => () => {
       if (readOnly) {
@@ -188,6 +197,13 @@ export function PosterTopBar({
         className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
       >
         Load JSON
+      </button>
+      <button
+        onClick={guard(handleNewProject)}
+        className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        title="Start a new blank project"
+      >
+        New project
       </button>
       {onSaveToCloud && (
         <button

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePosterStore } from '../store/posterStore';
+import { savePosterProjectToStorage } from '../posterProjectStorage';
 import { getTemplateFieldKeys, type PosterTemplateDefinition } from '../templateTypes';
 import { instantiateTemplate } from '../templateMerge';
 import { PosterTemplateFieldsEditor } from './PosterTemplateFieldsEditor';
@@ -20,6 +21,7 @@ export function PosterTemplateFillModal({ open, template, onClose }: PosterTempl
 
   const [fields, setFields] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     if (!open || !template) return;
@@ -27,16 +29,26 @@ export function PosterTemplateFillModal({ open, template, onClose }: PosterTempl
     setFormError(null);
   }, [open, template, keysSig]);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!template) return;
-    const data: Record<string, string> = {};
-    for (const k of keys) {
-      data[k] = fields[k] ?? '';
+    setGenerating(true);
+    setFormError(null);
+    try {
+      const data: Record<string, string> = {};
+      for (const k of keys) {
+        data[k] = fields[k] ?? '';
+      }
+      const { project, fieldBindings } = await instantiateTemplate(template, data);
+      loadProject(project, { fieldBindings });
+      savePosterProjectToStorage(project);
+      sessionStorage.setItem('poster_skip_restore', Date.now().toString());
+      onClose();
+      navigate('/poster');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to generate poster.');
+    } finally {
+      setGenerating(false);
     }
-    const { project, fieldBindings } = instantiateTemplate(template, data);
-    loadProject(project, { fieldBindings });
-    onClose();
-    navigate('/poster');
   };
 
   if (!open || !template) return null;
@@ -86,9 +98,10 @@ export function PosterTemplateFillModal({ open, template, onClose }: PosterTempl
           <button
             type="button"
             onClick={handleGenerate}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+            disabled={generating}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
           >
-            Generate poster
+            {generating ? 'Generating…' : 'Generate poster'}
           </button>
         </div>
       </div>

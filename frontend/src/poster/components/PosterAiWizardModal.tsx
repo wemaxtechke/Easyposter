@@ -32,6 +32,7 @@ export function PosterAiWizardModal({ open, onClose }: PosterAiWizardModalProps)
     Object.fromEntries(DEFAULT_POSTER_PLACEHOLDER_KEYS.map((k) => [k, '']))
   );
   const [aiLoading, setAiLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [aiFilledSuccess, setAiFilledSuccess] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const isLoggedIn = !!getToken();
@@ -73,6 +74,7 @@ export function PosterAiWizardModal({ open, onClose }: PosterAiWizardModalProps)
     setSelectedTemplateId('');
     setFields(emptyFieldsForKeys([...DEFAULT_POSTER_PLACEHOLDER_KEYS]));
     setAiLoading(false);
+    setGenerating(false);
     setAiFilledSuccess(false);
     setAiError(null);
   }, [emptyFieldsForKeys]);
@@ -147,20 +149,28 @@ export function PosterAiWizardModal({ open, onClose }: PosterAiWizardModalProps)
     }
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     const tpl = findPosterTemplateById(selectedTemplateId);
     if (!tpl) {
       setAiError('Select a template.');
       return;
     }
-    const keys = getTemplateFieldKeys(tpl);
-    const data: Record<string, string> = {};
-    for (const k of keys) {
-      data[k] = fields[k] ?? '';
+    setGenerating(true);
+    setAiError(null);
+    try {
+      const keys = getTemplateFieldKeys(tpl);
+      const data: Record<string, string> = {};
+      for (const k of keys) {
+        data[k] = fields[k] ?? '';
+      }
+      const { project, fieldBindings } = await instantiateTemplate(tpl, data);
+      loadProject(project, { fieldBindings });
+      onClose();
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Failed to generate poster.');
+    } finally {
+      setGenerating(false);
     }
-    const { project, fieldBindings } = instantiateTemplate(tpl, data);
-    loadProject(project, { fieldBindings });
-    onClose();
   };
 
   if (!open) return null;
@@ -334,9 +344,10 @@ export function PosterAiWizardModal({ open, onClose }: PosterAiWizardModalProps)
               <button
                 type="button"
                 onClick={handleGenerate}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+                disabled={generating}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
               >
-                Generate poster
+                {generating ? 'Generating…' : 'Generate poster'}
               </button>
             )}
           </div>

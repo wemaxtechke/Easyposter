@@ -85,6 +85,18 @@ export function PosterLayout() {
     const edit = (location.state as { editTemplate?: unknown })?.editTemplate;
     if (edit) return; // Template edit will load its own project
 
+    // Skip restore when coming from template fill — project already loaded in store.
+    // Use timestamp + delayed clear so both React Strict Mode effect runs skip (double-mount in dev).
+    const skipRaw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('poster_skip_restore') : null;
+    if (skipRaw) {
+      const t = parseInt(skipRaw, 10);
+      if (!isNaN(t) && Date.now() - t < 5000) {
+        setTimeout(() => sessionStorage.removeItem('poster_skip_restore'), 500);
+        return;
+      }
+      sessionStorage.removeItem('poster_skip_restore');
+    }
+
     let cancelled = false;
     (async () => {
       if (user) {

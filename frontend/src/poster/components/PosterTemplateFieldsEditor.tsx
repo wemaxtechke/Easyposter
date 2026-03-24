@@ -1,8 +1,10 @@
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import {
   getTemplateFieldKind,
   getTemplateFieldLabel,
   type PosterTemplateDefinition,
 } from '../templateTypes';
+import { removeBackground } from '../services/removeBackgroundApi';
 
 export function readImageFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -29,7 +31,7 @@ interface PosterTemplateFieldsEditorProps {
   fieldKeys: string[];
   fields: Record<string, string>;
   setFields: Dispatch<SetStateAction<Record<string, string>>>;
-  onImageReadError?: (message: string) => void;
+  onImageReadError?: (message: string | null) => void;
 }
 
 export function PosterTemplateFieldsEditor({
@@ -39,8 +41,26 @@ export function PosterTemplateFieldsEditor({
   setFields,
   onImageReadError,
 }: PosterTemplateFieldsEditorProps) {
+  const [removeBgChecked, setRemoveBgChecked] = useState(false);
+  const [processingKey, setProcessingKey] = useState<string | null>(null);
+
+  const hasImageFields = fieldKeys.some((k) => getTemplateFieldKind(template, k) === 'image');
+
   return (
     <div className="flex flex-col gap-3">
+      {hasImageFields && (
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-200 p-2 dark:border-zinc-600">
+          <input
+            type="checkbox"
+            checked={removeBgChecked}
+            onChange={(e) => setRemoveBgChecked(e.target.checked)}
+            className="h-4 w-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-800"
+          />
+          <span className="text-sm text-zinc-700 dark:text-zinc-300">
+            Remove background from uploaded photos
+          </span>
+        </label>
+      )}
       {fieldKeys.map((key) => {
         const kind = getTemplateFieldKind(template, key);
         const fieldLabel = FIELD_LABELS[key] ?? getTemplateFieldLabel(template, key);
@@ -57,19 +77,40 @@ export function PosterTemplateFieldsEditor({
               <input
                 type="file"
                 accept="image/*"
-                className="text-xs text-zinc-600 file:mr-2 file:rounded file:border file:border-zinc-300 file:bg-white file:px-2 file:py-1 dark:text-zinc-300 dark:file:border-zinc-600 dark:file:bg-zinc-800"
+                disabled={processingKey !== null}
+                className="text-xs text-zinc-600 file:mr-2 file:rounded file:border file:border-zinc-300 file:bg-white file:px-2 file:py-1 disabled:opacity-50 dark:text-zinc-300 dark:file:border-zinc-600 dark:file:bg-zinc-800"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
+                  e.target.value = '';
                   try {
-                    const dataUrl = await readImageFileAsDataUrl(file);
-                    setFields((f) => ({ ...f, [key]: dataUrl }));
+                    if (removeBgChecked) {
+                      setProcessingKey(key);
+                      onImageReadError?.('');
+                      try {
+                        const dataUrl = await removeBackground(file);
+                        setFields((f) => ({ ...f, [key]: dataUrl }));
+                      } catch (err) {
+                        onImageReadError?.(
+                          err instanceof Error ? err.message : 'Background removal failed.'
+                        );
+                      } finally {
+                        setProcessingKey(null);
+                      }
+                    } else {
+                      onImageReadError?.('');
+                      const dataUrl = await readImageFileAsDataUrl(file);
+                      setFields((f) => ({ ...f, [key]: dataUrl }));
+                    }
                   } catch {
                     onImageReadError?.('Could not read image file.');
+                    setProcessingKey(null);
                   }
-                  e.target.value = '';
                 }}
               />
+              {processingKey === key && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">Removing background…</p>
+              )}
               <input
                 type="url"
                 inputMode="url"
