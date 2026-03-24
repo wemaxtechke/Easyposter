@@ -25,6 +25,7 @@ import { POSTER_FONT_OPTIONS } from '../posterFonts';
 import { usePosterFontOptions } from '../usePosterFontOptions';
 import { MaskEditorModal } from './MaskEditorModal';
 import { BUILT_IN_TEXTURES } from '../posterTextures';
+import { removeBackgroundFromElementPreservingLayout } from '../services/removeBackgroundApi';
 
 interface PosterRightSidebarProps {
   readOnly?: boolean;
@@ -596,12 +597,21 @@ function PosterImageAppearanceControls({
   image,
   updateElement,
   pushHistory,
+  readOnly,
 }: {
   image: PosterImageElement;
   updateElement: (id: string, updates: Partial<PosterElement>) => void;
   pushHistory: () => void;
+  readOnly?: boolean;
 }) {
   const [maskEditorOpen, setMaskEditorOpen] = useState(false);
+  const [removeBgBusy, setRemoveBgBusy] = useState(false);
+  const [removeBgError, setRemoveBgError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRemoveBgError(null);
+  }, [image.id]);
+
   const mask: PosterImageMask = image.mask ?? 'none';
   const edge: PosterImageEdge = image.edge ?? 'none';
   const shapeMask = mask !== 'none';
@@ -619,9 +629,41 @@ function PosterImageAppearanceControls({
         : 'none'
       : edge;
 
+  const handleRemoveBackground = async () => {
+    if (readOnly || image.locked) return;
+    setRemoveBgError(null);
+    setRemoveBgBusy(true);
+    try {
+      pushHistory();
+      const { src, scaleX, scaleY } = await removeBackgroundFromElementPreservingLayout(image);
+      updateElement(image.id, { src, scaleX, scaleY });
+    } catch (err) {
+      setRemoveBgError(err instanceof Error ? err.message : 'Background removal failed.');
+    } finally {
+      setRemoveBgBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
       <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Image appearance</p>
+
+      <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-600 dark:bg-zinc-800/50">
+        <button
+          type="button"
+          onClick={handleRemoveBackground}
+          disabled={readOnly || !!image.locked || removeBgBusy}
+          className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+        >
+          {removeBgBusy ? 'Removing background…' : 'Remove background'}
+        </button>
+        {removeBgError && (
+          <p className="text-xs text-red-600 dark:text-red-400">{removeBgError}</p>
+        )}
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          Uses the same service as template uploads. Keeps size and position on the canvas.
+        </p>
+      </div>
 
       <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-600 dark:bg-zinc-800/50">
         <p className="text-xs text-zinc-600 dark:text-zinc-400">
@@ -1756,6 +1798,7 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
               image={single as PosterImageElement}
               updateElement={updateElement}
               pushHistory={pushHistory}
+              readOnly={readOnly}
             />
           )}
 

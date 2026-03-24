@@ -5,9 +5,10 @@ import { usePosterStore } from '../store/posterStore';
 import { useAuthStore } from '../../auth/authStore';
 import { getFabricCanvasRef } from '../canvasRef';
 import { posterShapePresetToElement } from '../posterShapePresets';
+import { removeBackgroundFromFilePreservingDisplay } from '../services/removeBackgroundApi';
 import { PosterShapesModal } from './PosterShapesModal';
 import { CustomElementsModal } from './CustomElementsModal';
-import type { PosterElement, PosterTextElement, PosterShapeElement } from '../types';
+import type { PosterElement, PosterImageElement, PosterTextElement, PosterShapeElement } from '../types';
 
 function layerDisplayLabel(el: PosterElement): string {
   switch (el.type) {
@@ -77,6 +78,9 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [shapesModalOpen, setShapesModalOpen] = useState(false);
   const [customElementsModalOpen, setCustomElementsModalOpen] = useState(false);
+  const [removeBgOnUpload, setRemoveBgOnUpload] = useState(false);
+  const [imageUploadBusy, setImageUploadBusy] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
 
   const layersFrontToBack = [...elements].sort((a, b) => b.zIndex - a.zIndex);
 
@@ -132,34 +136,60 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
     } as Omit<PosterTextElement, 'id' | 'zIndex'>);
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const newImageDefaults = (): Omit<PosterImageElement, 'id' | 'zIndex' | 'src' | 'scaleX' | 'scaleY'> => ({
+    type: 'image',
+    mask: 'none',
+    edge: 'none',
+    edgeFadeAmount: 0.4,
+    edgeFadeMinOpacity: 0,
+    edgeFadeDirection: 'radial',
+    edgeTearSeed: Math.floor(Math.random() * 1_000_000_000),
+    maskCornerRadius: 0.18,
+    left: 100,
+    top: 100,
+    angle: 0,
+    opacity: 1,
+  });
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const input = e.target;
+    setImageUploadError(null);
+
+    if (removeBgOnUpload) {
+      setImageUploadBusy(true);
+      try {
+        const { src, scaleX, scaleY } = await removeBackgroundFromFilePreservingDisplay(file);
+        addElement({
+          ...newImageDefaults(),
+          src,
+          scaleX,
+          scaleY,
+        });
+      } catch (err) {
+        setImageUploadError(err instanceof Error ? err.message : 'Background removal failed.');
+      } finally {
+        setImageUploadBusy(false);
+        input.value = '';
+      }
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result;
       if (typeof dataUrl !== 'string') return;
       addElement({
-        type: 'image',
+        ...newImageDefaults(),
         src: dataUrl,
-        mask: 'none',
-        edge: 'none',
-        edgeFadeAmount: 0.4,
-        edgeFadeMinOpacity: 0,
-        edgeFadeDirection: 'radial',
-        edgeTearSeed: Math.floor(Math.random() * 1_000_000_000),
-        maskCornerRadius: 0.18,
-        left: 100,
-        top: 100,
         scaleX: 1,
         scaleY: 1,
-        angle: 0,
-        opacity: 1,
       });
     };
     reader.onerror = () => {
       console.error('Failed to read image file');
+      setImageUploadError('Could not read image file.');
     };
     reader.readAsDataURL(file);
     input.value = '';
@@ -305,19 +335,38 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           Uploads
         </h3>
+        <label className="mb-2 flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-200 p-2 dark:border-zinc-600">
+          <input
+            type="checkbox"
+            checked={removeBgOnUpload}
+            onChange={(e) => {
+              setRemoveBgOnUpload(e.target.checked);
+              setImageUploadError(null);
+            }}
+            disabled={readOnly || imageUploadBusy}
+            className="h-4 w-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-800"
+          />
+          <span className="text-xs text-zinc-700 dark:text-zinc-300">Remove background after upload</span>
+        </label>
         <input
           ref={imageInputRef}
           type="file"
           accept="image/*"
           className="hidden"
+          disabled={imageUploadBusy}
           onChange={handleImageUpload}
         />
         <button
+          type="button"
           onClick={guard(() => imageInputRef.current?.click())}
-          className="w-full rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-3 py-4 text-sm text-zinc-600 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
+          disabled={imageUploadBusy}
+          className="w-full rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-3 py-4 text-sm text-zinc-600 hover:border-zinc-400 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
         >
-          Upload Image
+          {imageUploadBusy ? 'Removing background…' : 'Upload Image'}
         </button>
+        {imageUploadError && (
+          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{imageUploadError}</p>
+        )}
       </div>
 
       {onOpen3DModal && (

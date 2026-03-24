@@ -1,4 +1,5 @@
 import { Client } from '@gradio/client';
+import type { PosterImageElement } from '../types';
 
 const SPACE = 'easyposterke/remove_bg';
 const SPACE_ROOT = 'https://easyposterke-remove-bg.hf.space';
@@ -61,4 +62,57 @@ export async function removeBackground(input: File | Blob | string): Promise<str
 
   // Convert HF URL to data URL so the image is self-contained in the project
   return urlToDataUrl(outputUrl);
+}
+
+function getImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth || 1, height: img.naturalHeight || 1 });
+    img.onerror = () => reject(new Error('Failed to load image'));
+    if (/^https?:\/\//i.test(src)) {
+      img.crossOrigin = 'anonymous';
+    }
+    img.src = src;
+  });
+}
+
+/**
+ * New upload: remove background and return src + scale so on-canvas size matches the original file at scale 1.
+ */
+export async function removeBackgroundFromFilePreservingDisplay(
+  file: File
+): Promise<{ src: string; scaleX: number; scaleY: number }> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const oldDims = await getImageDimensions(objectUrl);
+    const src = await removeBackground(file);
+    const newDims = await getImageDimensions(src);
+    const scaleX = newDims.width > 0 ? oldDims.width / newDims.width : 1;
+    const scaleY = newDims.height > 0 ? oldDims.height / newDims.height : 1;
+    return { src, scaleX, scaleY };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+/**
+ * Existing canvas image: replace with background-removed version; keep same displayed size and position (left/top unchanged).
+ */
+export async function removeBackgroundFromElementPreservingLayout(
+  el: Pick<PosterImageElement, 'src' | 'scaleX' | 'scaleY'>
+): Promise<{ src: string; scaleX: number; scaleY: number }> {
+  const newSrc = await removeBackground(el.src);
+  try {
+    const [oldDims, newDims] = await Promise.all([
+      getImageDimensions(el.src),
+      getImageDimensions(newSrc),
+    ]);
+    const dw = oldDims.width * el.scaleX;
+    const dh = oldDims.height * el.scaleY;
+    const scaleX = newDims.width > 0 ? dw / newDims.width : el.scaleX;
+    const scaleY = newDims.height > 0 ? dh / newDims.height : el.scaleY;
+    return { src: newSrc, scaleX, scaleY };
+  } catch {
+    return { src: newSrc, scaleX: el.scaleX, scaleY: el.scaleY };
+  }
 }
