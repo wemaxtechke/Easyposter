@@ -516,7 +516,10 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             updates.stroke = t.stroke && (t.strokeWidth ?? 0) > 0 ? t.stroke : null;
             updates.strokeWidth = t.stroke && (t.strokeWidth ?? 0) > 0 ? (t.strokeWidth ?? 2) : 0;
             updates.paintFirst = (t.strokeWidth ?? 0) > 0 ? ('stroke' as const) : ('fill' as const);
-            updates.text = t.text;
+            // Don't push store text onto Fabric while the user is typing — store is stale until exitEditing fires object:modified.
+            if (!(existing instanceof Textbox && existing.isEditing)) {
+              updates.text = t.text;
+            }
             if (typeof t.width === 'number' && t.width > 0) updates.width = t.width;
             updates.fontFamily = t.fontFamily;
             updates.fontWeight = t.fontWeight ?? 'normal';
