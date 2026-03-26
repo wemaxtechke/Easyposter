@@ -305,7 +305,7 @@ function ShapeFillAndRoundnessControls({
             value={Math.round((shape.fillOpacity ?? 1) * 100)}
             onChange={(e) =>
               updateElement(shape.id, {
-                fillOpacity: (parseInt(e.target.value, 10) || 100) / 100,
+                fillOpacity: Math.max(0, Math.min(1, (parseInt(e.target.value, 10) || 0) / 100)),
               })
             }
             className="w-full"
