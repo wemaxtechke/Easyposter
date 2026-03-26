@@ -5,6 +5,7 @@ import { UserMenu } from '../../auth/UserMenu';
 import { usePosterStore } from '../store/posterStore';
 import { getFabricCanvasRef } from '../canvasRef';
 import { isSolidBackground, canvasBackgroundToCanvas2D } from '../types';
+// Cloud save is handled by PosterLayout (Save button).
 
 interface PosterTopBarProps {
   readOnly?: boolean;
@@ -140,6 +141,9 @@ export function PosterTopBar({
   }, [loadProject]);
 
   const handleNewProject = useCallback(() => {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem('poster_edit_my_project_id');
+    }
     loadProject({
       elements: [],
       canvasWidth: 800,
@@ -245,6 +249,13 @@ export function PosterTopBar({
         title="Cloud template library"
       >
         Poster templates
+      </Link>
+      <Link
+        to="/poster/my"
+        className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        title="Your saved posters"
+      >
+        My stuff
       </Link>
       {onBeginTemplateAuthoring && (
         <button

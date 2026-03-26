@@ -13,8 +13,9 @@ import { TemplateElementLabelModal } from './TemplateElementLabelModal';
 import { SavePosterTemplateModal } from './SavePosterTemplateModal';
 import { usePosterStore } from '../store/posterStore';
 import { useAuthStore } from '../../auth/authStore';
+import { getFabricCanvasRef } from '../canvasRef';
 import { loadPosterProjectFromStorage, savePosterProjectToStorage } from '../posterProjectStorage';
-import { loadPosterProjectFromCloud, savePosterProjectToCloud } from '../services/posterProjectsApi';
+import { loadPosterProjectFromCloud, savePosterProjectToCloud, savePosterProjectToMyCloud, updateMyPosterProject } from '../services/posterProjectsApi';
 import { resolveBlobUrlsInProject, applyProcessedProjectUrlsToStore } from '../utils/resolveBlobUrlsInProject';
 import { projectHasBlobImageUrls } from '../userTemplatesStorage';
 import type { PosterTemplateCategory, PosterTemplateFieldBinding } from '../templateTypes';
@@ -220,6 +221,23 @@ export function PosterLayout() {
       applyProcessedProjectUrlsToStore(processed);
       lastCloudSaveRef.current = JSON.stringify(processed);
       setCloudDirty(false);
+
+      // Also save a private snapshot to "My stuff" (per-user library)
+      const fabric = getFabricCanvasRef();
+      const thumb = fabric ? fabric.toDataURL({ format: 'png', multiplier: 0.35, quality: 0.8 }) : undefined;
+      const editId =
+        typeof sessionStorage !== 'undefined'
+          ? sessionStorage.getItem('poster_edit_my_project_id')
+          : null;
+      if (editId) {
+        await updateMyPosterProject({ id: editId, project: processed, thumbnail: thumb });
+      } else {
+        await savePosterProjectToMyCloud({
+          name: `Poster ${new Date().toLocaleString()}`,
+          project: processed,
+          thumbnail: thumb,
+        });
+      }
     } finally {
       setSavingToCloud(false);
     }
