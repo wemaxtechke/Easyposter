@@ -179,7 +179,53 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       }
       setSelected([]);
     });
-    canvas.on('object:modified', () => pushHistory());
+    canvas.on('object:modified', (e) => {
+      // When multiple objects are moved/scaled/rotated as an ActiveSelection,
+      // per-object `modified` handlers may not fire. Persist the final transforms to the store.
+      const t = (e as { target?: unknown })?.target;
+      if (t instanceof ActiveSelection) {
+        const storeEls = usePosterStore.getState().elements;
+        for (const obj of t.getObjects()) {
+          const id = (obj as { data?: { posterId?: string } }).data?.posterId;
+          if (!id) continue;
+          const el = storeEls.find((x) => x.id === id);
+          if (!el) continue;
+
+          let scaleX = (obj as { scaleX?: number }).scaleX ?? 1;
+          let scaleY = (obj as { scaleY?: number }).scaleY ?? 1;
+
+          // Preserve image flip flags behavior (same logic as per-object modified handler).
+          if (el.type === 'image') {
+            const imgEl = el as PosterImageElement;
+            const flipHorizontal = scaleX < 0;
+            const flipVertical = scaleY < 0;
+            scaleX = Math.abs(scaleX);
+            scaleY = Math.abs(scaleY);
+            const updates: Partial<PosterElement> = {
+              left: (obj as { left?: number }).left ?? 0,
+              top: (obj as { top?: number }).top ?? 0,
+              scaleX,
+              scaleY,
+              angle: (obj as { angle?: number }).angle ?? 0,
+              flipHorizontal,
+              flipVertical,
+            } as unknown as Partial<PosterElement>;
+            updateElement(id, updates);
+            continue;
+          }
+
+          updateElement(id, {
+            left: (obj as { left?: number }).left ?? 0,
+            top: (obj as { top?: number }).top ?? 0,
+            scaleX,
+            scaleY,
+            angle: (obj as { angle?: number }).angle ?? 0,
+          });
+        }
+      }
+
+      pushHistory();
+    });
 
     // Fabric creates a hidden textarea on text edit and calls .focus() on it,
     // causing the browser to scroll the page to make it visible. Prevent that.
