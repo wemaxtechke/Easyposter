@@ -18,6 +18,7 @@ import { loadPosterProjectFromStorage, savePosterProjectToStorage } from '../pos
 import { loadPosterProjectFromCloud, savePosterProjectToCloud, savePosterProjectToMyCloud, updateMyPosterProject } from '../services/posterProjectsApi';
 import { resolveBlobUrlsInProject, applyProcessedProjectUrlsToStore } from '../utils/resolveBlobUrlsInProject';
 import { projectHasBlobImageUrls } from '../userTemplatesStorage';
+import { computePosterProjectPatch, patchIsEmpty } from '../utils/projectPatch';
 import type { PosterTemplateCategory, PosterTemplateFieldBinding } from '../templateTypes';
 import type { PosterElement, PosterImageElement, PosterTextElement } from '../types';
 
@@ -110,6 +111,7 @@ export function PosterLayout() {
     // Not opening from "My stuff" preloaded flow: clear stale edit target id.
     if (typeof sessionStorage !== 'undefined') {
       sessionStorage.removeItem('poster_edit_my_project_id');
+      sessionStorage.removeItem('poster_edit_my_project_updated_at');
     }
 
     let cancelled = false;
@@ -243,8 +245,28 @@ export function PosterLayout() {
         typeof sessionStorage !== 'undefined'
           ? sessionStorage.getItem('poster_edit_my_project_id')
           : null;
+      const editUpdatedAt =
+        typeof sessionStorage !== 'undefined'
+          ? sessionStorage.getItem('poster_edit_my_project_updated_at')
+          : null;
       if (editId) {
-        await updateMyPosterProject({ id: editId, project: processed, thumbnail: thumb });
+        const baseRaw = lastCloudSaveRef.current;
+        const base = baseRaw ? (JSON.parse(baseRaw) as typeof processed) : processed;
+        const patch = computePosterProjectPatch(base, processed);
+        if (!patchIsEmpty(patch)) {
+          const updated = await updateMyPosterProject({
+            id: editId,
+            patch,
+            thumbnail: thumb,
+            ifUnmodifiedSince: editUpdatedAt || undefined,
+          });
+          // Refresh conflict guard timestamp for next save
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('poster_edit_my_project_updated_at', updated.updatedAt ?? '');
+          }
+        }
+        // Set baseline to current after successful save attempt
+        lastCloudSaveRef.current = JSON.stringify(processed);
       } else {
         await savePosterProjectToMyCloud({
           name: `Poster ${new Date().toLocaleString()}`,

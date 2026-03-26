@@ -87,6 +87,8 @@ export async function updateMyPosterProject(params: {
   name?: string;
   project?: PosterProject;
   thumbnail?: string;
+  patch?: { canvasWidth?: number; canvasHeight?: number; canvasBackground?: unknown; removeElementIds?: string[]; upsertElements?: unknown[] };
+  ifUnmodifiedSince?: string;
 }): Promise<SavedPosterProjectItem> {
   const res = await apiFetch(`/api/my-poster-projects/${encodeURIComponent(params.id)}`, {
     method: 'PATCH',
@@ -95,6 +97,8 @@ export async function updateMyPosterProject(params: {
       ...(params.name !== undefined ? { name: params.name } : {}),
       ...(params.project !== undefined ? { project: params.project } : {}),
       ...(params.thumbnail !== undefined ? { thumbnail: params.thumbnail } : {}),
+      ...(params.patch !== undefined ? { patch: params.patch } : {}),
+      ...(params.ifUnmodifiedSince !== undefined ? { ifUnmodifiedSince: params.ifUnmodifiedSince } : {}),
     }),
   });
   const data = (await res.json().catch(() => ({}))) as { error?: string; item?: SavedPosterProjectItem };

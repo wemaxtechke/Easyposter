@@ -55,6 +55,7 @@ export function PosterMyStuffPage() {
       savePosterProjectToStorage(item.project);
       sessionStorage.setItem('poster_skip_restore', Date.now().toString());
       sessionStorage.setItem('poster_edit_my_project_id', item.id);
+      sessionStorage.setItem('poster_edit_my_project_updated_at', item.updatedAt ?? item.createdAt ?? '');
       navigate('/poster');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to open project.');

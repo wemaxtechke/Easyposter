@@ -1,6 +1,7 @@
 import SavedPosterProject from '../models/SavedPosterProject.js';
 import { isMongoReady } from '../config/db.js';
 import { uploadDataUrlsInPosterProject } from '../utils/posterTemplateImages.js';
+import { applyPosterProjectPatch } from '../utils/posterProjectPatch.js';
 
 function hasCloudinaryConfig() {
   return !!(
@@ -111,12 +112,24 @@ export async function updateMySavedPosterProject(req, res) {
   const name = req.body?.name;
   const project = req.body?.project;
   const thumbnail = req.body?.thumbnail;
+  const patch = req.body?.patch;
+  const ifUnmodifiedSince = req.body?.ifUnmodifiedSince;
 
   const updates = {};
   if (typeof name === 'string' && name.trim()) updates.name = name.trim();
   if (typeof thumbnail === 'string') updates.thumbnail = thumbnail;
 
   try {
+    // Conflict guard: if client provides last-known updatedAt, ensure we don't overwrite newer server data.
+    if (typeof ifUnmodifiedSince === 'string' && ifUnmodifiedSince) {
+      const current = await SavedPosterProject.findOne({ _id: id, userId }).select('updatedAt').lean();
+      if (!current) return res.status(404).json({ error: 'Not found' });
+      const serverTs = new Date(current.updatedAt).toISOString();
+      if (serverTs !== ifUnmodifiedSince) {
+        return res.status(409).json({ error: 'Project was updated elsewhere. Reload and try again.' });
+      }
+    }
+
     if (project !== undefined) {
       if (!project || typeof project !== 'object' || !Array.isArray(project.elements)) {
         return res.status(400).json({ error: 'Missing project with elements array' });
@@ -135,6 +148,18 @@ export async function updateMySavedPosterProject(req, res) {
         }
       }
       updates.project = processedProject;
+      updates.cloudinaryPublicIds = publicIds;
+    }
+
+    if (patch !== undefined) {
+      if (!patch || typeof patch !== 'object') {
+        return res.status(400).json({ error: 'Missing patch object' });
+      }
+      const doc0 = await SavedPosterProject.findOne({ _id: id, userId }).lean();
+      if (!doc0) return res.status(404).json({ error: 'Not found' });
+
+      const { project: patched, publicIds } = await applyPosterProjectPatch(doc0.project, patch);
+      updates.project = patched;
       updates.cloudinaryPublicIds = publicIds;
     }
 

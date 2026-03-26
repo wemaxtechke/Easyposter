@@ -143,6 +143,7 @@ export function PosterTopBar({
   const handleNewProject = useCallback(() => {
     if (typeof sessionStorage !== 'undefined') {
       sessionStorage.removeItem('poster_edit_my_project_id');
+      sessionStorage.removeItem('poster_edit_my_project_updated_at');
     }
     loadProject({
       elements: [],
