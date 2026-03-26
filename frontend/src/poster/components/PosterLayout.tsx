@@ -229,13 +229,13 @@ export function PosterLayout() {
     if (!user) return;
     setSavingToCloud(true);
     try {
+      const baselineBeforeSave = lastCloudSaveRef.current;
       const project = usePosterStore.getState().getProject();
       const toSave = projectHasBlobImageUrls(project)
         ? await resolveBlobUrlsInProject(project)
         : project;
       const processed = await savePosterProjectToCloud(toSave);
       applyProcessedProjectUrlsToStore(processed);
-      lastCloudSaveRef.current = JSON.stringify(processed);
       setCloudDirty(false);
 
       // Also save a private snapshot to "My stuff" (per-user library)
@@ -250,8 +250,7 @@ export function PosterLayout() {
           ? sessionStorage.getItem('poster_edit_my_project_updated_at')
           : null;
       if (editId) {
-        const baseRaw = lastCloudSaveRef.current;
-        const base = baseRaw ? (JSON.parse(baseRaw) as typeof processed) : processed;
+        const base = baselineBeforeSave ? (JSON.parse(baselineBeforeSave) as typeof processed) : processed;
         const patch = computePosterProjectPatch(base, processed);
         if (!patchIsEmpty(patch)) {
           const updated = await updateMyPosterProject({
@@ -265,8 +264,6 @@ export function PosterLayout() {
             sessionStorage.setItem('poster_edit_my_project_updated_at', updated.updatedAt ?? '');
           }
         }
-        // Set baseline to current after successful save attempt
-        lastCloudSaveRef.current = JSON.stringify(processed);
       } else {
         await savePosterProjectToMyCloud({
           name: `Poster ${new Date().toLocaleString()}`,
@@ -274,6 +271,9 @@ export function PosterLayout() {
           thumbnail: thumb,
         });
       }
+
+      // Set baseline to current after successful save(s)
+      lastCloudSaveRef.current = JSON.stringify(processed);
     } finally {
       setSavingToCloud(false);
     }
