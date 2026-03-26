@@ -12,8 +12,6 @@ import {
   Textbox,
   Shadow,
   ActiveSelection,
-  Point,
-  util,
 } from 'fabric';
 import { usePosterStore } from '../store/posterStore';
 import { setFabricCanvasRef } from '../canvasRef';
@@ -186,29 +184,33 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       // per-object `modified` handlers may not fire. Persist the final transforms to the store.
       const t = (e as { target?: unknown })?.target;
       if (t instanceof ActiveSelection) {
+        t.setCoords();
         const storeEls = usePosterStore.getState().elements;
         for (const obj of t.getObjects()) {
+          obj.setCoords();
           const id = (obj as { data?: { posterId?: string } }).data?.posterId;
           if (!id) continue;
           const el = storeEls.find((x) => x.id === id);
           if (!el) continue;
 
           // IMPORTANT: objects inside ActiveSelection may have left/top relative to selection.
-          // Use the absolute transform matrix and decompose it to get stable canvas-space props.
-          const m = (obj as unknown as { calcTransformMatrix(): number[] }).calcTransformMatrix();
-          const d = util.qrDecompose(m);
-          const p0 = util.transformPoint(new Point(0, 0), m);
-          let scaleX = Math.abs(d.scaleX ?? 1);
-          let scaleY = Math.abs(d.scaleY ?? 1);
-          const angle = d.angle ?? 0;
+          // Use Fabric helper to get canvas-space point.
+          const pt = (obj as unknown as { getPointByOrigin(x: string, y: string): { x: number; y: number } })
+            .getPointByOrigin('left', 'top');
+
+          let scaleX = (obj as { scaleX?: number }).scaleX ?? 1;
+          let scaleY = (obj as { scaleY?: number }).scaleY ?? 1;
+          const angle = (obj as { angle?: number }).angle ?? 0;
 
           // Preserve image flip flags behavior (same logic as per-object modified handler).
           if (el.type === 'image') {
-            const flipHorizontal = (d.scaleX ?? 1) < 0;
-            const flipVertical = (d.scaleY ?? 1) < 0;
+            const flipHorizontal = scaleX < 0;
+            const flipVertical = scaleY < 0;
+            scaleX = Math.abs(scaleX);
+            scaleY = Math.abs(scaleY);
             const updates: Partial<PosterElement> = {
-              left: p0.x,
-              top: p0.y,
+              left: pt.x,
+              top: pt.y,
               scaleX,
               scaleY,
               angle,
@@ -220,10 +222,10 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           }
 
           updateElement(id, {
-            left: p0.x,
-            top: p0.y,
-            scaleX,
-            scaleY,
+            left: pt.x,
+            top: pt.y,
+            scaleX: Math.abs(scaleX),
+            scaleY: Math.abs(scaleY),
             angle,
           });
         }
