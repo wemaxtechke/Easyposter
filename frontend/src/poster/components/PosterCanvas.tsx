@@ -12,6 +12,8 @@ import {
   Textbox,
   Shadow,
   ActiveSelection,
+  Point,
+  util,
 } from 'fabric';
 import { usePosterStore } from '../store/posterStore';
 import { setFabricCanvasRef } from '../canvasRef';
@@ -191,22 +193,25 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           const el = storeEls.find((x) => x.id === id);
           if (!el) continue;
 
-          let scaleX = (obj as { scaleX?: number }).scaleX ?? 1;
-          let scaleY = (obj as { scaleY?: number }).scaleY ?? 1;
+          // IMPORTANT: objects inside ActiveSelection may have left/top relative to selection.
+          // Use the absolute transform matrix and decompose it to get stable canvas-space props.
+          const m = (obj as unknown as { calcTransformMatrix(): number[] }).calcTransformMatrix();
+          const d = util.qrDecompose(m);
+          const p0 = util.transformPoint(new Point(0, 0), m);
+          let scaleX = Math.abs(d.scaleX ?? 1);
+          let scaleY = Math.abs(d.scaleY ?? 1);
+          const angle = d.angle ?? 0;
 
           // Preserve image flip flags behavior (same logic as per-object modified handler).
           if (el.type === 'image') {
-            const imgEl = el as PosterImageElement;
-            const flipHorizontal = scaleX < 0;
-            const flipVertical = scaleY < 0;
-            scaleX = Math.abs(scaleX);
-            scaleY = Math.abs(scaleY);
+            const flipHorizontal = (d.scaleX ?? 1) < 0;
+            const flipVertical = (d.scaleY ?? 1) < 0;
             const updates: Partial<PosterElement> = {
-              left: (obj as { left?: number }).left ?? 0,
-              top: (obj as { top?: number }).top ?? 0,
+              left: p0.x,
+              top: p0.y,
               scaleX,
               scaleY,
-              angle: (obj as { angle?: number }).angle ?? 0,
+              angle,
               flipHorizontal,
               flipVertical,
             } as unknown as Partial<PosterElement>;
@@ -215,11 +220,11 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           }
 
           updateElement(id, {
-            left: (obj as { left?: number }).left ?? 0,
-            top: (obj as { top?: number }).top ?? 0,
+            left: p0.x,
+            top: p0.y,
             scaleX,
             scaleY,
-            angle: (obj as { angle?: number }).angle ?? 0,
+            angle,
           });
         }
       }
