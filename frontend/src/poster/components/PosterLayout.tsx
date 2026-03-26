@@ -92,10 +92,24 @@ export function PosterLayout() {
     if (skipRaw) {
       const t = parseInt(skipRaw, 10);
       if (!isNaN(t) && Date.now() - t < 5000) {
+        // Opening from a preloaded flow (e.g. My stuff): avoid immediate false-dirty.
+        const editId =
+          typeof sessionStorage !== 'undefined'
+            ? sessionStorage.getItem('poster_edit_my_project_id')
+            : null;
+        if (editId) {
+          lastCloudSaveRef.current = JSON.stringify(usePosterStore.getState().getProject());
+          setCloudDirty(false);
+        }
         setTimeout(() => sessionStorage.removeItem('poster_skip_restore'), 500);
         return;
       }
       sessionStorage.removeItem('poster_skip_restore');
+    }
+
+    // Not opening from "My stuff" preloaded flow: clear stale edit target id.
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem('poster_edit_my_project_id');
     }
 
     let cancelled = false;

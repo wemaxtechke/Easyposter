@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react';
 import {
   Canvas,
   Rect,
@@ -121,6 +121,10 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const canvasRef = useRef<Canvas | null>(null);
   const zoomWrapperRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const [fontsReady, setFontsReady] = useState(() => {
+    if (typeof document === 'undefined') return true;
+    return !('fonts' in document);
+  });
 
   const elements = usePosterStore((s) => s.elements);
   const canvasWidth = usePosterStore((s) => s.canvasWidth);
@@ -262,10 +266,29 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   /** Per-element debounce timers for CPU-heavy filter application. */
   const adjTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
+  // Ensure web fonts are ready before creating Fabric textboxes.
+  // Otherwise Fabric measures with fallback fonts and saved text can reflow on first paint.
+  useEffect(() => {
+    if (fontsReady || typeof document === 'undefined' || !('fonts' in document)) return;
+    let cancelled = false;
+    document.fonts.ready
+      .then(() => {
+        if (!cancelled) setFontsReady(true);
+      })
+      .catch(() => {
+        // Fail open to avoid blocking canvas forever if FontFaceSet errors.
+        if (!cancelled) setFontsReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fontsReady]);
+
   // Sync store -> Fabric
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    if (!fontsReady) return;
 
     syncingSelectionFromStoreRef.current = true;
     try {
@@ -527,6 +550,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             updates.underline = t.underline ?? false;
             updates.linethrough = t.linethrough ?? false;
             updates.charSpacing = t.charSpacing ?? 0;
+            updates.lineHeight = t.lineHeight ?? 1.16;
             updates.textAlign = t.textAlign ?? 'left';
           }
           if (
@@ -680,6 +704,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                     updates.underline = tb.underline;
                     updates.linethrough = tb.linethrough;
                     updates.charSpacing = tb.charSpacing ?? 0;
+                    updates.lineHeight = tb.lineHeight ?? 1.16;
                     updates.textAlign = tb.textAlign ?? 'left';
                   }
                   if (el.type === 'line' && obj.type === 'line') {
@@ -730,7 +755,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     } finally {
       syncingSelectionFromStoreRef.current = false;
     }
-  }, [elements, updateElement, readOnly]);
+  }, [elements, updateElement, readOnly, fontsReady]);
 
   // Update selection in Fabric (skip if Fabric already matches store to avoid discard→cleared→loop)
   useEffect(() => {
@@ -1174,6 +1199,7 @@ async function createFabricObject(
         underline: t.underline ?? false,
         linethrough: t.linethrough ?? false,
         charSpacing: t.charSpacing ?? 0,
+        lineHeight: t.lineHeight ?? 1.16,
         textAlign: t.textAlign ?? 'left',
       });
       return text;

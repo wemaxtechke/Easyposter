@@ -158,6 +158,11 @@ export interface PosterTextElement extends PosterElementBase {
    * e.g. `100` ≈ 0.1em; `0` is default.
    */
   charSpacing?: number;
+  /**
+   * Row spacing / line height multiplier (Fabric `lineHeight`).
+   * `1` is tight; higher values add more space between lines. Default Fabric value is ~1.16.
+   */
+  lineHeight?: number;
   /** Horizontal text alignment within the textbox. Default `'left'`. */
   textAlign?: PosterTextAlign;
   /** Outline/stroke color. When set with strokeWidth > 0, draws an outline. */

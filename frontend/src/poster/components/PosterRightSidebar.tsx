@@ -1130,6 +1130,29 @@ function PosterTextControls({
         </p>
       </div>
 
+      <div className="flex flex-col gap-1">
+        <label className="text-xs text-zinc-600 dark:text-zinc-400">
+          Row spacing{' '}
+          <span className="font-normal text-zinc-400">
+            ({(text.lineHeight ?? 1.16).toFixed(2)}x)
+          </span>
+        </label>
+        <input
+          type="range"
+          min={0.8}
+          max={2}
+          step={0.01}
+          value={text.lineHeight ?? 1.16}
+          onChange={(e) =>
+            updateElement(text.id, { lineHeight: parseFloat(e.target.value) || 1.16 })
+          }
+          className="w-full"
+        />
+        <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+          Controls spacing between lines in multi-line text.
+        </p>
+      </div>
+
       <div className="flex flex-col gap-2">
         <label className="text-xs text-zinc-600 dark:text-zinc-400">Fill</label>
         <div className="flex gap-1">
