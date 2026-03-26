@@ -12,6 +12,7 @@ import {
   Textbox,
   Shadow,
   ActiveSelection,
+  util,
 } from 'fabric';
 import { usePosterStore } from '../store/posterStore';
 import { setFabricCanvasRef } from '../canvasRef';
@@ -43,6 +44,63 @@ import {
   roundedRectPathD,
   perCornerRadiiFromShape,
 } from '../roundedRectPath';
+
+/**
+ * While an object is inside an ActiveSelection (or nested group), reading `left`/`top`/`scaleX`/`angle`
+ * directly is unreliable. Fabric's own `_exitGroup` uses {@link util.applyTransformToObject} with the
+ * full canvas matrix. We mirror that with a throwaway Rect of the same local width/height so
+ * `left`/`top` match our poster model (`originX`/`originY` = left/top).
+ */
+function canvasPlaneTransformForPosterStore(obj: {
+  calcTransformMatrix(skipGroup?: boolean): number[];
+  width?: number;
+  height?: number;
+}): {
+  left: number;
+  top: number;
+  scaleX: number;
+  scaleY: number;
+  angle: number;
+  flipHorizontal: boolean;
+  flipVertical: boolean;
+} {
+  const fullM = obj.calcTransformMatrix();
+  const d = util.qrDecompose(fullM);
+  const flipHorizontal = (d.scaleX ?? 1) < 0;
+  const flipVertical = (d.scaleY ?? 1) < 0;
+
+  const dimFn = (obj as { _getNonTransformedDimensions?: () => { x: number; y: number } })
+    ._getNonTransformedDimensions;
+  const dim =
+    typeof dimFn === 'function'
+      ? dimFn.call(obj)
+      : {
+          x: typeof obj.width === 'number' && obj.width > 0 ? obj.width : 1,
+          y: typeof obj.height === 'number' && obj.height > 0 ? obj.height : 1,
+        };
+  const w = Math.max(1, dim.x);
+  const h = Math.max(1, dim.y);
+  const temp = new Rect({
+    originX: 'left',
+    originY: 'top',
+    width: w,
+    height: h,
+    strokeWidth: 0,
+    fill: 'transparent',
+  });
+  util.applyTransformToObject(temp, fullM);
+  const sx = temp.scaleX ?? 1;
+  const sy = temp.scaleY ?? 1;
+  return {
+    left: temp.left ?? 0,
+    top: temp.top ?? 0,
+    scaleX: Math.abs(sx),
+    scaleY: Math.abs(sy),
+    angle: temp.angle ?? 0,
+    flipHorizontal,
+    flipVertical,
+  };
+}
 
 /**
  * Re-apply store selection on Fabric (used after async recreate — the selectedIds effect
@@ -193,26 +251,34 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           const el = storeEls.find((x) => x.id === id);
           if (!el) continue;
 
-          // IMPORTANT: objects inside ActiveSelection may have left/top relative to selection.
-          // Use Fabric helper to get canvas-space point.
-          const pt = (obj as unknown as { getPointByOrigin(x: string, y: string): { x: number; y: number } })
-            .getPointByOrigin('left', 'top');
+          // Same math Fabric uses when exiting a group: bake full calcTransformMatrix() into
+          // origin left/top + scale + angle (see util.applyTransformToObject).
+          const {
+            left,
+            top,
+            scaleX,
+            scaleY,
+            angle,
+            flipHorizontal,
+            flipVertical,
+          } = canvasPlaneTransformForPosterStore(
+            obj as { calcTransformMatrix(s?: boolean): number[]; width?: number; height?: number }
+          );
 
-          let scaleX = (obj as { scaleX?: number }).scaleX ?? 1;
-          let scaleY = (obj as { scaleY?: number }).scaleY ?? 1;
-          const angle = (obj as { angle?: number }).angle ?? 0;
-
-          // Preserve image flip flags behavior (same logic as per-object modified handler).
-          if (el.type === 'image') {
-            const flipHorizontal = scaleX < 0;
-            const flipVertical = scaleY < 0;
-            scaleX = Math.abs(scaleX);
-            scaleY = Math.abs(scaleY);
+          // Image / 3D text: circle mask uses uniform scale (same as per-object handler).
+          if (el.type === 'image' || el.type === '3d-text') {
+            let sx = scaleX;
+            let sy = scaleY;
+            if (el.type === 'image' && ((el as PosterImageElement).mask ?? 'none') === 'circle') {
+              const s = Math.min(sx, sy);
+              sx = s;
+              sy = s;
+            }
             const updates: Partial<PosterElement> = {
-              left: pt.x,
-              top: pt.y,
-              scaleX,
-              scaleY,
+              left,
+              top,
+              scaleX: sx,
+              scaleY: sy,
               angle,
               flipHorizontal,
               flipVertical,
@@ -221,11 +287,85 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             continue;
           }
 
+          if (el.type === 'line' && (obj as { type?: string }).type === 'line') {
+            const ln = obj as Line;
+            updateElement(id, {
+              left,
+              top,
+              scaleX,
+              scaleY,
+              angle,
+              x1: ln.x1,
+              y1: ln.y1,
+              x2: ln.x2,
+              y2: ln.y2,
+              strokeWidth: ln.strokeWidth ?? 4,
+            } as Partial<PosterElement>);
+            continue;
+          }
+
+          if (el.type === 'text' && obj instanceof Textbox) {
+            const tb = obj as Textbox;
+            updateElement(id, {
+              left,
+              top,
+              scaleX,
+              scaleY,
+              angle,
+              ...(typeof tb.width === 'number' && tb.width > 0 ? { width: tb.width } : {}),
+            } as Partial<PosterElement>);
+            continue;
+          }
+
+          if (el.type === 'triangle' && (obj as { type?: string }).type === 'triangle') {
+            const tr = obj as Triangle;
+            updateElement(id, {
+              left,
+              top,
+              scaleX,
+              scaleY,
+              angle,
+              ...(typeof tr.width === 'number' ? { width: tr.width } : {}),
+              ...(typeof tr.height === 'number' ? { height: tr.height } : {}),
+            } as Partial<PosterElement>);
+            continue;
+          }
+
+          if (el.type === 'ellipse' && (obj as { type?: string }).type === 'ellipse') {
+            const ov = obj as Ellipse;
+            updateElement(id, {
+              left,
+              top,
+              scaleX,
+              scaleY,
+              angle,
+              rx: ov.rx,
+              ry: ov.ry,
+            } as Partial<PosterElement>);
+            continue;
+          }
+
+          if (el.type === 'polygon' && (obj as { type?: string }).type === 'polygon') {
+            const poly = obj as Polygon;
+            const pts = poly.points?.length
+              ? poly.points.map((p) => ({ x: p.x, y: p.y }))
+              : undefined;
+            updateElement(id, {
+              left,
+              top,
+              scaleX,
+              scaleY,
+              angle,
+              ...(pts ? { polygonPoints: pts } : {}),
+            } as Partial<PosterElement>);
+            continue;
+          }
+
           updateElement(id, {
-            left: pt.x,
-            top: pt.y,
-            scaleX: Math.abs(scaleX),
-            scaleY: Math.abs(scaleY),
+            left,
+            top,
+            scaleX,
+            scaleY,
             angle,
           });
         }
