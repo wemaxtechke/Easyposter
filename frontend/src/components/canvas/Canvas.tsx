@@ -1,12 +1,23 @@
 import { memo, useMemo, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '../../store/editorStore';
 import { useDebounce } from '../../hooks/useDebounce';
 import { renderMetallicText } from '../../core/renderer/metallicTextRenderer';
 import { ThreeTextRenderer } from '../../core/renderer/ThreeTextRenderer';
+import { MultiLayerThreeCanvas } from '../../core/renderer/MultiLayerThreeCanvas';
 import { getCustomFont } from '../../core/font/customFontCache';
 
-export const Canvas = memo(function Canvas() {
+export const Canvas = memo(function Canvas({
+  forceMultiLayer = false,
+  orbitZoomScale,
+}: {
+  forceMultiLayer?: boolean;
+  /** Passed to multi-layer WebGL orbit limits (poster modal uses ~1.5 for +50% zoom range). */
+  orbitZoomScale?: number;
+}) {
+  const location = useLocation();
+  const useMultiLayerWebGL = forceMultiLayer || location.pathname === '/3d';
   const setWebGLExportAPI = useEditorStore((s) => s.setWebGLExportAPI);
   const state = useEditorStore(
     useShallow((s) => ({
@@ -54,6 +65,7 @@ export const Canvas = memo(function Canvas() {
       extrusionLighting: s.extrusionLighting,
       environmentId: s.environmentId,
       hdrPresets: s.hdrPresets,
+      inflate: s.inflate,
       selectedCustomFontId: s.selectedCustomFontId,
     }))
   );
@@ -70,6 +82,7 @@ export const Canvas = memo(function Canvas() {
   const debouncedContent = useDebounce(state.text.content, 250);
   const debouncedFontFamily = useDebounce(state.text.fontFamily, 250);
   const debouncedFontSize = useDebounce(state.text.fontSize, 200);
+  const debouncedLetterSpacing = useDebounce(state.text.letterSpacing ?? 0, 200);
 
   useEffect(() => {
     if (!useWebGL) setWebGLExportAPI(null);
@@ -85,9 +98,15 @@ export const Canvas = memo(function Canvas() {
   const svgState = useMemo(
     () => ({
       ...state,
-      text: { ...state.text, content: debouncedContent, fontFamily: debouncedFontFamily, fontSize: debouncedFontSize },
+      text: {
+        ...state.text,
+        content: debouncedContent,
+        fontFamily: debouncedFontFamily,
+        fontSize: debouncedFontSize,
+        letterSpacing: debouncedLetterSpacing,
+      },
     }),
-    [state, debouncedContent, debouncedFontFamily, debouncedFontSize]
+    [state, debouncedContent, debouncedFontFamily, debouncedFontSize, debouncedLetterSpacing]
   );
 
   const svgMarkup = useMemo(
@@ -96,6 +115,7 @@ export const Canvas = memo(function Canvas() {
       debouncedContent,
       debouncedFontFamily,
       debouncedFontSize,
+      debouncedLetterSpacing,
       state.text.fontWeight,
       state.extrusion.depth,
       state.extrusion.steps,
@@ -126,10 +146,14 @@ export const Canvas = memo(function Canvas() {
     >
       {useWebGL ? (
         <div className="flex h-full min-h-[300px] w-full max-w-4xl items-center justify-center rounded-lg bg-zinc-200 dark:bg-zinc-800">
+          {useMultiLayerWebGL ? (
+            <MultiLayerThreeCanvas onReady={handleWebGLReady} orbitZoomScale={orbitZoomScale} />
+          ) : (
           <ThreeTextRenderer
             content={debouncedContent}
             fontFamily={debouncedFontFamily}
             fontSize={debouncedFontSize}
+            letterSpacing={debouncedLetterSpacing}
             frontColor={state.frontColor ?? '#ffffff'}
             extrusionColor={state.extrusionColor ?? '#d4af37'}
             extrusionGlass={state.extrusionGlass ?? false}
@@ -170,13 +194,15 @@ export const Canvas = memo(function Canvas() {
       extrusionLightAzimuth={state.extrusionLighting?.azimuth ?? 270}
       extrusionLightElevation={state.extrusionLighting?.elevation ?? 45}
       extrusionLightAmbient={state.extrusionLighting?.ambient ?? 0.35}
-      filtersShine={state.filters.shine}
+      filtersShine={Math.max(state.filters.shine ?? 0, state.extrusion.shine ?? 0)}
             filtersMetallic={state.filters.metallic}
             edgeRoundness={state.filters.edgeRoundness ?? 0}
             shadowOpacity={(state.shadowBlur ?? 0) > 0 ? (state.shadowOpacity ?? 0.3) : 0}
+            inflate={state.inflate ?? 0}
             customFont={customFont}
             onReady={handleWebGLReady}
           />
+          )}
         </div>
       ) : (
         <div

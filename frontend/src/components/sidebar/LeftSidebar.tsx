@@ -1,6 +1,7 @@
 import { memo, useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import type { EditorState } from '../../core/types';
+import { MAX_TEXT_LAYERS } from '../../core/types';
 import { useEditorStore } from '../../store/editorStore';
 import { PRESETS } from '../../data/presets';
 import { generateStyleFromPrompt, adjustStyleFromPrompt, getAiUsage } from '../../services/threeTextAiApi';
@@ -8,7 +9,22 @@ import { getToken } from '../../lib/api';
 import { ThemeToggle } from '../ThemeToggle';
 import { UserMenu } from '../../auth/UserMenu';
 
-export const LeftSidebar = memo(function LeftSidebar() {
+export const LeftSidebar = memo(function LeftSidebar({
+  force3dLayerUI = false,
+  onPosterEditorClick,
+}: {
+  force3dLayerUI?: boolean;
+  onPosterEditorClick?: () => void;
+}) {
+  const location = useLocation();
+  const is3dRoute = force3dLayerUI || location.pathname === '/3d';
+  const renderEngine = useEditorStore((s) => s.renderEngine);
+  const textLayers = useEditorStore((s) => s.textLayers ?? []);
+  const activeTextLayerId = useEditorStore((s) => s.activeTextLayerId);
+  const addTextLayer = useEditorStore((s) => s.addTextLayer);
+  const duplicateTextLayer = useEditorStore((s) => s.duplicateTextLayer);
+  const removeTextLayer = useEditorStore((s) => s.removeTextLayer);
+  const setActiveTextLayerId = useEditorStore((s) => s.setActiveTextLayerId);
   const setState = useEditorStore((s) => s.setState);
   const [aiPrompt, setAiPrompt] = useState('');
   const [adjustPrompt, setAdjustPrompt] = useState('');
@@ -78,12 +94,22 @@ export const LeftSidebar = memo(function LeftSidebar() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-4">
-      <Link
-        to="/poster"
-        className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
-      >
-        Poster Editor →
-      </Link>
+      {onPosterEditorClick ? (
+        <button
+          type="button"
+          onClick={onPosterEditorClick}
+          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
+        >
+          Poster Editor →
+        </button>
+      ) : (
+        <Link
+          to="/poster"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
+        >
+          Poster Editor →
+        </Link>
+      )}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <UserMenu compact />
@@ -113,6 +139,66 @@ export const LeftSidebar = memo(function LeftSidebar() {
           ))}
         </select>
       </section>
+
+      {is3dRoute && renderEngine === 'webgl' && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            3D layers
+          </h2>
+          <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+            Stack multiple text objects in one scene (position in the right sidebar).
+          </p>
+          <ul className="mb-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-900/50">
+            {textLayers.map((layer) => (
+              <li key={layer.id}>
+                <button
+                  type="button"
+                  onClick={() => setActiveTextLayerId(layer.id)}
+                  className={`w-full rounded px-2 py-1.5 text-left text-sm ${
+                    layer.id === activeTextLayerId
+                      ? 'bg-amber-100 font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-100'
+                      : 'hover:bg-zinc-200 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <span className="line-clamp-1">{layer.text.content || '(empty)'}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={textLayers.length >= MAX_TEXT_LAYERS}
+              onClick={() => addTextLayer()}
+              className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800"
+            >
+              Add layer
+            </button>
+            <button
+              type="button"
+              disabled={textLayers.length >= MAX_TEXT_LAYERS}
+              onClick={() => duplicateTextLayer()}
+              className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800"
+            >
+              Duplicate
+            </button>
+            <button
+              type="button"
+              disabled={textLayers.length <= 1}
+              onClick={() => {
+                const cur = activeTextLayerId ?? textLayers[0]?.id;
+                if (cur) removeTextLayer(cur);
+              }}
+              className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/50"
+            >
+              Remove
+            </button>
+          </div>
+          <p className="mt-1 text-[10px] text-zinc-400">
+            Max {MAX_TEXT_LAYERS} layers
+          </p>
+        </section>
+      )}
 
       <section className="flex-1">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">

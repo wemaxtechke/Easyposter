@@ -1,9 +1,13 @@
 import type { EditorState } from '../../core/types';
 import { useEditorStore } from '../../store/editorStore';
+import { rootFieldsFromTextLayer } from '../../core/textLayerHelpers';
 
 /** Serialize EditorState for storage (3D text config). Blob/object URLs are stripped. */
 export function serializeEditorState(): Partial<EditorState> {
   const s = useEditorStore.getState();
+  const first = s.textLayers?.[0];
+  const layer0 = first ? rootFieldsFromTextLayer(first) : {};
+  const merged: EditorState = { ...s, ...layer0 } as EditorState;
   const state: Record<string, unknown> = {};
   const keys: (keyof EditorState)[] = [
     'text', 'extrusion', 'lighting', 'extrusionLighting', 'filters',
@@ -16,10 +20,14 @@ export function serializeEditorState(): Partial<EditorState> {
     'frontMetalness', 'frontRoughness', 'frontEnvMapIntensity',
     'frontTextureEnabled', 'frontTextureId', 'textureIntensity',
     'textureRepeatX', 'textureRepeatY', 'textureRoughnessIntensity',
-    'frontNormalStrength', 'extrusionGlass', 'selectedCustomFontId',
+    'frontNormalStrength', 'extrusionGlass', 'inflate', 'selectedCustomFontId',
+    'customFontIds',
+    'customFrontTextureUrl', 'customFrontTextureRoughnessUrl', 'customFrontTextureNormalUrl',
+    'customFrontTextureMetalnessUrl', 'customFrontTextureDispUrl',
+    'textLayers', 'activeTextLayerId',
   ];
   for (const k of keys) {
-    const v = s[k as keyof EditorState];
+    const v = merged[k as keyof EditorState];
     if (v === undefined) continue;
     // Skip blob URLs - they can't be serialized; user must re-upload
     if (typeof v === 'string' && v.startsWith('blob:')) continue;

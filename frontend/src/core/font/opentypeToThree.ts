@@ -186,18 +186,41 @@ function commandsToShape(
  * Preserves quadratic and bezier curves for script/cursive fonts.
  * Returns an array of shapes (each may represent one or more contours with holes).
  * @param options.scale - Scale factor for coordinates (e.g. 0.012 to match Three.js text size).
+ * @param options.letterSpacing - Extra pixels after each glyph (0 keeps single-string layout / kerning).
  */
 export function generateShapesFromText(
   text: string,
   font: OpenTypeFont,
   fontSize: number,
-  options: { flipY?: number; scale?: number } = {}
+  options: { flipY?: number; scale?: number; letterSpacing?: number } = {}
 ): THREE.Shape[] {
   if (!text.trim()) return [];
   const scale = options.scale ?? 1;
   const flipY = (options.flipY ?? font.tables.head?.yMax ?? 1024) * scale;
-  const path = font.getPath(text, 0, 0, fontSize);
-  const commands = path.commands;
+  const letterSpacing = options.letterSpacing ?? 0;
+  const needsPerCharLayout = letterSpacing !== 0 || text.includes('\n');
+
+  let commands: { type: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }[];
+  if (!needsPerCharLayout) {
+    const path = font.getPath(text, 0, 0, fontSize);
+    commands = path.commands;
+  } else {
+    const chars = Array.from(text);
+    let x = 0;
+    let y = 0;
+    const lineStep = fontSize * 1.25;
+    commands = [];
+    for (const ch of chars) {
+      if (ch === '\n') {
+        x = 0;
+        y -= lineStep;
+        continue;
+      }
+      const path = font.getPath(ch, x, y, fontSize);
+      commands.push(...path.commands);
+      x += font.getAdvanceWidth(ch, fontSize) + letterSpacing;
+    }
+  }
   if (!commands.length) return [];
 
   const contours = splitContours(commands);

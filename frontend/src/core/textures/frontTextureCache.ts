@@ -277,8 +277,7 @@ export function blendMapWithIntensity(
 ): THREE.CanvasTexture {
   const src = getTextureImage(texture);
   if (!src) {
-    const t = texture.clone();
-    return t as THREE.CanvasTexture;
+    return texture as THREE.CanvasTexture;
   }
   const canvas = document.createElement('canvas');
   canvas.width = src.width;
@@ -309,7 +308,7 @@ export function blendRoughnessMapWithIntensity(
 ): THREE.Texture {
   const src = getTextureImage(texture);
   if (!src) {
-    return texture.clone();
+    return texture;
   }
   const canvas = document.createElement('canvas');
   canvas.width = src.width;

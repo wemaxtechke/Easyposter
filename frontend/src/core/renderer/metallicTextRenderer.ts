@@ -157,6 +157,9 @@ export function renderMetallicText(state: EditorState): string {
   const extrusionFilterDef = buildExtrusionFilter(lighting, filters, extrusionShine, extrusionFilterId);
 
   const strokeWidth = edgeRoundness > 0 ? (edgeRoundness * text.fontSize * 0.08) : 0;
+  const letterSpacing = text.letterSpacing ?? 0;
+  const letterSpacingAttr =
+    letterSpacing !== 0 ? ` letter-spacing="${letterSpacing}"` : '';
   const strokeAttrs =
     strokeWidth > 0
       ? ` stroke="url(#${gradientId})" stroke-width="${strokeWidth}" stroke-linejoin="round" stroke-linecap="round" paint-order="stroke fill"`
@@ -209,16 +212,18 @@ export function renderMetallicText(state: EditorState): string {
 
     const filterAttr = extrusionShine > 0 ? ` filter="url(#${extrusionFilterId})"` : '';
     layers.push(
-      `<text x="${50 + ox}" y="${100 + oy}" font-family="${text.fontFamily}" font-size="${text.fontSize}" font-weight="${text.fontWeight}" fill="url(#${extrusionGradientId})"${extrusionStrokeAttrs}${filterAttr} opacity="${depthAlpha}">${escapeXml(text.content)}</text>`
+      `<text x="${50 + ox}" y="${100 + oy}" font-family="${text.fontFamily}" font-size="${text.fontSize}" font-weight="${text.fontWeight}"${letterSpacingAttr} fill="url(#${extrusionGradientId})"${extrusionStrokeAttrs}${filterAttr} opacity="${depthAlpha}">${escapeXml(text.content)}</text>`
     );
   }
 
-  const frontLayer = `<text x="50" y="100" font-family="${text.fontFamily}" font-size="${text.fontSize}" font-weight="${text.fontWeight}" fill="url(#${gradientId})"${strokeAttrs} filter="url(#${filterId})">${escapeXml(text.content)}</text>`;
+  const frontLayer = `<text x="50" y="100" font-family="${text.fontFamily}" font-size="${text.fontSize}" font-weight="${text.fontWeight}"${letterSpacingAttr} fill="url(#${gradientId})"${strokeAttrs} filter="url(#${filterId})">${escapeXml(text.content)}</text>`;
 
   const padding = 60;
   const depthWidth = Math.abs(dx) * extrusion.steps;
   const depthHeight = Math.abs(dy) * extrusion.steps;
-  const width = Math.max(text.content.length * text.fontSize * 0.6, depthWidth) + padding * 2;
+  const spacingExtra = text.content.length > 1 ? (text.content.length - 1) * letterSpacing : 0;
+  const width =
+    Math.max(text.content.length * text.fontSize * 0.6 + spacingExtra, depthWidth) + padding * 2;
   const height = text.fontSize + Math.max(0, depthHeight) + padding * 2;
 
   const mainContent = `
@@ -233,7 +238,7 @@ export function renderMetallicText(state: EditorState): string {
     reflectionStrength > 0
       ? `
   <mask id="${textMaskId}" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse">
-    <text x="${50 + padding}" y="${100 + padding}" font-family="${text.fontFamily}" font-size="${text.fontSize}" font-weight="${text.fontWeight}" fill="white">${escapeXml(text.content)}</text>
+    <text x="${50 + padding}" y="${100 + padding}" font-family="${text.fontFamily}" font-size="${text.fontSize}" font-weight="${text.fontWeight}"${letterSpacingAttr} fill="white">${escapeXml(text.content)}</text>
   </mask>`
       : '';
   const reflectionOverlay =

@@ -1,207 +1,24 @@
-import {
-  useEffect,
-  useRef,
-  useCallback,
-  memo,
-  useState,
-} from 'react';
+import { useEffect, useRef, useCallback, memo, useState } from 'react';
 import * as THREE from 'three';
-import { FontLoader } from 'three/addons/loaders/FontLoader.js';
-import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
-import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createMeshesFromMultiMaterialMesh } from 'three/addons/utils/SceneUtils.js';
-import type { OpenTypeFont } from '../font/opentypeToThree';
-import { generateShapesFromText } from '../font/opentypeToThree';
 import {
-  loadFrontTextures,
-  loadFrontTexturesFromSet,
-  blendMapWithIntensity,
-  blendRoughnessMapWithIntensity,
-} from '../textures/frontTextureCache';
+  type ThreeTextRendererProps,
+  buildThreeTextMeshGroup,
+  loadEnvironmentMap,
+  loadFont,
+  setTextureRepeat,
+  FRONT_NORMAL_SCALE,
+} from './threeTextMeshCore';
+import { blendMapWithIntensity, blendRoughnessMapWithIntensity } from '../textures/frontTextureCache';
 
-const THREE_FONT_BASE =
-  'https://cdn.jsdelivr.net/npm/three@0.183.2/examples/fonts';
-
-/** Map editor fontFamily (CSS font name) to Three.js typeface filename. */
-const FONT_FAMILY_TO_TYPEFACE: Record<string, string> = {
-  'Arial Black, sans-serif': 'helvetiker_bold',
-  'Impact, sans-serif': 'helvetiker_bold',
-  'Franklin Gothic Medium, sans-serif': 'helvetiker_bold',
-  'Verdana, sans-serif': 'helvetiker_regular',
-  '"Trebuchet MS", sans-serif': 'helvetiker_regular',
-  'Century Gothic, sans-serif': 'helvetiker_regular',
-  'Georgia, serif': 'gentilis_regular',
-  'Times New Roman, serif': 'gentilis_regular',
-  'Palatino Linotype, Book Antiqua, serif': 'gentilis_regular',
-  'Courier New, monospace': 'optimer_regular',
-  'Brush Script MT, cursive': 'gentilis_regular',
-  'Lucida Handwriting, cursive': 'gentilis_regular',
-  'Segoe Script, cursive': 'gentilis_regular',
-  'Bradley Hand, cursive': 'gentilis_regular',
-  '"Great Vibes", cursive': 'gentilis_regular',
-  '"Dancing Script", cursive': 'gentilis_regular',
-  '"Allura", cursive': 'gentilis_regular',
-  '"Sacramento", cursive': 'gentilis_regular',
-  '"Satisfy", cursive': 'gentilis_regular',
-  '"Pacifico", cursive': 'gentilis_regular',
-  '"Tangerine", cursive': 'gentilis_regular',
-};
-
-function getTypefaceUrl(fontFamily: string): string {
-  const name = FONT_FAMILY_TO_TYPEFACE[fontFamily] ?? 'helvetiker_regular';
-  return `${THREE_FONT_BASE}/${name}.typeface.json`;
-}
-/** Environment map cache keyed by HDRI path. */
-const envMapCache = new Map<string, THREE.Texture | null>();
-
-function loadEnvironmentMap(path: string): Promise<THREE.Texture | null> {
-  if (!path) return Promise.resolve(null);
-  const cached = envMapCache.get(path);
-  if (cached !== undefined) return Promise.resolve(cached);
-
-  const loader = new HDRLoader();
-  return new Promise<THREE.Texture | null>((resolve) => {
-    loader
-      .loadAsync(path)
-      .then((texture) => {
-        texture.mapping = THREE.EquirectangularReflectionMapping;
-        envMapCache.set(path, texture);
-        resolve(texture);
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes('Bad File Format') && !msg.includes('reading')) {
-          console.warn('[HDR] Load failed:', path, err);
-        }
-        envMapCache.set(path, null);
-        resolve(null);
-      });
-  });
-}
-
-export interface ThreeTextRendererProps {
-  content: string;
-  fontFamily: string;
-  fontSize: number;
-  frontColor: string;
-  extrusionColor: string;
-  metalness: number;
-  roughness: number;
-  bevelSize: number;
-  bevelSegments?: number;
-  bevelThickness?: number;
-  curveSegments?: number;
-  extrusionDepth: number;
-  lightIntensity: number;
-  /** Lighting: azimuth 0–360, elevation 0–90 */
-  lightAzimuth: number;
-  lightElevation: number;
-  lightIntensityFromLighting: number;
-  ambientIntensity: number;
-  /** Lighting for extrusion (sides) only */
-  extrusionLightAzimuth?: number;
-  extrusionLightElevation?: number;
-  extrusionLightAmbient?: number;
-  /** Filters: 0–1, drive material and bevel */
-  filtersShine: number;
-  filtersMetallic: number;
-  edgeRoundness: number;
-  /** Shadow: 0 = off */
-  shadowOpacity: number;
-  /** Extrusion shear angle in degrees (-45 to 45). Shifts the back of the extrusion sideways so the sides are visible from the front. Positive = back shifts right. */
-  extrusionAngle?: number;
-  /** WebGL environment HDR path (e.g. /hdr/file.hdr). */
-  environmentPath: string;
-  /** When set > 0, front face uses MeshPhysicalMaterial with clearcoat. */
-  frontClearcoat?: number;
-  frontClearcoatRoughness?: number;
-  frontMetalness?: number;
-  frontRoughness?: number;
-  frontEnvMapIntensity?: number;
-  /** When true, extrusion is colorless/translucent and reflects environment (glossy glass). */
-  extrusionGlass?: boolean;
-  /** Front face texture: enabled. */
-  frontTextureEnabled?: boolean;
-  /** Front face texture preset id or custom URL. */
-  frontTextureId?: string;
-  /** User-uploaded front texture URL. Overrides frontTextureId when set. */
-  customFrontTextureUrl?: string | null;
-  /** PBR: roughness map URL (PNG/EXR). */
-  customFrontTextureRoughnessUrl?: string | null;
-  /** PBR: normal map URL (PNG/EXR). */
-  customFrontTextureNormalUrl?: string | null;
-  /** PBR: metalness map URL (PNG/EXR). */
-  customFrontTextureMetalnessUrl?: string | null;
-  /** Front normal strength multiplier (0–3). */
-  frontNormalStrength?: number;
-  /** Front texture visibility 0–1. */
-  textureIntensity?: number;
-  /** Roughness map strength 0–1 (front face). */
-  textureRoughnessIntensity?: number;
-  /** Front texture repeat U. */
-  textureRepeatX?: number;
-  /** Front texture repeat V. */
-  textureRepeatY?: number;
-  /** User-uploaded font (TTF/OTF parsed). When set, used instead of typeface for 3D text. */
-  customFont?: OpenTypeFont | null;
-  onReady?: (api: { toDataURL: (scale?: number) => string }) => void;
-}
-
-const fontCache = new Map<string, THREE.Font>();
-
-function loadFont(fontFamily: string): Promise<THREE.Font> {
-  const url = getTypefaceUrl(fontFamily);
-  const cached = fontCache.get(url);
-  if (cached) return Promise.resolve(cached);
-  return new Promise((resolve, reject) => {
-    const loader = new FontLoader();
-    loader.load(
-      url,
-      (font) => {
-        fontCache.set(url, font);
-        resolve(font);
-      },
-      undefined,
-      reject
-    );
-  });
-}
+export type { ThreeTextRendererProps };
 
 const DEG2RAD = Math.PI / 180;
-
-const FRONT_NORMAL_SCALE = 0.35;
-
-function setTextureRepeat(tex: THREE.Texture, x: number, y: number): void {
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(Math.max(0.1, x), Math.max(0.1, y));
-}
-
-function ensureGeometryUVs(geometry: THREE.BufferGeometry): void {
-  if (geometry.attributes.uv) return;
-  const pos = geometry.attributes.position;
-  if (!pos) return;
-  const count = pos.count;
-  const box = new THREE.Box3().setFromBufferAttribute(pos);
-  const size = new THREE.Vector3();
-  box.getSize(size);
-  const uv = new Float32Array(count * 2);
-  const minX = box.min.x;
-  const minY = box.min.y;
-  for (let i = 0; i < count; i++) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    uv[i * 2] = size.x > 0 ? (x - minX) / size.x : 0;
-    uv[i * 2 + 1] = size.y > 0 ? (y - minY) / size.y : 0;
-  }
-  geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-}
-
 export const ThreeTextRenderer = memo(function ThreeTextRenderer({
   content,
   fontFamily,
   fontSize,
+  letterSpacing = 0,
   frontColor,
   extrusionColor,
   metalness,
@@ -242,6 +59,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
   textureRoughnessIntensity = 1,
   textureRepeatX = 2,
   textureRepeatY = 2,
+  inflate = 0,
   customFont,
   onReady,
 }: ThreeTextRendererProps) {
@@ -269,8 +87,13 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
   const [fontLoaded, setFontLoaded] = useState(false);
 
   const size = Math.max(0.1, fontSize * 0.012);
-  const depth = Math.max(0.1, extrusionDepth * 0.5);
-  const effectiveBevelSize = Math.max(0.02, Math.min(0.35, bevelSize + edgeRoundness * 0.15));
+  const inf = Math.max(0, Math.min(1, inflate));
+  const rawDepth = extrusionDepth * 0.5;
+  const depth = inf > 0
+    ? Math.max(0.01, rawDepth * (1 - inf * 0.97))
+    : Math.max(0.01, rawDepth);
+  const maxBevelSize = 0.35 + inf * 0.25;
+  const effectiveBevelSize = Math.max(0.02, Math.min(maxBevelSize, bevelSize + edgeRoundness * 0.15 + inf * 0.1));
   const effectiveMetalness = Math.min(1, metalness * (0.3 + 0.7 * filtersMetallic));
   const effectiveRoughness = Math.max(0.05, Math.min(1, roughness * (1.2 - filtersShine * 0.5)));
 
@@ -389,234 +212,66 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
     controls.update();
     controlsRef.current = controls;
 
-    const useGlossyFront = frontClearcoat != null && frontClearcoat > 0;
-
-    const sideMaterial = new THREE.MeshPhysicalMaterial(
-      extrusionGlass
-        ? {
-            transparent: true,
-            opacity: 0.45,
-            color: 0xffffff,
-            metalness: 1,
-            roughness: 0.1,
-            clearcoat: 1,
-            clearcoatRoughness: 0.08,
-            envMapIntensity: 2.5,
-          }
-        : {
-            color: extrusionColor,
-            metalness: effectiveMetalness,
-            roughness: effectiveRoughness,
-            clearcoat: 1,
-            clearcoatRoughness: 0.1,
-            envMapIntensity: 2,
-          }
-    );
-
-    let geometry: THREE.BufferGeometry;
-    if (customFont) {
-      const scale = size / Math.max(1, fontSize);
-      const shapes = generateShapesFromText(content, customFont, fontSize, {
-        scale,
-        flipY: (customFont.tables?.head?.yMax ?? 1024) * scale,
-      });
-      if (shapes.length === 0) return;
-      const customDepth = depth * 0.35;
-      const customBevelSize = effectiveBevelSize * 0.5;
-      const customBevelThickness = Math.min(customDepth * 0.5, bevelThickness * 0.25);
-      geometry = new THREE.ExtrudeGeometry(shapes, {
-        depth: customDepth,
-        bevelEnabled: true,
-        bevelThickness: customBevelThickness,
-        bevelSize: customBevelSize,
-        bevelSegments,
-        curveSegments,
-      });
-      geometry.computeBoundingBox();
-      const box = geometry.boundingBox!;
-      const center = new THREE.Vector3();
-      box.getCenter(center);
-      geometry.translate(-center.x, -center.y, -center.z);
-    } else {
-      const typefaceUrl = getTypefaceUrl(fontFamily);
-      let font = fontCache.get(typefaceUrl);
-      if (!font) font = fontCache.get(getTypefaceUrl('Arial Black, sans-serif'));
-      if (!font) return;
-      geometry = new TextGeometry(content, {
-        font,
-        size,
-        depth,
-        curveSegments,
-        bevelEnabled: true,
-        bevelThickness: Math.min(depth * 0.6, bevelThickness),
-        bevelSize: effectiveBevelSize,
-        bevelSegments,
-      });
-      geometry.computeBoundingBox();
-      const box = geometry.boundingBox!;
-      const center = new THREE.Vector3();
-      box.getCenter(center);
-      geometry.translate(-center.x, -center.y, -center.z);
-    }
-
-    // Shear extrusion sideways so the back shifts and sides are visible when viewed straight on
-    if (extrusionAngle !== 0) {
-      const pos = geometry.attributes.position;
-      const shearX = 0.5 * Math.tan(extrusionAngle * DEG2RAD);
-      for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i);
-        const z = pos.getZ(i);
-        pos.setX(i, x + shearX * z);
-      }
-      pos.needsUpdate = true;
-      geometry.computeBoundingBox();
-      const boxAfter = geometry.boundingBox!;
-      const centerAfter = new THREE.Vector3();
-      boxAfter.getCenter(centerAfter);
-      geometry.translate(-centerAfter.x, -centerAfter.y, -centerAfter.z);
-    }
-
-    ensureGeometryUVs(geometry);
-    geometry.computeBoundingBox();
-
     let cancelled = false;
-    (async () => {
-      let frontMaterial: THREE.Material;
-      const textureSource = customFrontTextureUrl || frontTextureId;
-      const useTexture = frontTextureEnabled && !!textureSource;
-      const usePbrSet =
-        !!customFrontTextureUrl &&
-        (!!customFrontTextureRoughnessUrl ||
-          !!customFrontTextureNormalUrl ||
-          !!customFrontTextureMetalnessUrl);
-      if (useTexture) {
-        const loaded = usePbrSet
-          ? await loadFrontTexturesFromSet(
-              customFrontTextureUrl,
-              customFrontTextureRoughnessUrl ?? undefined,
-              customFrontTextureNormalUrl ?? undefined,
-              customFrontTextureMetalnessUrl ?? undefined
-            )
-          : await loadFrontTextures(textureSource);
-        if (cancelled) {
-          geometry.dispose();
-          sideMaterial.dispose();
-          return;
-        }
-        if (loaded) {
-        loadedTexturesRef.current = {
-          map: loaded.map,
-          roughnessMap: loaded.roughnessMap,
-          normalMap: loaded.normalMap,
-          metalnessMap: loaded.metalnessMap,
-        };
-        const blendedMap = blendMapWithIntensity(loaded.map, Math.max(0, Math.min(1, textureIntensity)));
-        setTextureRepeat(blendedMap, textureRepeatX, textureRepeatY);
-        let roughnessMapForMat: THREE.Texture | undefined;
-        if (loaded.roughnessMap) {
-          const rInt = Math.max(0, Math.min(1, textureRoughnessIntensity ?? 1));
-          roughnessMapForMat =
-            rInt >= 0.998
-              ? loaded.roughnessMap
-              : (blendRoughnessMapWithIntensity(loaded.roughnessMap, rInt) as THREE.Texture);
-          setTextureRepeat(roughnessMapForMat, textureRepeatX, textureRepeatY);
-        }
-        if (loaded.normalMap) {
-          setTextureRepeat(loaded.normalMap, textureRepeatX, textureRepeatY);
-        }
-        if (loaded.metalnessMap) {
-          setTextureRepeat(loaded.metalnessMap, textureRepeatX, textureRepeatY);
-        }
-        const baseMetalness = useGlossyFront ? (frontMetalness ?? 0.6) : 0;
-        const baseRoughness = useGlossyFront ? (frontRoughness ?? 0.2) : 0.35;
-        // In three.js, *Map values multiply the scalar. Use 1.0 so maps drive the final value.
-        const effectiveFrontMetalness = loaded.metalnessMap ? 1 : baseMetalness;
-        const effectiveFrontRoughness = roughnessMapForMat ? 1 : baseRoughness;
+    const ac = new AbortController();
 
-        const normalStrength = Math.max(0, Math.min(10, frontNormalStrength ?? 1));
-        const normalScaleVal = (loaded.normalMap ? 1 : FRONT_NORMAL_SCALE) * normalStrength;
-        const normalScaleVec = new THREE.Vector2(normalScaleVal, normalScaleVal);
-        const basePhys: Record<string, unknown> = {
-          color: frontColor,
-          metalness: effectiveFrontMetalness,
-          roughness: effectiveFrontRoughness,
-          map: blendedMap,
-          normalScale: normalScaleVec,
-          ...(roughnessMapForMat ? { roughnessMap: roughnessMapForMat } : {}),
-          ...(loaded.normalMap
-            ? {
-                normalMap: loaded.normalMap,
-                normalMapType: THREE.TangentSpaceNormalMap,
-              }
-            : {}),
-          ...(loaded.metalnessMap ? { metalnessMap: loaded.metalnessMap } : {}),
-        };
-        if (useGlossyFront) {
-          basePhys.clearcoat = frontClearcoat ?? 1;
-          basePhys.clearcoatRoughness = frontClearcoatRoughness ?? 0.1;
-          basePhys.envMapIntensity = frontEnvMapIntensity ?? 2;
-          if (loaded.normalMap) {
-            basePhys.clearcoatNormalMap = loaded.normalMap;
-            basePhys.clearcoatNormalScale = normalScaleVec.clone();
-          }
-        }
-        frontMaterial = new THREE.MeshPhysicalMaterial(basePhys as THREE.MeshPhysicalMaterialParameters);
-      } else {
-        loadedTexturesRef.current = null;
-        frontMaterial = useGlossyFront
-          ? new THREE.MeshPhysicalMaterial({
-              color: frontColor,
-              metalness: frontMetalness ?? 0.6,
-              roughness: frontRoughness ?? 0.2,
-              clearcoat: frontClearcoat ?? 1,
-              clearcoatRoughness: frontClearcoatRoughness ?? 0.1,
-              envMapIntensity: frontEnvMapIntensity ?? 2,
-            })
-          : new THREE.MeshStandardMaterial({
-              color: frontColor,
-              metalness: 0,
-              roughness: 0.35,
-            });
-      }
-    } else {
-      loadedTexturesRef.current = null;
-      frontMaterial = useGlossyFront
-        ? new THREE.MeshPhysicalMaterial({
-            color: frontColor,
-            metalness: frontMetalness ?? 0.6,
-            roughness: frontRoughness ?? 0.2,
-            clearcoat: frontClearcoat ?? 1,
-            clearcoatRoughness: frontClearcoatRoughness ?? 0.1,
-            envMapIntensity: frontEnvMapIntensity ?? 2,
-          })
-        : new THREE.MeshStandardMaterial({
-            color: frontColor,
-            metalness: 0,
-            roughness: 0.35,
-          });
-    }
+    void (async () => {
+      const built = await buildThreeTextMeshGroup(
+        {
+          content,
+          fontFamily,
+          fontSize,
+          letterSpacing,
+          frontColor,
+          extrusionColor,
+          metalness,
+          roughness,
+          bevelSize,
+          bevelSegments,
+          bevelThickness,
+          curveSegments,
+          extrusionDepth,
+          extrusionAngle,
+          lightIntensity,
+          lightAzimuth,
+          lightElevation,
+          lightIntensityFromLighting,
+          ambientIntensity,
+          extrusionLightAzimuth,
+          extrusionLightElevation,
+          extrusionLightAmbient,
+          filtersShine,
+          filtersMetallic,
+          edgeRoundness,
+          shadowOpacity,
+          environmentPath,
+          frontClearcoat,
+          frontClearcoatRoughness,
+          frontMetalness,
+          frontRoughness,
+          frontEnvMapIntensity,
+          extrusionGlass,
+          frontTextureEnabled,
+          frontTextureId,
+          customFrontTextureUrl,
+          customFrontTextureRoughnessUrl,
+          customFrontTextureNormalUrl,
+          customFrontTextureMetalnessUrl,
+          frontNormalStrength,
+          textureIntensity,
+          textureRoughnessIntensity,
+          textureRepeatX,
+          textureRepeatY,
+          inflate,
+          customFont,
+        },
+        { signal: ac.signal }
+      );
+      if (cancelled || !built) return;
 
-      if (cancelled) {
-        geometry.dispose();
-        sideMaterial.dispose();
-        return;
-      }
-      const materials = [frontMaterial, sideMaterial, frontMaterial];
-      const mesh = new THREE.Mesh(geometry, materials);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      const meshGroup = createMeshesFromMultiMaterialMesh(mesh) as THREE.Group;
-      geometry.dispose();
-      meshGroup.children[0].layers.set(0);
-      meshGroup.children[1].layers.set(1);
-      if (meshGroup.children[2]) meshGroup.children[2].layers.set(0);
-      meshGroup.children.forEach((child) => {
-        const m = child as THREE.Mesh;
-        m.castShadow = true;
-        m.receiveShadow = true;
-      });
-      scene.add(meshGroup);
-      meshGroupRef.current = meshGroup;
+      scene.add(built.group);
+      meshGroupRef.current = built.group;
+      loadedTexturesRef.current = built.loadedTextures;
 
       camera.layers.enable(1);
 
@@ -724,6 +379,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
 
     return () => {
       cancelled = true;
+      ac.abort();
       const cam = cameraRef.current;
       const ctrl = controlsRef.current;
       if (cam && ctrl) {
@@ -755,9 +411,12 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
     fontFamily,
     content,
     fontSize,
-    size,
-    depth,
-    effectiveBevelSize,
+    letterSpacing,
+    extrusionDepth,
+    metalness,
+    roughness,
+    bevelSize,
+    edgeRoundness,
     bevelSegments,
     bevelThickness,
     curveSegments,
@@ -776,9 +435,11 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
     customFrontTextureRoughnessUrl,
     customFrontTextureNormalUrl,
     customFrontTextureMetalnessUrl,
+    inflate,
     customFont,
     onReady,
     dispose,
+    // Lighting, HDRI, shadow: updated via dedicated effects / scene.environment — not used inside buildThreeTextMeshGroup.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- texture tuning params updated in-place below
   ]);
 
@@ -809,7 +470,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
     mat.needsUpdate = true;
   }, [textureRepeatX, textureRepeatY, frontNormalStrength]);
 
-  // CPU-heavy params (intensity blending) — debounced to avoid lag while dragging sliders.
+  // CPU-heavy params (intensity blending) â€” debounced to avoid lag while dragging sliders.
   const texIntensityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (texIntensityTimerRef.current) clearTimeout(texIntensityTimerRef.current);
@@ -908,7 +569,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
   if (!customFont && !fontLoaded) {
     return (
       <div className="flex h-full min-h-[200px] w-full items-center justify-center text-zinc-500">
-        Loading 3D font…
+        Loading 3D fontâ€¦
       </div>
     );
   }

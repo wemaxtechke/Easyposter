@@ -1,4 +1,5 @@
 import { memo, useState, useEffect, useRef, useCallback, type CSSProperties } from 'react';
+import { useLocation } from 'react-router-dom';
 import opentype from 'opentype.js';
 import { useEditorStore } from '../../store/editorStore';
 import { renderMetallicText } from '../../core/renderer/metallicTextRenderer';
@@ -16,6 +17,10 @@ import { apiFetch } from '../../lib/api';
 import { useAuthStore } from '../../auth/authStore';
 
 const EMPTY_FONT_IDS: string[] = [];
+
+function hex6OrDefault(value: string | undefined, fallback: string): string {
+  return value && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
+}
 
 export interface SavedFontEntry {
   id: string;
@@ -91,7 +96,27 @@ const Slider = memo(function Slider({
   );
 });
 
-export const RightSidebar = memo(function RightSidebar() {
+export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false }: { force3dLayerUI?: boolean }) {
+  const location = useLocation();
+  const is3dRoute = force3dLayerUI || location.pathname === '/3d';
+  const activeLayer = useEditorStore((s) => {
+    const layers = s.textLayers ?? [];
+    const id = s.activeTextLayerId ?? layers[0]?.id;
+    return layers.find((l) => l.id === id) ?? null;
+  });
+  const updateActiveLayerTransform = useEditorStore((s) => s.updateActiveLayerTransform);
+  const setLayerColors = useEditorStore((s) => s.setLayerColors);
+  const [layerColorHexDraft, setLayerColorHexDraft] = useState({
+    front: '#ffffff',
+    extrusion: '#d4af37',
+  });
+  useEffect(() => {
+    if (!activeLayer) return;
+    setLayerColorHexDraft({
+      front: hex6OrDefault(activeLayer.frontColor, '#ffffff'),
+      extrusion: hex6OrDefault(activeLayer.extrusionColor, '#d4af37'),
+    });
+  }, [activeLayer?.id, activeLayer?.frontColor, activeLayer?.extrusionColor]);
   const isAdmin = useAuthStore((s) => s.isAdmin());
   const [exportingPng, setExportingPng] = useState(false);
   const text = useEditorStore((s) => s.text);
@@ -107,10 +132,15 @@ export const RightSidebar = memo(function RightSidebar() {
   const state = useEditorStore.getState();
   const renderEngine = useEditorStore((s) => s.renderEngine);
   const webglExportAPI = useEditorStore((s) => s.webglExportAPI);
+  const undo = useEditorStore((s) => s.undo);
+  const redo = useEditorStore((s) => s.redo);
+  const editorHistory = useEditorStore((s) => s.editorHistory);
+  const editorHistoryIndex = useEditorStore((s) => s.editorHistoryIndex);
   const environmentId = useEditorStore((s) => s.environmentId ?? 'studio');
   const hdrPresets = useEditorStore((s) => s.hdrPresets);
   const customFontIds = useEditorStore((s) => s.customFontIds ?? EMPTY_FONT_IDS);
   const selectedCustomFontId = useEditorStore((s) => s.selectedCustomFontId);
+  const inflate = useEditorStore((s) => s.inflate ?? 0);
   const frontTextureEnabled = useEditorStore((s) => s.frontTextureEnabled ?? false);
   const frontTextureId = useEditorStore((s) => s.frontTextureId ?? '');
   const textureIntensity = useEditorStore((s) => s.textureIntensity ?? 0.5);
@@ -574,6 +604,8 @@ export const RightSidebar = memo(function RightSidebar() {
   };
 
   const localCustomFontIds = customFontIds.filter((id) => id.startsWith('custom-'));
+  const canUndo = editorHistoryIndex > 0;
+  const canRedo = editorHistoryIndex < editorHistory.length - 1;
 
   const customFontTriggerLabel = (() => {
     if (!selectedCustomFontId) return 'Default (builtin font)';
@@ -599,6 +631,86 @@ export const RightSidebar = memo(function RightSidebar() {
             label: 'Text',
             children: (
               <div className="flex flex-col gap-3 py-3">
+                {is3dRoute && renderEngine === 'webgl' && activeLayer && (
+                  <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900/40">
+                    <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                      Layer position and scale
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(
+                        [
+                          ['X', 'positionX'],
+                          ['Y', 'positionY'],
+                          ['Z', 'positionZ'],
+                          ['Scale', 'scale'],
+                        ] as const
+                      ).map(([label, key]) => (
+                        <label key={key} className="flex flex-col gap-0.5 text-xs">
+                          <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
+                          <input
+                            type="number"
+                            step={key === 'scale' ? '0.05' : '0.1'}
+                            value={activeLayer[key]}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value);
+                              if (Number.isNaN(v)) return;
+                              if (key === 'scale') updateActiveLayerTransform({ scale: Math.max(0.05, v) });
+                              else if (key === 'positionX') updateActiveLayerTransform({ positionX: v });
+                              else if (key === 'positionY') updateActiveLayerTransform({ positionY: v });
+                              else updateActiveLayerTransform({ positionZ: v });
+                            }}
+                            className="w-full rounded border border-zinc-200 bg-white px-2 py-1 font-mono text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex flex-col gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-600">
+                      <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                        Layer colors
+                      </span>
+                      <p className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-500">
+                        Front face and extrusion for the selected layer.
+                      </p>
+                      {(
+                        [
+                          ['Front', 'frontColor' as const, 'front' as const],
+                          ['Extrusion', 'extrusionColor' as const, 'extrusion' as const],
+                        ] as const
+                      ).map(([label, key, draftKey]) => {
+                        const fallback = key === 'frontColor' ? '#ffffff' : '#d4af37';
+                        const pickerHex = hex6OrDefault(activeLayer[key], fallback);
+                        return (
+                          <label key={key} className="flex flex-col gap-1 text-xs">
+                            <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={pickerHex}
+                                onChange={(e) => setLayerColors({ [key]: e.target.value })}
+                                className="h-9 w-12 cursor-pointer rounded border border-zinc-200 bg-white p-0.5 dark:border-zinc-600 dark:bg-zinc-800"
+                                aria-label={`${label} color`}
+                              />
+                              <input
+                                type="text"
+                                value={layerColorHexDraft[draftKey]}
+                                spellCheck={false}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setLayerColorHexDraft((d) => ({ ...d, [draftKey]: v }));
+                                  const t = v.trim();
+                                  if (/^#[0-9a-fA-F]{6}$/.test(t)) {
+                                    setLayerColors({ [key]: t });
+                                  }
+                                }}
+                                className="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-2 py-1.5 font-mono text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                              />
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">
                     Content
@@ -754,6 +866,14 @@ export const RightSidebar = memo(function RightSidebar() {
                   min={24}
                   max={120}
                   onChange={(v) => setText({ fontSize: v })}
+                />
+                <Slider
+                  label="Letter spacing (px)"
+                  value={text.letterSpacing ?? 0}
+                  min={-8}
+                  max={32}
+                  step={0.5}
+                  onChange={(v) => setText({ letterSpacing: v })}
                 />
                 <div>
                   <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">
@@ -1207,7 +1327,7 @@ export const RightSidebar = memo(function RightSidebar() {
                 <Slider
                   label="Depth"
                   value={extrusion.depth}
-                  min={5}
+                  min={0}
                   max={50}
                   onChange={(v) => setExtrusion({ depth: v })}
                 />
@@ -1292,6 +1412,18 @@ export const RightSidebar = memo(function RightSidebar() {
                   step={0.05}
                   onChange={(v) => setFilters({ edgeRoundness: v })}
                 />
+                {renderEngine === 'webgl' && (
+                  <>
+                    <Slider
+                      label="Inflate (pillow)"
+                      value={inflate}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      onChange={(v) => setState({ inflate: v })}
+                    />
+                  </>
+                )}
               </div>
             ),
           },
@@ -1300,6 +1432,24 @@ export const RightSidebar = memo(function RightSidebar() {
             label: 'Export',
             children: (
               <div className="flex flex-col gap-2 py-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={undo}
+                    disabled={!canUndo}
+                    className="rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                  >
+                    Undo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={redo}
+                    disabled={!canRedo}
+                    className="rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                  >
+                    Redo
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={handleExportWebP}

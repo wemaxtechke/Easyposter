@@ -3,6 +3,8 @@ export interface TextSettings {
   fontFamily: string;
   fontSize: number;
   fontWeight: string;
+  /** Extra horizontal space between glyphs in pixels (CSS-like; 0 = font default). */
+  letterSpacing?: number;
 }
 
 export interface ExtrusionSettings {
@@ -132,19 +134,88 @@ export interface EditorState {
   textureRoughnessIntensity?: number;
   /** WebGL preset: extrusion is colorless/translucent and reflects environment (glossy glass look). */
   extrusionGlass?: boolean;
+  /** Inflate/pillow effect 0–1. At 1, depth shrinks to near-zero and bevel dominates, creating a puffy dome. */
+  inflate?: number;
   /** Lighting for extrusion (sides) only. Azimuth, elevation, ambient. */
   extrusionLighting?: ExtrusionLightingSettings;
   /** IDs of user-uploaded fonts (for dropdown). */
   customFontIds?: string[];
   /** ID of user-uploaded font to use in WebGL. Null = use preset font. */
   selectedCustomFontId?: string | null;
+
+  /** Multi-layer 3D composition (standalone `/3d` editor). Always ≥1 layer when present. */
+  textLayers?: TextLayer3D[];
+  activeTextLayerId?: string | null;
 }
+
+/** Max 3D text layers in one WebGL scene (standalone editor). */
+export const MAX_TEXT_LAYERS = 6;
+
+export interface TextLayerTransform {
+  positionX: number;
+  positionY: number;
+  positionZ: number;
+  /** Uniform scale around layer origin. */
+  scale: number;
+}
+
+/** Per-layer 3D text: content/style + transform. Scene lighting/HDRI stay on `EditorState`. */
+export type TextLayer3D = TextLayerTransform & {
+  id: string;
+} & EditorPerLayerFields;
+
+/** Fields stored per text layer (mirrors root `EditorState` slice for the active layer). */
+export type EditorPerLayerFields = Pick<
+  EditorState,
+  | 'text'
+  | 'extrusion'
+  | 'filters'
+  | 'gradientStops'
+  | 'gradientType'
+  | 'extrusionGradientStops'
+  | 'gradientAngle'
+  | 'shadowBlur'
+  | 'shadowOffsetX'
+  | 'shadowOffsetY'
+  | 'shadowOpacity'
+  | 'reflectionStrength'
+  | 'frontColor'
+  | 'extrusionColor'
+  | 'metalness'
+  | 'roughness'
+  | 'bevelSize'
+  | 'bevelSegments'
+  | 'bevelThickness'
+  | 'curveSegments'
+  | 'extrusionDepth'
+  | 'frontClearcoat'
+  | 'frontClearcoatRoughness'
+  | 'frontMetalness'
+  | 'frontRoughness'
+  | 'frontEnvMapIntensity'
+  | 'frontTextureEnabled'
+  | 'frontTextureId'
+  | 'textureIntensity'
+  | 'textureRepeatX'
+  | 'textureRepeatY'
+  | 'customFrontTextureUrl'
+  | 'customFrontTextureRoughnessUrl'
+  | 'customFrontTextureNormalUrl'
+  | 'customFrontTextureMetalnessUrl'
+  | 'customFrontTextureDispUrl'
+  | 'frontNormalStrength'
+  | 'textureRoughnessIntensity'
+  | 'extrusionGlass'
+  | 'inflate'
+  | 'selectedCustomFontId'
+>;
 
 export const DEFAULT_TEXT: TextSettings = {
   content: '3D Text',
   fontFamily: 'Arial Black, sans-serif',
   fontSize: 72,
   fontWeight: '900',
+  letterSpacing: 0,
 };
 
 export const DEFAULT_EXTRUSION: ExtrusionSettings = {
