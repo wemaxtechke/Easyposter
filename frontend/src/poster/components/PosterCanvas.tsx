@@ -910,20 +910,43 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     return () => el.removeEventListener('wheel', handler, true);
   }, [viewportWidth, viewportHeight, canvasWidth, canvasHeight]);
 
-  // Two-finger pinch zoom on touch devices; prevents browser/page zoom hijacking canvas gestures.
+  // Two-finger pinch zoom on touch devices.
+  // Disables Fabric.js interaction during the gesture so objects don't get dragged.
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
 
-    const distance = (t1: Touch, t2: Touch) => {
-      const dx = t2.clientX - t1.clientX;
-      const dy = t2.clientY - t1.clientY;
-      return Math.hypot(dx, dy);
+    const distance = (t1: Touch, t2: Touch) =>
+      Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+
+    const disableFabric = () => {
+      const c = canvasRef.current;
+      if (!c) return;
+      c.selection = false;
+      c.forEachObject((o) => { o.set('evented', false); o.set('selectable', false); });
+      c.discardActiveObject();
+      c.requestRenderAll();
+    };
+
+    const enableFabric = () => {
+      const c = canvasRef.current;
+      if (!c) return;
+      c.selection = true;
+      const els = usePosterStore.getState().elements;
+      c.forEachObject((o) => {
+        const id = (o as { data?: { posterId?: string } }).data?.posterId;
+        const el = id ? els.find((e) => e.id === id) : null;
+        const locked = !!el?.locked;
+        o.set('evented', !locked);
+        o.set('selectable', !locked);
+      });
+      c.requestRenderAll();
     };
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length !== 2) return;
       e.preventDefault();
+      disableFabric();
       const [t1, t2] = [e.touches[0], e.touches[1]];
       const rect = el.getBoundingClientRect();
       const midX = (t1.clientX + t2.clientX) / 2 - rect.left + el.scrollLeft;
@@ -953,21 +976,35 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       const fit = Math.min(viewportWidth / canvasWidth, viewportHeight / canvasHeight);
       const s0 = fit * base.startZoom;
       const s1 = fit * z1;
-      const sb = viewportWidth < 768 ? 0 : SBUF;
+      const compact = viewportWidth < 768;
+      const sb = compact ? 0 : SBUF;
 
-      const cx = (base.startMidX - base.startPanX - sb) / s0;
-      const cy = (base.startMidY - base.startPanY - sb) / s0;
-      const panXNew = midX - cx * s1 - sb;
-      const panYNew = midY - cy * s1 - sb;
-
-      usePosterStore.setState({
-        canvasZoom: z1,
-        canvasPan: { x: panXNew, y: panYNew },
-      });
+      if (compact) {
+        // On mobile just update zoom; re-center is handled by render math
+        const sw = canvasWidth * s1;
+        const sh = canvasHeight * s1;
+        usePosterStore.setState({
+          canvasZoom: z1,
+          canvasPan: {
+            x: Math.max(0, (viewportWidth - sw) / 2),
+            y: Math.max(0, (viewportHeight - sh) / 2),
+          },
+        });
+      } else {
+        const cx = (base.startMidX - base.startPanX - sb) / s0;
+        const cy = (base.startMidY - base.startPanY - sb) / s0;
+        usePosterStore.setState({
+          canvasZoom: z1,
+          canvasPan: { x: midX - cx * s1 - sb, y: midY - cy * s1 - sb },
+        });
+      }
     };
 
     const onTouchEnd = () => {
-      if (pinchRef.current) pinchRef.current = null;
+      if (pinchRef.current) {
+        pinchRef.current = null;
+        enableFabric();
+      }
     };
 
     el.addEventListener('touchstart', onTouchStart, { passive: false });

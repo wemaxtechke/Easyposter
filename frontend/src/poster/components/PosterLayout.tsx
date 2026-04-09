@@ -476,7 +476,7 @@ export function PosterLayout() {
   );
 
   return (
-    <div className="flex h-screen w-full flex-col bg-zinc-100 dark:bg-zinc-950">
+    <div className="flex h-dvh w-full flex-col bg-zinc-100 dark:bg-zinc-950">
       {readOnly && (
         <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
           <span className="hidden sm:inline">Explore the poster editor. Login to edit, download, and use AI features.</span>
@@ -592,7 +592,7 @@ export function PosterLayout() {
           <PosterLeftSidebar readOnly={readOnly} onOpen3DModal={(m) => setThreeTextModal(m)} />
         </aside>
 
-        <main ref={mainRef} className="flex min-w-0 flex-1 overflow-hidden p-1 pb-10 sm:p-3 lg:overflow-auto lg:p-6 lg:pb-6">
+        <main ref={mainRef} className="flex min-w-0 flex-1 overflow-hidden p-1 pb-9 sm:p-3 sm:pb-9 lg:overflow-auto lg:p-6 lg:pb-6">
           <PosterCanvas readOnly={readOnly} viewportWidth={viewportSize.width} viewportHeight={viewportSize.height} />
         </main>
 
