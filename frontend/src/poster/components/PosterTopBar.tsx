@@ -160,7 +160,8 @@ export function PosterTopBar({
       canvasHeight: 600,
       canvasBackground: { type: 'solid', color: '#ffffff' },
     });
-  }, [loadProject]);
+    onOpenCanvasSize?.();
+  }, [loadProject, onOpenCanvasSize]);
 
   const guard = useCallback(
     (fn: () => void) => () => {
@@ -241,7 +242,7 @@ export function PosterTopBar({
       <div className="hidden h-4 w-px bg-zinc-200 dark:bg-zinc-700 md:block" />
       <button
         onClick={guard(handleNewProject)}
-        className="hidden rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 md:block"
+        className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
         title="Start a new blank project"
       >
         New

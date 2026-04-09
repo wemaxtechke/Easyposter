@@ -94,6 +94,49 @@ export async function suggestPosterFields(params: {
   return rest as Record<string, string> & { templateId: string };
 }
 
+/* ───────── Conversational Wizard API ───────── */
+
+export interface WizardIdentifyResponse {
+  message: string;
+  category: string | null;
+}
+
+export async function wizardIdentify(params: {
+  messages: ChatMessage[];
+  categories: { value: string; label: string }[];
+}): Promise<WizardIdentifyResponse> {
+  const res = await apiFetch('/api/poster-ai/wizard-identify', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(params),
+  });
+  const data = (await res.json().catch(() => ({}))) as WizardIdentifyResponse & { error?: string; message?: string };
+  if (!res.ok) throw new Error(data.message || data.error || `Request failed (${res.status})`);
+  return { message: data.message, category: data.category ?? null };
+}
+
+export interface WizardGatherFieldsResponse {
+  message: string;
+  fields: Record<string, string>;
+  complete: boolean;
+}
+
+export async function wizardGatherFields(params: {
+  messages: ChatMessage[];
+  templateName: string;
+  fieldKeys: string[];
+  fieldLabels: Record<string, string>;
+}): Promise<WizardGatherFieldsResponse> {
+  const res = await apiFetch('/api/poster-ai/wizard-gather-fields', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(params),
+  });
+  const data = (await res.json().catch(() => ({}))) as WizardGatherFieldsResponse & { error?: string; message?: string };
+  if (!res.ok) throw new Error(data.message || data.error || `Request failed (${res.status})`);
+  return { message: data.message, fields: data.fields ?? {}, complete: Boolean(data.complete) };
+}
+
 export async function getPosterAiUsage(): Promise<PosterAiUsageResponse> {
   const res = await apiFetch('/api/poster-ai/usage');
   const data = (await res.json().catch(() => ({}))) as PosterAiUsageResponse & { error?: string };

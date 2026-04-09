@@ -324,6 +324,157 @@ export async function suggestPosterFields(req, res) {
   }
 }
 
+/* ───────────── Conversational Wizard endpoints ───────────── */
+
+const WIZARD_IDENTIFY_SYSTEM = `You are a polite, direct design assistant. A user wants to create a poster or flyer.
+
+Your task: understand what they need and identify the best category.
+
+Available categories (use the VALUE, not the label):
+{{categories}}
+
+Respond with ONLY a JSON object (no markdown, no fences):
+{
+  "message": "Your polite, direct response",
+  "category": "category_value_or_null"
+}
+
+STRICT RULES:
+- NEVER make up or assume names, people, events, or details the user has not mentioned.
+- NEVER add suggestions like "Pastor X would be great" or "This sounds like a wonderful event" — you know nothing about their context.
+- Be polite but direct. Acknowledge what the user said, then move forward.
+- If the user's request clearly matches a category, set category to that value.
+- If ambiguous, set category to null and ask ONE short clarifying question.
+- Keep messages short (1-2 sentences). No filler, no flattery, no assumptions.
+- Never say "JSON" or mention categories by their code names.`;
+
+const WIZARD_GATHER_SYSTEM = `You are a polite, direct design assistant helping fill in details for a poster template.
+
+The user chose a template called "{{templateName}}".
+The following fields need to be filled:
+{{fieldsDescription}}
+
+You are having a natural conversation to gather this information.
+
+Respond with ONLY a JSON object (no markdown, no fences):
+{
+  "message": "Your polite, direct response or follow-up question",
+  "fields": { "key": "extracted_value", ... },
+  "complete": true_or_false
+}
+
+STRICT RULES:
+- ONLY use information the user has explicitly provided. NEVER invent names, dates, venues, or any detail.
+- If the user has not mentioned something, leave the field as "" — do NOT guess or fill placeholder text.
+- Be polite but direct. Ask for missing info clearly without filler or flattery.
+- Ask for the most important missing fields first (1-2 at a time), not all at once.
+- Set complete=true only when ALL required text fields have non-empty values from the user.
+- Keep messages short (1-2 sentences). No assumptions, no suggestions about their content.
+- Never mention field keys or JSON — speak naturally.`;
+
+export async function wizardIdentify(req, res) {
+  if (!OPENAI_API_KEY) return res.status(503).json({ error: 'AI service not configured' });
+  const userId = req.userId;
+  if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+  const user = await User.findById(userId);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+  user.ensureTokenPeriod();
+  const limit = user.getTokenLimit();
+  if (user.plan !== 'pro' && user.tokensUsedThisPeriod >= limit) {
+    return res.status(402).json({ error: 'Token limit reached', message: 'Upgrade to Pro for more tokens.' });
+  }
+
+  const { messages = [], categories = [] } = req.body || {};
+  const catList = categories.map((c) => `${c.value} — "${c.label}"`).join('\n');
+  const systemPrompt = WIZARD_IDENTIFY_SYSTEM.replace('{{categories}}', catList);
+
+  const apiMessages = [
+    { role: 'system', content: systemPrompt },
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+  ];
+
+  try {
+    const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: apiMessages,
+      temperature: 0.5,
+      max_tokens: 512,
+    });
+    const raw = completion.choices[0]?.message?.content?.trim();
+    const totalTokens = completion.usage?.total_tokens ?? 0;
+    user.tokensUsedThisPeriod += totalTokens;
+    await user.save();
+
+    const parsed = parseJsonResponse(raw);
+    const message = typeof parsed?.message === 'string' ? parsed.message : raw || 'How can I help?';
+    const category = typeof parsed?.category === 'string' ? parsed.category : null;
+
+    return res.json({ message, category });
+  } catch (err) {
+    console.error('[wizard-identify]', err);
+    return res.status(500).json({ error: 'AI request failed', message: err?.message || 'Something went wrong' });
+  }
+}
+
+export async function wizardGatherFields(req, res) {
+  if (!OPENAI_API_KEY) return res.status(503).json({ error: 'AI service not configured' });
+  const userId = req.userId;
+  if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+  const user = await User.findById(userId);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+  user.ensureTokenPeriod();
+  const limit = user.getTokenLimit();
+  if (user.plan !== 'pro' && user.tokensUsedThisPeriod >= limit) {
+    return res.status(402).json({ error: 'Token limit reached', message: 'Upgrade to Pro for more tokens.' });
+  }
+
+  const { messages = [], templateName = '', fieldKeys = [], fieldLabels = {} } = req.body || {};
+  const fieldsDesc = fieldKeys
+    .map((k) => `- ${k}: "${fieldLabels[k] || k}"`)
+    .join('\n');
+  const systemPrompt = WIZARD_GATHER_SYSTEM
+    .replace('{{templateName}}', templateName)
+    .replace('{{fieldsDescription}}', fieldsDesc);
+
+  const apiMessages = [
+    { role: 'system', content: systemPrompt },
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+  ];
+
+  try {
+    const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: apiMessages,
+      temperature: 0.4,
+      max_tokens: 1024,
+    });
+    const raw = completion.choices[0]?.message?.content?.trim();
+    const totalTokens = completion.usage?.total_tokens ?? 0;
+    user.tokensUsedThisPeriod += totalTokens;
+    await user.save();
+
+    const parsed = parseJsonResponse(raw);
+    const message = typeof parsed?.message === 'string' ? parsed.message : raw || '';
+    const fields = parsed?.fields && typeof parsed.fields === 'object' ? parsed.fields : {};
+    const complete = Boolean(parsed?.complete);
+
+    // Normalize field values to strings
+    const cleanFields = {};
+    for (const k of fieldKeys) {
+      cleanFields[k] = fields[k] != null ? String(fields[k]) : '';
+    }
+
+    return res.json({ message, fields: cleanFields, complete });
+  } catch (err) {
+    console.error('[wizard-gather-fields]', err);
+    return res.status(500).json({ error: 'AI request failed', message: err?.message || 'Something went wrong' });
+  }
+}
+
 export async function posterAiUsage(req, res) {
   const userId = req.userId;
   if (!userId) {

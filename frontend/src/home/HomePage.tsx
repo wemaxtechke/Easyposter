@@ -296,6 +296,18 @@ export function HomePage() {
               Start Designing — Free
             </Link>
             <Link
+              to="/poster"
+              state={{ openAiWizard: true }}
+              className="w-full rounded-xl border border-accent-500 bg-accent-900/40 px-8 py-3.5 text-base font-semibold text-accent-200 shadow-lg transition-colors hover:bg-accent-800/60 sm:w-auto"
+            >
+              <span className="mr-1.5 inline-block">
+                <svg className="inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                </svg>
+              </span>
+              Create with AI
+            </Link>
+            <Link
               to="/poster/templates"
               className="w-full rounded-xl border border-zinc-600 px-8 py-3.5 text-base font-semibold text-zinc-200 transition-colors hover:bg-zinc-800 sm:w-auto"
             >

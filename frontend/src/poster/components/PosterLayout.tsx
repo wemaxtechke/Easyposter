@@ -62,15 +62,15 @@ export function PosterLayout() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  // Lock body scroll when mobile sidebar drawer is open
+  // Lock body scroll when mobile sidebar drawer or AI chat panel is open
   useEffect(() => {
     const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
     if (isDesktop) return;
-    if (!leftOpen) return;
+    if (!leftOpen && !aiChatOpen) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
-  }, [leftOpen]);
+  }, [leftOpen, aiChatOpen]);
 
   const selectedIds = usePosterStore((s) => s.selectedIds);
   const elements = usePosterStore((s) => s.elements);
@@ -188,6 +188,15 @@ export function PosterLayout() {
     navigate('/poster', { replace: true, state: {} });
   }, [location.state, loadProject, navigate]);
 
+  // Auto-open AI wizard if navigated from home page with openAiWizard flag
+  useEffect(() => {
+    const state = location.state as { openAiWizard?: boolean } | null;
+    if (state?.openAiWizard) {
+      setAiWizardOpen(true);
+      navigate('/poster', { replace: true, state: {} });
+    }
+  }, [location.state, navigate]);
+
   // Show canvas size modal when starting with empty canvas
   useEffect(() => {
     if (elements.length === 0) setShowCanvasSizeModal(true);
@@ -293,11 +302,15 @@ export function PosterLayout() {
           }
         }
       } else {
-        await savePosterProjectToMyCloud({
+        const created = await savePosterProjectToMyCloud({
           name: `Poster ${new Date().toLocaleString()}`,
           project: processed,
           thumbnail: thumb,
         });
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem('poster_edit_my_project_id', created.id);
+          sessionStorage.setItem('poster_edit_my_project_updated_at', created.updatedAt ?? '');
+        }
       }
 
       // Set baseline to current after successful save(s)

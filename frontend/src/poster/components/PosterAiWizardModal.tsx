@@ -1,19 +1,38 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePosterStore } from '../store/posterStore';
+import { useAuthStore } from '../../auth/authStore';
 import {
   POSTER_TEMPLATE_CATEGORIES,
-  DEFAULT_POSTER_PLACEHOLDER_KEYS,
   getTemplateFieldKeys,
+  getTemplateFieldLabel,
+  getTemplateFieldKind,
   isImageFieldKeyInTemplates,
-  unionTemplateFieldKeys,
   type PosterTemplateCategory,
+  type PosterTemplateDefinition,
 } from '../templateTypes';
 import { getPosterTemplatesForCategory, findPosterTemplateById } from '../posterTemplateList';
 import { instantiateTemplate } from '../templateMerge';
-import { suggestPosterFields } from '../services/posterAiApi';
+import {
+  wizardIdentify,
+  wizardGatherFields,
+  type ChatMessage,
+} from '../services/posterAiApi';
 import { getToken } from '../../lib/api';
 import { PosterTemplateFieldsEditor } from './PosterTemplateFieldsEditor';
 import { TemplateThumbnail } from './TemplateThumbnail';
+
+type Phase =
+  | 'chat'
+  | 'pick_template'
+  | 'gathering'
+  | 'confirm'
+  | 'generating';
+
+interface BubbleMsg {
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 interface PosterAiWizardModalProps {
   open: boolean;
@@ -23,335 +42,440 @@ interface PosterAiWizardModalProps {
 export function PosterAiWizardModal({ open, onClose }: PosterAiWizardModalProps) {
   const loadProject = usePosterStore((s) => s.loadProject);
   const remotePosterTemplates = usePosterStore((s) => s.remotePosterTemplates);
-
-  const [step, setStep] = useState(0);
-  const [category, setCategory] = useState<PosterTemplateCategory>('general');
-  const [description, setDescription] = useState('');
-  const [selectedTemplateId, setSelectedTemplateId] = useState('');
-  const [fields, setFields] = useState<Record<string, string>>(() =>
-    Object.fromEntries(DEFAULT_POSTER_PLACEHOLDER_KEYS.map((k) => [k, '']))
-  );
-  const [aiLoading, setAiLoading] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [aiFilledSuccess, setAiFilledSuccess] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
+  const user = useAuthStore((s) => s.user);
   const isLoggedIn = !!getToken();
 
+  const [phase, setPhase] = useState<Phase>('chat');
+  const [bubbles, setBubbles] = useState<BubbleMsg[]>([]);
+  const [apiMessages, setApiMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [detectedCategory, setDetectedCategory] = useState<PosterTemplateCategory | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const [generating, setGenerating] = useState(false);
+
+  const nextIdRef = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const addBubble = useCallback((role: 'user' | 'assistant', content: string) => {
+    const id = nextIdRef.current++;
+    setBubbles((prev) => [...prev, { id, role, content }]);
+  }, []);
+
   const templatesInCategory = useMemo(
-    () => getPosterTemplatesForCategory(category),
-    [category, remotePosterTemplates]
-  );
-
-  const categoryFieldKeys = useMemo(
-    () => unionTemplateFieldKeys(templatesInCategory),
-    [templatesInCategory]
-  );
-
-  /** Image slots are filled by upload/URL, not the text AI. */
-  const categoryFieldKeysForAi = useMemo(
-    () => categoryFieldKeys.filter((k) => !isImageFieldKeyInTemplates(k, templatesInCategory)),
-    [categoryFieldKeys, templatesInCategory]
+    () => (detectedCategory ? getPosterTemplatesForCategory(detectedCategory) : []),
+    [detectedCategory, remotePosterTemplates],
   );
 
   const selectedTemplate = useMemo(
     () => findPosterTemplateById(selectedTemplateId),
-    [selectedTemplateId]
+    [selectedTemplateId],
   );
 
-  const step2FieldKeys = useMemo(
-    () => (selectedTemplate ? getTemplateFieldKeys(selectedTemplate) : categoryFieldKeys),
-    [selectedTemplate, categoryFieldKeys]
+  const selectedFieldKeys = useMemo(
+    () => (selectedTemplate ? getTemplateFieldKeys(selectedTemplate) : []),
+    [selectedTemplate],
   );
 
-  const emptyFieldsForKeys = useCallback((keys: string[]) => {
-    return Object.fromEntries(keys.map((k) => [k, '']));
-  }, []);
+  const textFieldKeys = useMemo(
+    () => selectedFieldKeys.filter((k) => !isImageFieldKeyInTemplates(k, selectedTemplate ? [selectedTemplate] : [])),
+    [selectedFieldKeys, selectedTemplate],
+  );
 
   const reset = useCallback(() => {
-    setStep(0);
-    setCategory('general');
-    setDescription('');
+    nextIdRef.current = 0;
+    setPhase('chat');
+    setBubbles([]);
+    setApiMessages([]);
+    setInput('');
+    setLoading(false);
+    setError(null);
+    setDetectedCategory(null);
     setSelectedTemplateId('');
-    setFields(emptyFieldsForKeys([...DEFAULT_POSTER_PLACEHOLDER_KEYS]));
-    setAiLoading(false);
+    setFields({});
     setGenerating(false);
-    setAiFilledSuccess(false);
-    setAiError(null);
-  }, [emptyFieldsForKeys]);
+  }, []);
 
   useEffect(() => {
-    if (open) reset();
-  }, [open, reset]);
+    if (!open) return;
+    reset();
+    const name = user?.name?.split(/\s/)[0] || 'there';
+    const greeting = `Hi ${name}! I'm here to help you create something amazing. What kind of poster or flyer are you looking to build today?`;
+    const id = 0;
+    nextIdRef.current = 1;
+    setBubbles([{ id, role: 'assistant', content: greeting }]);
+  }, [open, reset, user?.name]);
 
   useEffect(() => {
-    if (!open || step !== 1) return;
-    if (selectedTemplateId) return;
-    const first = templatesInCategory[0]?.id;
-    if (first) setSelectedTemplateId(first);
-  }, [open, step, selectedTemplateId, templatesInCategory]);
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [bubbles, phase]);
 
-  /** When category or templates change on step 1+, align field map keys with the union for this category. */
   useEffect(() => {
-    if (!open || step < 1) return;
-    setFields((prev) => {
-      const next: Record<string, string> = {};
-      for (const k of categoryFieldKeys) next[k] = prev[k] ?? '';
-      return next;
-    });
-  }, [open, step, category, categoryFieldKeys]);
+    if (!loading && phase !== 'confirm' && phase !== 'generating') {
+      inputRef.current?.focus();
+    }
+  }, [loading, phase]);
 
-  const handleFillWithAi = async () => {
-    setAiError(null);
-    if (!isLoggedIn) {
-      setAiError('Sign in to use AI field filling.');
-      return;
-    }
-    if (!description.trim()) {
-      setAiError('Please describe your event or poster first.');
-      return;
-    }
-    if (templatesInCategory.length === 0) {
-      setAiError('No templates available.');
-      return;
-    }
-    if (!selectedTemplateId) {
-      setAiError('Please select a template first.');
-      return;
-    }
-    setAiLoading(true);
+  /* ── Phase: chat → identify category ── */
+  const handleChatSend = async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+    setInput('');
+    setError(null);
+    addBubble('user', text);
+
+    const newApiMsgs: ChatMessage[] = [...apiMessages, { role: 'user', content: text }];
+    setApiMessages(newApiMsgs);
+    setLoading(true);
+
     try {
-      const summaries = templatesInCategory.map((t) => ({
-        id: t.id,
-        name: t.name,
-        category: t.category,
-        description: t.description,
-      }));
-      const result = await suggestPosterFields({
-        category,
-        userDescription: description.trim(),
-        templateSummaries: summaries,
-        fieldKeys: categoryFieldKeysForAi,
+      const result = await wizardIdentify({
+        messages: newApiMsgs,
+        categories: POSTER_TEMPLATE_CATEGORIES as unknown as { value: string; label: string }[],
       });
-      const { templateId, ...rest } = result;
-      setSelectedTemplateId(templateId);
-      setFields((prev) => {
-        const next = { ...prev };
-        for (const k of categoryFieldKeysForAi) {
-          if (rest[k] !== undefined) next[k] = rest[k];
+      const assistantMsg: ChatMessage = { role: 'assistant', content: result.message };
+      setApiMessages((prev) => [...prev, assistantMsg]);
+      addBubble('assistant', result.message);
+
+      if (result.category) {
+        const validCat = POSTER_TEMPLATE_CATEGORIES.find((c) => c.value === result.category);
+        if (validCat) {
+          setDetectedCategory(validCat.value as PosterTemplateCategory);
+          setPhase('pick_template');
         }
-        return next;
-      });
-      setAiFilledSuccess(true);
+      }
     } catch (e) {
-      setAiError(e instanceof Error ? e.message : 'AI request failed');
+      setError(e instanceof Error ? e.message : 'Request failed');
     } finally {
-      setAiLoading(false);
+      setLoading(false);
     }
   };
 
+  /* ── Phase: pick_template → user selects, move to gathering ── */
+  const handleTemplateSelect = async (tpl: PosterTemplateDefinition) => {
+    setSelectedTemplateId(tpl.id);
+
+    const keys = getTemplateFieldKeys(tpl);
+    setFields(Object.fromEntries(keys.map((k) => [k, ''])));
+
+    const userMsg = `I'd like to use the "${tpl.name}" template.`;
+    addBubble('user', userMsg);
+
+    const txtKeys = keys.filter(
+      (k) => !isImageFieldKeyInTemplates(k, [tpl]),
+    );
+    const labels: Record<string, string> = {};
+    for (const k of txtKeys) labels[k] = getTemplateFieldLabel(tpl, k);
+
+    const msgs: ChatMessage[] = [
+      ...apiMessages,
+      { role: 'user', content: userMsg },
+    ];
+    setApiMessages(msgs);
+    setLoading(true);
+    setPhase('gathering');
+
+    try {
+      const result = await wizardGatherFields({
+        messages: msgs,
+        templateName: tpl.name,
+        fieldKeys: txtKeys,
+        fieldLabels: labels,
+      });
+      const assistantMsg: ChatMessage = { role: 'assistant', content: result.message };
+      setApiMessages((prev) => [...prev, assistantMsg]);
+      addBubble('assistant', result.message);
+
+      setFields((prev) => {
+        const next = { ...prev };
+        for (const [k, v] of Object.entries(result.fields)) {
+          if (v) next[k] = v;
+        }
+        return next;
+      });
+
+      if (result.complete) {
+        setPhase('confirm');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Request failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ── Phase: gathering → collect info conversationally ── */
+  const handleGatherSend = async () => {
+    const text = input.trim();
+    if (!text || loading || !selectedTemplate) return;
+    setInput('');
+    setError(null);
+    addBubble('user', text);
+
+    const tpl = selectedTemplate;
+    const keys = textFieldKeys;
+    const labels: Record<string, string> = {};
+    for (const k of keys) labels[k] = getTemplateFieldLabel(tpl, k);
+
+    const msgs: ChatMessage[] = [...apiMessages, { role: 'user', content: text }];
+    setApiMessages(msgs);
+    setLoading(true);
+
+    try {
+      const result = await wizardGatherFields({
+        messages: msgs,
+        templateName: tpl.name,
+        fieldKeys: keys,
+        fieldLabels: labels,
+      });
+      const assistantMsg: ChatMessage = { role: 'assistant', content: result.message };
+      setApiMessages((prev) => [...prev, assistantMsg]);
+      addBubble('assistant', result.message);
+
+      setFields((prev) => {
+        const next = { ...prev };
+        for (const [k, v] of Object.entries(result.fields)) {
+          if (v) next[k] = v;
+        }
+        return next;
+      });
+
+      if (result.complete) {
+        setPhase('confirm');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Request failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ── Generate poster ── */
   const handleGenerate = async () => {
     const tpl = findPosterTemplateById(selectedTemplateId);
-    if (!tpl) {
-      setAiError('Select a template.');
-      return;
-    }
+    if (!tpl) return;
     setGenerating(true);
-    setAiError(null);
+    setError(null);
     try {
       const keys = getTemplateFieldKeys(tpl);
       const data: Record<string, string> = {};
-      for (const k of keys) {
-        data[k] = fields[k] ?? '';
-      }
+      for (const k of keys) data[k] = fields[k] ?? '';
       const { project, fieldBindings } = await instantiateTemplate(tpl, data);
       loadProject(project, { fieldBindings });
       onClose();
     } catch (err) {
-      setAiError(err instanceof Error ? err.message : 'Failed to generate poster.');
+      setError(err instanceof Error ? err.message : 'Failed to generate poster.');
     } finally {
       setGenerating(false);
     }
   };
 
+  const handleSend = phase === 'gathering' ? handleGatherSend : handleChatSend;
+
   if (!open) return null;
 
+  const showInput = phase === 'chat' || phase === 'gathering';
+
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
-      <div
-        className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
-        role="dialog"
-        aria-labelledby="poster-ai-title"
-      >
-        <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-          <h2 id="poster-ai-title" className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-            Create poster with AI
-          </h2>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Step {step + 1} of 3 — templates use placeholders; edit everything in the canvas after.
-          </p>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {step === 0 && (
-            <div className="flex flex-col gap-3">
-              <p className="text-sm text-zinc-600 dark:text-zinc-300">What kind of poster?</p>
-              <div className="flex flex-col gap-2">
-                {POSTER_TEMPLATE_CATEGORIES.map((c) => (
-                  <label
-                    key={c.value}
-                    className="flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-600"
-                  >
-                    <input
-                      type="radio"
-                      name="poster-cat"
-                      value={c.value}
-                      checked={category === c.value}
-                      onChange={() => setCategory(c.value)}
-                    />
-                    <span className="text-sm">{c.label}</span>
-                  </label>
-                ))}
-              </div>
+    <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
+      <div className="flex h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-xl sm:h-auto sm:max-h-[85vh] sm:rounded-xl dark:border-zinc-700 dark:bg-zinc-900">
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-100 dark:bg-accent-900/50">
+              <svg className="h-3.5 w-3.5 text-accent-600 dark:text-accent-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+              </svg>
             </div>
-          )}
-
-          {step === 1 && (
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Describe your event or announcement
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => {
-                    setDescription(e.target.value);
-                    setAiFilledSuccess(false);
-                  }}
-                  rows={5}
-                  placeholder="e.g. Annual youth conference March 15 at City Hall, hosted by Pastor Jane, keynote Dr. Smith on the theme Rise Up…"
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Select a template</label>
-                <div className="grid max-h-56 gap-2 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-800/50 sm:grid-cols-2">
-                  {templatesInCategory.map((t) => {
-                    const selected = t.id === selectedTemplateId;
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedTemplateId(t.id);
-                          setAiFilledSuccess(false);
-                        }}
-                        className={`flex flex-col items-center gap-1.5 rounded-lg border p-2 text-center transition ${
-                          selected
-                            ? 'border-gold-500 bg-gold-50 ring-1 ring-gold-500 dark:border-gold-400 dark:bg-gold-950/30 dark:ring-gold-400'
-                            : 'border-zinc-200 bg-white hover:border-gold-300 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-gold-600'
-                        }`}
-                      >
-                        <TemplateThumbnail
-                          project={t.project}
-                          thumbnail={t.thumbnail}
-                          width={140}
-                          className="rounded"
-                        />
-                        <span className="text-[11px] font-medium text-zinc-800 dark:text-zinc-200">{t.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {templatesInCategory.find((t) => t.id === selectedTemplateId)?.description && (
-                  <p className="mt-1 text-[11px] text-zinc-500">
-                    {templatesInCategory.find((t) => t.id === selectedTemplateId)?.description}
-                  </p>
-                )}
-              </div>
-              {!isLoggedIn && (
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Sign in to use AI to fill fields from your description.
-                </p>
-              )}
-              <button
-                type="button"
-                onClick={handleFillWithAi}
-                disabled={
-                  aiLoading ||
-                  aiFilledSuccess ||
-                  !isLoggedIn ||
-                  !selectedTemplateId ||
-                  !description.trim()
-                }
-                className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  aiFilledSuccess
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
-                    : 'bg-accent-600 text-white hover:bg-accent-500 disabled:opacity-50'
-                }`}
-              >
-                {aiLoading
-                  ? 'Filling details…'
-                  : aiFilledSuccess
-                    ? '✓ Filled successfully'
-                    : 'Fill fields with AI'}
-              </button>
-              {aiError && (
-                <p className="text-sm text-red-600 dark:text-red-400">
-                  {aiError}
-                  {aiError.includes('limit') && (
-                    <span className="mt-1 block text-xs">Upgrade to Pro for more tokens.</span>
-                  )}
-                </p>
-              )}
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="flex flex-col gap-3">
-              <p className="text-sm text-zinc-600 dark:text-zinc-300">
-                Fill text and image fields, then generate your poster.
-              </p>
-              <PosterTemplateFieldsEditor
-                template={selectedTemplate}
-                fieldKeys={step2FieldKeys}
-                fields={fields}
-                setFields={setFields}
-                onImageReadError={(msg) => setAiError(msg)}
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-between gap-2 border-t border-zinc-200 px-4 py-3 dark:border-zinc-700">
+            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Create with AI</h2>
+          </div>
           <button
             type="button"
-            onClick={() => (step > 0 ? setStep(step - 1) : onClose())}
-            className="rounded-lg px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            onClick={onClose}
+            className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+            aria-label="Close"
           >
-            {step === 0 ? 'Cancel' : 'Back'}
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
-          <div className="flex gap-2">
-            {step < 2 && (
-              <button
-                type="button"
-                onClick={() => setStep(step + 1)}
-                className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
+        </div>
+
+        {/* Chat area */}
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div className="flex flex-col gap-3">
+            {bubbles.map((b) => (
+              <div
+                key={b.id}
+                className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                  b.role === 'user'
+                    ? 'ml-auto bg-accent-600 text-white'
+                    : 'mr-auto bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200'
+                }`}
               >
-                Next
-              </button>
+                {b.content}
+              </div>
+            ))}
+
+            {loading && (
+              <div className="mr-auto flex items-center gap-1.5 rounded-2xl bg-zinc-100 px-3.5 py-2.5 dark:bg-zinc-800">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:0ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:150ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:300ms]" />
+              </div>
             )}
-            {step === 2 && (
-              <button
-                type="button"
-                onClick={handleGenerate}
-                disabled={generating}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-              >
-                {generating ? 'Generating…' : 'Generate poster'}
-              </button>
+
+            {/* Template picker inline in chat */}
+            {phase === 'pick_template' && !loading && (
+              <div className="mr-auto flex max-w-full flex-col gap-2">
+                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  Pick a template to get started:
+                </p>
+                <div className="grid max-h-64 gap-2 overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-800/50 sm:grid-cols-2">
+                  {templatesInCategory.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => handleTemplateSelect(t)}
+                      className="flex flex-col items-center gap-1.5 rounded-lg border border-zinc-200 bg-white p-2 text-center transition hover:border-accent-400 hover:shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-accent-500"
+                    >
+                      <TemplateThumbnail
+                        project={t.project}
+                        thumbnail={t.thumbnail}
+                        width={120}
+                        className="rounded"
+                      />
+                      <span className="line-clamp-1 text-[11px] font-medium text-zinc-800 dark:text-zinc-200">
+                        {t.name}
+                      </span>
+                    </button>
+                  ))}
+                  {templatesInCategory.length === 0 && (
+                    <p className="col-span-2 py-4 text-center text-xs text-zinc-400">
+                      No templates found for this category yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Confirm phase: editable form */}
+            {phase === 'confirm' && !loading && (
+              <div className="mr-auto flex w-full max-w-full flex-col gap-3">
+                <div className="rounded-2xl bg-zinc-100 px-3.5 py-2.5 text-sm text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
+                  Here's what I've gathered. Please review and edit anything, then upload images if needed. When you're happy, hit <strong>Generate Poster</strong>!
+                </div>
+
+                {selectedTemplate && (
+                  <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                    <div className="mb-3 flex items-center gap-2">
+                      <TemplateThumbnail
+                        project={selectedTemplate.project}
+                        thumbnail={selectedTemplate.thumbnail}
+                        width={48}
+                        className="rounded"
+                      />
+                      <div>
+                        <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{selectedTemplate.name}</p>
+                        <p className="text-[10px] text-zinc-500">Selected template</p>
+                      </div>
+                    </div>
+                    <PosterTemplateFieldsEditor
+                      template={selectedTemplate}
+                      fieldKeys={selectedFieldKeys}
+                      fields={fields}
+                      setFields={setFields}
+                      onImageReadError={(msg) => setError(msg)}
+                    />
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleGenerate}
+                  disabled={generating}
+                  className="w-full rounded-xl bg-accent-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-accent-500 disabled:opacity-50"
+                >
+                  {generating ? 'Generating your poster…' : 'Generate Poster'}
+                </button>
+              </div>
             )}
           </div>
         </div>
+
+        {/* Error */}
+        {error && (
+          <div className="shrink-0 border-t border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+            {error}
+          </div>
+        )}
+
+        {/* Input bar */}
+        {showInput && (
+          <div className="shrink-0 border-t border-zinc-200 p-3 dark:border-zinc-700">
+            {!isLoggedIn ? (
+              <p className="text-center text-xs text-zinc-500">
+                Please <a href="#/login" className="text-accent-600 underline">sign in</a> to use the AI wizard.
+              </p>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSend();
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={
+                    phase === 'gathering'
+                      ? 'Provide the details for your poster…'
+                      : 'Describe what you want to create…'
+                  }
+                  disabled={loading}
+                  className="min-w-0 flex-1 rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !input.trim()}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-600 text-white transition-colors hover:bg-accent-500 disabled:opacity-40"
+                  aria-label="Send"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19V5m0 0l-7 7m7-7l7 7" />
+                  </svg>
+                </button>
+              </form>
+            )}
+          </div>
+        )}
+
+        {/* Back / change template in confirm phase */}
+        {phase === 'confirm' && !generating && (
+          <div className="flex shrink-0 justify-between border-t border-zinc-200 px-4 py-2 dark:border-zinc-700">
+            <button
+              type="button"
+              onClick={() => setPhase('pick_template')}
+              className="text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
+              ← Change template
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
