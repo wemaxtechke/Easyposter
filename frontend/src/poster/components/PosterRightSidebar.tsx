@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ColorPickerPopover } from '../../components/ColorPickerPopover';
 import { usePosterStore } from '../store/posterStore';
 import type {
   PosterElement,
@@ -44,15 +45,13 @@ function GradientStopsEditor({
       <label className="text-xs text-zinc-500">Color stops</label>
       {stops.map((stop, i) => (
         <div key={i} className="flex items-center gap-2">
-          <input
-            type="color"
-            value={/^#[0-9A-Fa-f]{6}$/.test(stop.color) ? stop.color : '#ffffff'}
-            onChange={(e) => {
+          <ColorPickerPopover
+            color={/^#[0-9A-Fa-f]{6}$/.test(stop.color) ? stop.color : '#ffffff'}
+            onChange={(c) => {
               const next = [...stops];
-              next[i] = { ...next[i], color: e.target.value };
+              next[i] = { ...next[i], color: c };
               onChange(next);
             }}
-            className="h-8 w-10 shrink-0 cursor-pointer rounded border border-zinc-200 dark:border-zinc-700"
           />
           <input
             type="number"
@@ -248,20 +247,18 @@ function ShapeFillAndRoundnessControls({
             Outline
           </label>
           <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={
+            <ColorPickerPopover
+              color={
                 shape.stroke && (shape.strokeWidth ?? 0) > 0 && /^#[0-9A-Fa-f]{6}$/i.test(shape.stroke)
                   ? shape.stroke
                   : '#000000'
               }
-              onChange={(e) =>
+              onChange={(c) =>
                 updateElement(shape.id, {
-                  stroke: e.target.value,
+                  stroke: c,
                   strokeWidth: shape.strokeWidth && shape.stroke ? shape.strokeWidth : 2,
                 })
               }
-              className="h-9 w-14 shrink-0 cursor-pointer rounded border border-zinc-200 dark:border-zinc-700"
             />
             <div className="flex-1">
               <label className="text-[10px] text-zinc-500">Width ({(shape.strokeWidth ?? 0) || 0}px)</label>
@@ -391,11 +388,9 @@ function ShapeFillAndRoundnessControls({
         )}
 
         {fillNorm.type === 'solid' && (
-          <input
-            type="color"
-            value={/^#[0-9A-Fa-f]{6}$/.test(fillNorm.color) ? fillNorm.color : '#3b82f6'}
-            onChange={(e) => setFill({ type: 'solid', color: e.target.value })}
-            className="h-8 w-full cursor-pointer rounded border border-zinc-200 dark:border-zinc-700"
+          <ColorPickerPopover
+            color={/^#[0-9A-Fa-f]{6}$/.test(fillNorm.color) ? fillNorm.color : '#3b82f6'}
+            onChange={(c) => setFill({ type: 'solid', color: c })}
           />
         )}
 
@@ -1314,11 +1309,9 @@ function PosterTextControls({
             />
           </>
         ) : !text.fillPattern ? (
-          <input
-            type="color"
-            value={text.fill}
-            onChange={(e) => updateElement(text.id, { fill: e.target.value })}
-            className="h-8 w-full cursor-pointer rounded border border-zinc-200 dark:border-zinc-700"
+          <ColorPickerPopover
+            color={text.fill}
+            onChange={(c) => updateElement(text.id, { fill: c })}
           />
         ) : (
           <>
@@ -1408,20 +1401,18 @@ function PosterTextControls({
           {(text.strokeWidth ?? 0) > 0 && (
             <>
               <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={
+                <ColorPickerPopover
+                  color={
                     text.stroke && /^#[0-9A-Fa-f]{6}$/i.test(text.stroke)
                       ? text.stroke
                       : '#000000'
                   }
-                  onChange={(e) =>
+                  onChange={(c) =>
                     updateElement(text.id, {
-                      stroke: e.target.value,
+                      stroke: c,
                       strokeWidth: text.strokeWidth ?? 2,
                     })
                   }
-                  className="h-8 w-10 shrink-0 cursor-pointer rounded border border-zinc-200 dark:border-zinc-700"
                 />
                 <div className="flex flex-1 flex-col gap-0.5">
                   <label className="text-[10px] text-zinc-500">
@@ -1489,13 +1480,11 @@ function ShadowControls({
         <>
           <div className="flex flex-col gap-1">
             <label className="text-xs text-zinc-600 dark:text-zinc-400">Color</label>
-            <input
-              type="color"
-              value={s.color.startsWith('#') ? s.color : '#000000'}
-              onChange={(e) =>
-                updateElement(elementId, { shadow: { ...s, color: e.target.value } })
+            <ColorPickerPopover
+              color={s.color.startsWith('#') ? s.color : '#000000'}
+              onChange={(c) =>
+                updateElement(elementId, { shadow: { ...s, color: c } })
               }
-              className="h-7 w-full cursor-pointer rounded border border-zinc-200 dark:border-zinc-700"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -1605,11 +1594,9 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
 
           {isSolidBackground(canvasBackground) ? (
             <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={/^#[0-9A-Fa-f]{6}$/.test(canvasBackground.color) ? canvasBackground.color : '#ffffff'}
-                onChange={(e) => setCanvasBackground({ type: 'solid', color: e.target.value })}
-                className="h-10 w-14 cursor-pointer rounded border border-zinc-200 dark:border-zinc-700"
+              <ColorPickerPopover
+                color={/^#[0-9A-Fa-f]{6}$/.test(canvasBackground.color) ? canvasBackground.color : '#ffffff'}
+                onChange={(c) => setCanvasBackground({ type: 'solid', color: c })}
               />
               <input
                 type="text"
@@ -1693,15 +1680,13 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
                 <label className="text-xs text-zinc-500">Color stops</label>
                 {(canvasBackground.stops ?? DEFAULT_GRADIENT_STOPS).map((stop, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={/^#[0-9A-Fa-f]{6}$/.test(stop.color) ? stop.color : '#ffffff'}
-                      onChange={(e) => {
+                    <ColorPickerPopover
+                      color={/^#[0-9A-Fa-f]{6}$/.test(stop.color) ? stop.color : '#ffffff'}
+                      onChange={(c) => {
                         const next = [...(canvasBackground.stops ?? DEFAULT_GRADIENT_STOPS)];
-                        next[i] = { ...next[i], color: e.target.value };
+                        next[i] = { ...next[i], color: c };
                         updateGradientStops(next);
                       }}
-                      className="h-8 w-10 shrink-0 cursor-pointer rounded border border-zinc-200 dark:border-zinc-700"
                     />
                     <input
                       type="number"

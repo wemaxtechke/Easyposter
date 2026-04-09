@@ -1,6 +1,7 @@
 import { memo, useState, useEffect, useRef, useCallback, type CSSProperties } from 'react';
 import { useLocation } from 'react-router-dom';
 import opentype from 'opentype.js';
+import { ColorPickerPopover } from '../ColorPickerPopover';
 import { useEditorStore } from '../../store/editorStore';
 import { renderMetallicText } from '../../core/renderer/metallicTextRenderer';
 import { exportPNG, exportWebP } from '../../core/export/pngExport';
@@ -683,11 +684,12 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                           <label key={key} className="flex flex-col gap-1 text-xs">
                             <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
                             <div className="flex items-center gap-2">
-                              <input
-                                type="color"
-                                value={pickerHex}
-                                onChange={(e) => setLayerColors({ [key]: e.target.value })}
-                                className="h-9 w-12 cursor-pointer rounded border border-zinc-200 bg-white p-0.5 dark:border-zinc-600 dark:bg-zinc-800"
+                              <ColorPickerPopover
+                                color={pickerHex}
+                                onChange={(c) => {
+                                  setLayerColors({ [key]: c });
+                                  setLayerColorHexDraft((d) => ({ ...d, [draftKey]: c }));
+                                }}
                                 aria-label={`${label} color`}
                               />
                               <input

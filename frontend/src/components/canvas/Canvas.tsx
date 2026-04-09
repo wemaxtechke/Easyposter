@@ -141,11 +141,11 @@ export const Canvas = memo(function Canvas({
 
   return (
     <div
-      className="flex flex-1 items-center justify-center overflow-auto bg-zinc-100 dark:bg-zinc-900 p-8"
+      className="flex flex-1 items-center justify-center overflow-auto bg-zinc-100 dark:bg-zinc-900 p-1 sm:p-4 lg:p-8"
       aria-label="Canvas preview"
     >
       {useWebGL ? (
-        <div className="flex h-full min-h-[300px] w-full max-w-4xl items-center justify-center rounded-lg bg-zinc-200 dark:bg-zinc-800">
+        <div className="flex h-full min-h-[180px] w-full max-w-4xl items-center justify-center rounded-lg bg-zinc-200 sm:min-h-[250px] lg:min-h-[300px] dark:bg-zinc-800">
           {useMultiLayerWebGL ? (
             <MultiLayerThreeCanvas onReady={handleWebGLReady} orbitZoomScale={orbitZoomScale} />
           ) : (

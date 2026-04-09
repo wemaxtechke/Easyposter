@@ -137,8 +137,10 @@ export function AppLayout() {
         </aside>
 
         {/* Canvas */}
-        <main className="flex min-w-0 flex-1 flex-col pb-9 lg:pb-0">
-          <Canvas />
+        <main className="flex min-w-0 flex-1 items-center justify-center overflow-hidden pb-0">
+          <div className="h-full w-full max-w-4xl">
+            <Canvas />
+          </div>
         </main>
 
         {/* Right sidebar — hidden on mobile, inline on desktop */}
@@ -147,12 +149,12 @@ export function AppLayout() {
         </aside>
       </div>
 
-      {/* Mobile bottom property bar — shows full RightSidebar in an expandable sheet */}
-      <div className="fixed inset-x-0 bottom-0 z-30 lg:hidden">
+      {/* Mobile bottom property bar — in-flow so canvas shrinks when expanded */}
+      <div className="shrink-0 lg:hidden">
         <button
           type="button"
           onClick={() => setMobilePropsExpanded((v) => !v)}
-          className="flex w-full items-center justify-center gap-2 border-t border-zinc-200 bg-white/95 px-3 py-1.5 backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95"
+          className="flex w-full items-center justify-center gap-2 border-t border-zinc-200 bg-white px-3 py-1.5 dark:border-zinc-700 dark:bg-zinc-900"
         >
           <div className="h-1 w-8 rounded-full bg-zinc-300 dark:bg-zinc-600" />
           <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Properties</span>
@@ -165,7 +167,7 @@ export function AppLayout() {
         </button>
 
         {mobilePropsExpanded && (
-          <div className="max-h-[50vh] overflow-y-auto border-t border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="max-h-[30vh] overflow-y-auto border-t border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
             <RightSidebar />
           </div>
         )}
