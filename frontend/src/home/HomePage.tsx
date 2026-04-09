@@ -179,7 +179,7 @@ export function HomePage() {
             <ThemeToggle size="md" />
             {user ? (
               <>
-                <UserMenu />
+                <UserMenu compactUntilMd />
                 <Link
                   to="/poster"
                   className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-500"

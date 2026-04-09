@@ -5,9 +5,11 @@ import { useAuthStore } from './authStore';
 interface UserMenuProps {
   /** When true, shows only avatar for narrow layouts (e.g. sidebar) */
   compact?: boolean;
+  /** When true, avatar-only on small screens; name + chevron from md and up (saves navbar space on phones). */
+  compactUntilMd?: boolean;
 }
 
-export function UserMenu({ compact = false }: UserMenuProps) {
+export function UserMenu({ compact = false, compactUntilMd = false }: UserMenuProps) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const isAdmin = useAuthStore((s) => s.isAdmin());
@@ -30,20 +32,21 @@ export function UserMenu({ compact = false }: UserMenuProps) {
   const displayName = user.name || user.email;
   const truncatedName = displayName.length > 18 ? `${displayName.slice(0, 16)}…` : displayName;
 
+  const responsiveMd = compactUntilMd && !compact;
+  const triggerPadding = compact ? 'p-1.5' : responsiveMd ? 'p-1.5 md:px-3 md:py-1.5' : 'px-3 py-1.5';
+
   return (
     <div className="relative" ref={menuRef}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`flex items-center gap-2 rounded-lg border border-zinc-200 bg-white text-sm text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 hover:border-zinc-300 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 dark:hover:border-zinc-500 ${
-          compact ? 'p-1.5' : 'px-3 py-1.5'
-        }`}
+        className={`flex items-center gap-2 rounded-lg border border-zinc-200 bg-white text-sm text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 hover:border-zinc-300 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 dark:hover:border-zinc-500 ${triggerPadding}`}
         title={user.email}
       >
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-100 text-xs font-medium text-accent-700 dark:bg-accent-900/50 dark:text-accent-300">
           {displayName.charAt(0).toUpperCase()}
         </span>
-        {!compact && (
+        {!compact && !compactUntilMd && (
           <>
             <span className="max-w-[120px] truncate">{truncatedName}</span>
             <svg
@@ -56,10 +59,27 @@ export function UserMenu({ compact = false }: UserMenuProps) {
             </svg>
           </>
         )}
+        {responsiveMd && (
+          <>
+            <span className="hidden max-w-[120px] truncate md:inline">{truncatedName}</span>
+            <svg
+              className={`hidden h-4 w-4 shrink-0 text-zinc-500 transition-transform md:block dark:text-zinc-400 ${open ? 'rotate-180' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </>
+        )}
       </button>
 
       {open && (
-        <div className={`absolute top-full z-50 mt-2 w-56 rounded-lg border border-zinc-200 bg-white py-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-800 ${compact ? 'left-0' : 'right-0'}`}>
+        <div
+          className={`absolute top-full z-50 mt-2 w-56 rounded-lg border border-zinc-200 bg-white py-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-800 ${
+            compact && !responsiveMd ? 'left-0' : 'right-0'
+          }`}
+        >
           <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-700">
             <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100" title={user.email}>
               {user.email}
