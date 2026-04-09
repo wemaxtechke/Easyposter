@@ -62,6 +62,16 @@ export function PosterLayout() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
+  // Lock body scroll when mobile sidebar drawer is open
+  useEffect(() => {
+    const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
+    if (isDesktop) return;
+    if (!leftOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [leftOpen]);
+
   const selectedIds = usePosterStore((s) => s.selectedIds);
   const elements = usePosterStore((s) => s.elements);
   const lastCloudSaveRef = useRef<string | null>(null);
@@ -476,7 +486,7 @@ export function PosterLayout() {
   );
 
   return (
-    <div className="flex h-dvh w-full flex-col bg-zinc-100 dark:bg-zinc-950">
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950">
       {readOnly && (
         <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
           <span className="hidden sm:inline">Explore the poster editor. Login to edit, download, and use AI features.</span>
@@ -585,7 +595,7 @@ export function PosterLayout() {
           className={[
             'flex flex-col overflow-y-auto border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900',
             'fixed inset-y-0 left-0 z-40 w-64 pt-0 transition-transform duration-300 ease-in-out',
-            'lg:relative lg:inset-y-auto lg:left-auto lg:z-auto lg:w-56 lg:shrink-0 lg:translate-x-0 lg:transition-none',
+            'lg:relative lg:inset-y-auto lg:left-auto lg:z-auto lg:w-56 lg:shrink-0 lg:translate-x-0 lg:transform-none lg:transition-none',
             leftOpen ? 'translate-x-0' : '-translate-x-full',
           ].join(' ')}
         >

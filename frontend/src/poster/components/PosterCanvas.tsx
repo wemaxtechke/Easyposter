@@ -12,6 +12,7 @@ import {
   Textbox,
   Shadow,
   ActiveSelection,
+  util,
 } from 'fabric';
 import { usePosterStore } from '../store/posterStore';
 import { setFabricCanvasRef } from '../canvasRef';
@@ -179,7 +180,31 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       }
       setSelected([]);
     });
-    canvas.on('object:modified', () => pushHistory());
+    canvas.on('object:modified', (opt) => {
+      const target = opt.target;
+      if (target instanceof ActiveSelection) {
+        const store = usePosterStore.getState();
+        const groupMatrix = target.calcTransformMatrix();
+        for (const obj of target.getObjects()) {
+          const id = (obj as { data?: { posterId?: string } }).data?.posterId;
+          if (!id) continue;
+          const absPos = obj.getXY('left', 'top');
+          const worldMatrix = util.multiplyTransformMatrices(
+            groupMatrix,
+            obj.calcOwnMatrix(),
+          );
+          const decomposed = util.qrDecompose(worldMatrix);
+          store.updateElement(id, {
+            left: absPos.x,
+            top: absPos.y,
+            scaleX: Math.abs(decomposed.scaleX),
+            scaleY: Math.abs(decomposed.scaleY),
+            angle: decomposed.angle,
+          } as Partial<PosterElement>);
+        }
+      }
+      pushHistory();
+    });
 
     // Fabric creates a hidden textarea on text edit and calls .focus() on it,
     // causing the browser to scroll the page to make it visible. Prevent that.
@@ -294,6 +319,17 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     try {
       const fabricObjects = canvas.getObjects();
       const storeIds = new Set(elements.map((e) => e.id));
+
+      // Collect IDs of objects currently inside an ActiveSelection so we skip
+      // overwriting their group-relative coords with the (now-absolute) store values.
+      const activeObj = canvas.getActiveObject();
+      const inActiveSelectionIds = new Set<string>();
+      if (activeObj instanceof ActiveSelection) {
+        for (const o of activeObj.getObjects()) {
+          const oid = (o as { data?: { posterId?: string } }).data?.posterId;
+          if (oid) inActiveSelectionIds.add(oid);
+        }
+      }
 
       // Remove from Fabric if not in store
       fabricObjects.forEach((obj) => {
@@ -477,6 +513,10 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
         }
 
         if (existing && !needsSrcRecreate) {
+          // Objects inside an active multi-selection have group-relative coords;
+          // overwriting them with absolute store values would break their visual position.
+          if (inActiveSelectionIds.has(el.id)) continue;
+
           const locked = !!el.locked;
           const lockAll = locked || readOnly;
           const rasterEl =
@@ -979,25 +1019,13 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       const compact = viewportWidth < 768;
       const sb = compact ? 0 : SBUF;
 
-      if (compact) {
-        // On mobile just update zoom; re-center is handled by render math
-        const sw = canvasWidth * s1;
-        const sh = canvasHeight * s1;
-        usePosterStore.setState({
-          canvasZoom: z1,
-          canvasPan: {
-            x: Math.max(0, (viewportWidth - sw) / 2),
-            y: Math.max(0, (viewportHeight - sh) / 2),
-          },
-        });
-      } else {
-        const cx = (base.startMidX - base.startPanX - sb) / s0;
-        const cy = (base.startMidY - base.startPanY - sb) / s0;
-        usePosterStore.setState({
-          canvasZoom: z1,
-          canvasPan: { x: midX - cx * s1 - sb, y: midY - cy * s1 - sb },
-        });
-      }
+      // Focal-point zoom: keep the point between the user's fingers stable
+      const cx = (base.startMidX - base.startPanX - sb) / s0;
+      const cy = (base.startMidY - base.startPanY - sb) / s0;
+      usePosterStore.setState({
+        canvasZoom: z1,
+        canvasPan: { x: midX - cx * s1 - sb, y: midY - cy * s1 - sb },
+      });
     };
 
     const onTouchEnd = () => {
@@ -1022,16 +1050,13 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const scaledW = canvasWidth * scale;
   const scaledH = canvasHeight * scale;
 
-  // On small viewports (mobile), skip the large scroll buffer and just center the poster.
   const isCompact = viewportWidth < 768;
   const effectiveSBUF = isCompact ? 0 : SBUF;
 
-  const renderX = isCompact
-    ? Math.max(0, (viewportWidth - scaledW) / 2)
-    : canvasPan.x + effectiveSBUF;
-  const renderY = isCompact
-    ? Math.max(0, (viewportHeight - scaledH) / 2)
-    : canvasPan.y + effectiveSBUF;
+  // On mobile, use canvasPan directly (set by pinch gesture and initial fit).
+  // On desktop, offset by the scroll buffer.
+  const renderX = canvasPan.x + effectiveSBUF;
+  const renderY = canvasPan.y + effectiveSBUF;
   const contentW = isCompact
     ? viewportWidth
     : Math.max(viewportWidth, renderX + scaledW + effectiveSBUF);
