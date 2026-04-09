@@ -268,7 +268,7 @@ export function PosterTopBar({
           type="button"
           onClick={onSaveToCloud}
           disabled={savingToCloud}
-          className={`hidden rounded px-2 py-1 text-sm font-medium sm:block ${
+          className={`rounded px-2 py-1 text-sm font-medium ${
             cloudDirty
               ? 'bg-accent-600 text-white hover:bg-accent-500'
               : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
@@ -371,7 +371,7 @@ export function PosterTopBar({
         </button>
       )}
 
-      <UserMenu compact />
+      <div className="hidden sm:block"><UserMenu compact /></div>
       <ThemeToggle size="md" />
 
       <button
