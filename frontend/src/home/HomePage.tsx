@@ -6,6 +6,23 @@ import { useAuthStore } from '../auth/authStore';
 import { usePosterStore } from '../poster/store/posterStore';
 import type { PosterTemplateDefinition } from '../poster/templateTypes';
 
+/** Typographic wordmark: script “Sanaa” + caps “Studio” on one line (shown on large screens next to mark). */
+function HomeBrandWordmark({ className = '' }: { className?: string }) {
+  return (
+    <div className={`flex flex-row flex-wrap items-baseline gap-x-2 ${className}`}>
+      <span
+        className="text-[2.15rem] leading-none text-zinc-900 dark:text-zinc-50"
+        style={{ fontFamily: "'Great Vibes', cursive", fontWeight: 400 }}
+      >
+        Sanaa
+      </span>
+      <span className="text-base font-semibold uppercase tracking-[0.26em] text-zinc-700 dark:text-zinc-300">
+        Studio
+      </span>
+    </div>
+  );
+}
+
 const CATEGORY_COLORS: Record<string, string> = {
   church: 'from-gold-100 to-gold-200 dark:from-gold-900/40 dark:to-gold-800/20',
   conference: 'from-accent-100 to-accent-200 dark:from-accent-900/40 dark:to-accent-800/20',
@@ -150,13 +167,9 @@ export function HomePage() {
       <nav className="sticky top-0 z-50 border-b border-zinc-200 bg-white/90 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-500">
-              <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-              </svg>
-            </div>
-            <span className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Studio</span>
+          <Link to="/" className="flex items-center gap-2 lg:gap-3">
+            <img src="/logo.png" alt="Sanaa Studio" className="h-9 w-auto shrink-0 rounded-xl shadow-md ring-1 ring-black/5 dark:shadow-lg dark:ring-white/10 lg:h-10" />
+            <HomeBrandWordmark className="hidden lg:flex" />
           </Link>
 
           {/* Desktop nav links */}
@@ -274,7 +287,7 @@ export function HomePage() {
         <div className="relative mx-auto max-w-5xl text-center">
           <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-accent-900/60 px-4 py-1.5 text-sm font-medium text-accent-300 ring-1 ring-accent-700/60">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-400" />
-            AI-Powered Design Studio
+            AI-Powered Design
           </div>
 
           <h1 className="mb-5 text-4xl font-bold tracking-tight text-white sm:text-5xl md:text-6xl">
@@ -322,7 +335,7 @@ export function HomePage() {
               <span className="h-2.5 w-2.5 rounded-full bg-danger-500/70" />
               <span className="h-2.5 w-2.5 rounded-full bg-gold-400/70" />
               <span className="h-2.5 w-2.5 rounded-full bg-accent-400/70" />
-              <span className="ml-3 text-xs font-medium text-zinc-500">Studio Editor</span>
+              <span className="ml-3 text-xs font-medium text-zinc-500">Sanaa Studio Editor</span>
               <div className="ml-auto flex items-center gap-3">
                 <span className="hidden h-4 w-16 rounded bg-zinc-700 sm:block" />
                 <span className="h-4 w-20 rounded bg-zinc-700" />
@@ -459,13 +472,9 @@ export function HomePage() {
       <footer className="border-t border-zinc-200 bg-white px-4 py-10 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col items-center gap-6 sm:flex-row sm:justify-between">
-            <Link to="/" className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-500">
-                <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-                </svg>
-              </div>
-              <span className="text-base font-bold text-zinc-900 dark:text-zinc-100">Studio</span>
+            <Link to="/" className="flex items-center gap-2 lg:gap-3">
+              <img src="/logo.png" alt="Sanaa Studio" className="h-8 w-auto shrink-0 rounded-xl shadow-md ring-1 ring-black/5 dark:shadow-lg dark:ring-white/10 lg:h-9" />
+              <HomeBrandWordmark className="flex" />
             </Link>
 
             <nav className="flex flex-wrap justify-center gap-x-6 gap-y-2">
@@ -490,7 +499,7 @@ export function HomePage() {
               )}
             </nav>
 
-            <p className="text-xs text-zinc-400">© {new Date().getFullYear()} Studio. All rights reserved.</p>
+            <p className="text-xs text-zinc-400">© {new Date().getFullYear()} Sanaa Studio. All rights reserved.</p>
           </div>
         </div>
       </footer>
