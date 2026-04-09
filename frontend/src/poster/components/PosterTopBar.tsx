@@ -23,6 +23,11 @@ interface PosterTopBarProps {
   cloudDirty?: boolean;
   /** True while save-to-cloud is in progress. */
   savingToCloud?: boolean;
+  /** Sidebar toggle state and callbacks (for responsive layout). */
+  leftSidebarOpen?: boolean;
+  rightSidebarOpen?: boolean;
+  onToggleLeftSidebar?: () => void;
+  onToggleRightSidebar?: () => void;
 }
 
 export function PosterTopBar({
@@ -35,6 +40,10 @@ export function PosterTopBar({
   onSaveToCloud,
   cloudDirty = false,
   savingToCloud = false,
+  leftSidebarOpen,
+  rightSidebarOpen,
+  onToggleLeftSidebar,
+  onToggleRightSidebar,
 }: PosterTopBarProps = {}) {
   const navigate = useNavigate();
   const undo = usePosterStore((s) => s.undo);
@@ -165,57 +174,100 @@ export function PosterTopBar({
   );
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-4 border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-zinc-200 bg-white px-2 dark:border-zinc-800 dark:bg-zinc-900 sm:gap-2 sm:px-3">
+      {/* ── Sidebar toggles (mobile/tablet) ── */}
+      {onToggleLeftSidebar && (
+        <button
+          type="button"
+          onClick={onToggleLeftSidebar}
+          className={`rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 lg:hidden ${leftSidebarOpen ? 'bg-zinc-100 dark:bg-zinc-800' : ''}`}
+          title="Toggle left panel"
+          aria-label="Toggle left panel"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+      )}
+
+      {/* ── Home link ── */}
+      <Link
+        to="/"
+        className="hidden rounded p-1.5 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 sm:block"
+        title="Go to Home"
+      >
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+      </Link>
+
+      {/* ── Back to 3D (icon on mobile, text on sm+) ── */}
       <Link
         to="/3d"
-        className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        className="hidden rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 sm:block"
+        title="Go to 3D Text Editor"
       >
-        ← 3D Text
+        <span className="hidden md:inline">← 3D Text</span>
+        <span className="md:hidden">← 3D</span>
       </Link>
-      <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+
+      <div className="hidden h-4 w-px bg-zinc-200 dark:bg-zinc-700 sm:block" />
+
+      {/* ── Undo / Redo ── */}
       <button
         onClick={guard(undo)}
         disabled={!canUndo}
-        className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
-        title="Undo"
+        className="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        title="Undo (Ctrl+Z)"
+        aria-label="Undo"
       >
-        Undo
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+        </svg>
       </button>
       <button
         onClick={guard(redo)}
         disabled={!canRedo}
-        className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
-        title="Redo"
+        className="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        title="Redo (Ctrl+Y)"
+        aria-label="Redo"
       >
-        Redo
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l6-6m0 0l-6-6m6 6H9a6 6 0 000 12h3" />
+        </svg>
       </button>
-      <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+
+      {/* ── Secondary actions (hidden on small screens) ── */}
+      <div className="hidden h-4 w-px bg-zinc-200 dark:bg-zinc-700 md:block" />
+      <button
+        onClick={guard(handleNewProject)}
+        className="hidden rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 md:block"
+        title="Start a new blank project"
+      >
+        New
+      </button>
       <button
         onClick={guard(handleSave)}
-        className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        className="hidden rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 md:block"
         title="Download as JSON file"
       >
-        Download JSON
+        <span className="hidden lg:inline">Download JSON</span>
+        <span className="lg:hidden">↓ JSON</span>
       </button>
       <button
         onClick={guard(handleLoad)}
-        className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        className="hidden rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 lg:block"
       >
         Load JSON
       </button>
-      <button
-        onClick={guard(handleNewProject)}
-        className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-        title="Start a new blank project"
-      >
-        New project
-      </button>
+
+      {/* Cloud save */}
       {onSaveToCloud && (
         <button
           type="button"
           onClick={onSaveToCloud}
           disabled={savingToCloud}
-          className={`rounded px-2 py-1 text-sm font-medium ${
+          className={`hidden rounded px-2 py-1 text-sm font-medium sm:block ${
             cloudDirty
               ? 'bg-accent-600 text-white hover:bg-accent-500'
               : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
@@ -225,35 +277,29 @@ export function PosterTopBar({
           {savingToCloud ? 'Saving…' : cloudDirty ? 'Save' : 'Saved'}
         </button>
       )}
-      {onOpenAiWizard && (
+
+      {/* Canvas size */}
+      {onOpenCanvasSize && (
         <button
-          type="button"
-          onClick={guard(onOpenAiWizard)}
-          className="rounded px-2 py-1 text-sm font-medium text-accent-600 hover:bg-accent-50 dark:text-accent-300 dark:hover:bg-accent-950/50"
+          onClick={guard(onOpenCanvasSize)}
+          className="hidden rounded px-2 py-1 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 md:block"
+          title="Change canvas size"
         >
-          Create with AI
+          <span className="font-mono text-xs">{canvasWidth}×{canvasHeight}</span>
         </button>
       )}
-      {onOpenAiChat && (
-        <button
-          type="button"
-          onClick={guard(onOpenAiChat)}
-          className="rounded px-2 py-1 text-sm font-medium text-accent-600 hover:bg-accent-50 dark:text-accent-300 dark:hover:bg-accent-950/50"
-          title="Edit poster with AI"
-        >
-          AI Assistant
-        </button>
-      )}
+
+      {/* Nav links */}
       <Link
         to="/poster/templates"
-        className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        className="hidden rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 lg:block"
         title="Cloud template library"
       >
-        Poster templates
+        Templates
       </Link>
       <Link
         to="/poster/my"
-        className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        className="hidden rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 lg:block"
         title="Your saved posters"
       >
         My stuff
@@ -263,61 +309,78 @@ export function PosterTopBar({
           type="button"
           onClick={guard(onBeginTemplateAuthoring)}
           disabled={templateAuthoringActive}
-          className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          title={
-            templateAuthoringActive
-              ? 'Finish or cancel template labeling first'
-              : 'Label text layers on the canvas, then save as a reusable template (this browser)'
-          }
+          className="hidden rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 lg:block"
+          title={templateAuthoringActive ? 'Finish or cancel template labeling first' : 'Save as template'}
         >
           Save as template
         </button>
       )}
-      {onOpenCanvasSize && (
-        <button
-          onClick={guard(onOpenCanvasSize)}
-          className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          title="Change canvas size"
-        >
-          <span className="font-mono text-xs">{canvasWidth} × {canvasHeight}</span>
-        </button>
-      )}
-      <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-      <div className="flex items-center gap-1">
+
+      {/* Zoom controls */}
+      <div className="hidden items-center gap-0.5 md:flex">
+        <div className="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
         <button
           onClick={() => setCanvasZoom(canvasZoom - 0.25)}
-          className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          className="rounded px-1.5 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           title="Zoom out"
         >
           −
         </button>
         <button
           onClick={setCanvasZoomFit}
-          className="min-w-[4rem] rounded px-2 py-1 text-center font-mono text-xs text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          className="min-w-[3.5rem] rounded px-1.5 py-1 text-center font-mono text-xs text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           title="Fit to view"
         >
           {canvasZoom === 1 ? 'Fit' : `${Math.round(canvasZoom * 100)}%`}
         </button>
         <button
           onClick={() => setCanvasZoom(canvasZoom + 0.25)}
-          className="rounded px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          className="rounded px-1.5 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           title="Zoom in"
         >
           +
         </button>
       </div>
+
+      {/* Spacer */}
       <div className="flex-1" />
-      <div className="flex items-center gap-3">
-        <UserMenu />
-        <ThemeToggle size="md" />
+
+      {/* ── Right side: AI, user, export ── */}
+      {onOpenAiWizard && (
         <button
-          onClick={guard(handleExport)}
-          disabled={exporting}
-          className="rounded bg-accent-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+          type="button"
+          onClick={guard(onOpenAiWizard)}
+          className="hidden rounded px-2 py-1 text-sm font-medium text-accent-600 hover:bg-accent-50 dark:text-accent-300 dark:hover:bg-accent-950/50 sm:block"
         >
-          {exporting ? 'Exporting…' : 'Export PNG'}
+          <span className="hidden lg:inline">Create with AI</span>
+          <span className="lg:hidden">AI Wizard</span>
         </button>
-      </div>
+      )}
+      {onOpenAiChat && (
+        <button
+          type="button"
+          onClick={guard(onOpenAiChat)}
+          className="rounded px-2 py-1 text-sm font-medium text-accent-600 hover:bg-accent-50 dark:text-accent-300 dark:hover:bg-accent-950/50"
+          title="Edit poster with AI"
+        >
+          <span className="hidden sm:inline">AI Assistant</span>
+          <svg className="h-4 w-4 sm:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+          </svg>
+        </button>
+      )}
+
+      <UserMenu />
+      <ThemeToggle size="md" />
+
+      <button
+        onClick={guard(handleExport)}
+        disabled={exporting}
+        className="rounded bg-accent-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50 sm:px-4 sm:text-sm"
+      >
+        {exporting ? 'Exporting…' : 'Export PNG'}
+      </button>
+
     </header>
   );
 }

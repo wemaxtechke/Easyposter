@@ -10,6 +10,7 @@ import {
   getFilterBackend,
 } from 'fabric';
 import type { PosterImageElement, ImageAdjustments } from './types';
+import { posterRasterSrc, type PosterRasterElement } from './posterRaster';
 import { getTextureById } from './posterTextures';
 
 /**
@@ -30,7 +31,7 @@ function usesPaperTearClip(edge: PosterImageElement['edge']): boolean {
 }
 
 /** Stable key for Fabric recreate when image appearance pipeline changes. */
-export function getPosterImageEffectsKey(el: PosterImageElement): string {
+export function getPosterImageEffectsKey(el: PosterRasterElement): string {
   return [
     el.textureOverlay?.textureId ?? '',
     Number(el.textureOverlay?.opacity ?? 0.5).toFixed(2),
@@ -201,8 +202,8 @@ export async function featherImageEdges(
 }
 
 /** Bitmap URL after optional fade (vignette before vector clip / tear). */
-export async function resolvePosterImageFabricSrc(el: PosterImageElement): Promise<string> {
-  let url = el.src;
+export async function resolvePosterImageFabricSrc(el: PosterRasterElement): Promise<string> {
+  let url = posterRasterSrc(el);
   if (usesFadeRaster(el.edge)) {
     url = await featherImageEdges(url, el.edgeFadeAmount ?? 0.35, {
       minEdgeOpacity: el.edgeFadeMinOpacity ?? 0,
@@ -269,7 +270,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
  */
 function computeMaskImageCrop(
   img: FabricImage,
-  el: PosterImageElement,
+  el: PosterRasterElement,
   visibleW: number,
   visibleH: number
 ): { cropX: number; cropY: number } {
@@ -294,7 +295,7 @@ function computeMaskImageCrop(
 }
 
 /** Apply vector clip: any shape mask overrides paper-tear when both are set. */
-export function applyPosterImageClipPath(img: FabricImage, el: PosterImageElement): void {
+export function applyPosterImageClipPath(img: FabricImage, el: PosterRasterElement): void {
   const w = img.width || 1;
   const h = img.height || 1;
   const mask = el.mask ?? 'none';
@@ -393,7 +394,7 @@ type PosterFabricImageData = {
  */
 export async function applyPosterImageEffectsInPlace(
   img: FabricImage,
-  el: PosterImageElement
+  el: PosterRasterElement
 ): Promise<void> {
   const url = await resolvePosterImageFabricSrc(el);
   const co = crossOriginForImageSrc(url);
@@ -403,7 +404,7 @@ export async function applyPosterImageEffectsInPlace(
   (img as { data?: PosterFabricImageData }).data = {
     ...prev,
     posterId: el.id,
-    imageSrc: el.src,
+    imageSrc: posterRasterSrc(el),
     imageEffectsKey: getPosterImageEffectsKey(el),
   };
   img.set({ dirty: true });

@@ -54,6 +54,12 @@ interface PosterStore {
   /** Field bindings from template (key/label/sourceElementId). Null when loading from file or no template. */
   fieldBindings: PosterTemplateFieldBinding[] | null;
   addElement: (el: Omit<PosterElement, 'id' | 'zIndex'>) => void;
+  /** One undo step: optional background image, cropped regions, then text layers (for Magic import). */
+  batchImportMagicPoster: (payload: {
+    background?: Omit<PosterElement, 'id' | 'zIndex'>;
+    regionImages: Omit<PosterElement, 'id' | 'zIndex'>[];
+    texts: Omit<PosterElement, 'id' | 'zIndex'>[];
+  }) => void;
   updateElement: (id: string, updates: Partial<PosterElement>) => void;
   removeElements: (ids: string[]) => void;
   duplicateElements: (ids: string[]) => void;
@@ -127,6 +133,32 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
     const id = generateId();
     const element: PosterElement = { ...el, id, zIndex: maxZ + 1 } as PosterElement;
     set((s) => ({ elements: [...s.elements, element], selectedIds: [id] }));
+  },
+
+  batchImportMagicPoster: (payload) => {
+    get().pushHistory();
+    const maxZ = Math.max(0, ...get().elements.map((e) => e.zIndex));
+    let z = maxZ + 1;
+    const newEls: PosterElement[] = [];
+    if (payload.background) {
+      const id = generateId();
+      newEls.push({ ...payload.background, id, zIndex: z++ } as PosterElement);
+    }
+    for (const im of payload.regionImages) {
+      const id = generateId();
+      newEls.push({ ...im, id, zIndex: z++ } as PosterElement);
+    }
+    for (const t of payload.texts) {
+      const id = generateId();
+      newEls.push({ ...t, id, zIndex: z++ } as PosterElement);
+    }
+    if (newEls.length === 0) return;
+    const lastText = [...newEls].reverse().find((e) => e.type === 'text');
+    const selectId = lastText?.id ?? newEls[newEls.length - 1]!.id;
+    set((s) => ({
+      elements: [...s.elements, ...newEls],
+      selectedIds: [selectId],
+    }));
   },
 
   updateElement: (id, updates) => {

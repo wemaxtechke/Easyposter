@@ -80,7 +80,7 @@ function toFabricShadow(s?: PosterShadow): Shadow | null {
 
 /** For circle mask, use square scale so the element bounds match the circle (no rect-with-circle look). */
 function getMaskedImageScale(
-  el: PosterImageElement,
+  el: PosterImageElement | Poster3DTextElement,
   imgWidth: number,
   imgHeight: number
 ): { scaleX: number; scaleY: number } {
@@ -99,7 +99,7 @@ function getMaskedImageScale(
 
 function applyImageFlip(
   scale: { scaleX: number; scaleY: number },
-  el: PosterImageElement
+  el: PosterImageElement | Poster3DTextElement
 ): { scaleX: number; scaleY: number } {
   let { scaleX, scaleY } = scale;
   if (el.flipHorizontal) scaleX *= -1;
@@ -339,14 +339,16 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
         const newImageSrc =
           el.type === 'image' ? el.src : el.type === '3d-text' ? (el as Poster3DTextElement).image : null;
         const newImageEffectsKey =
-          el.type === 'image' ? getPosterImageEffectsKey(el as PosterImageElement) : '';
+          el.type === 'image' || el.type === '3d-text'
+            ? getPosterImageEffectsKey(el as PosterImageElement | Poster3DTextElement)
+            : '';
         const newAdjKey = isImageLike
           ? getImageAdjustmentsKey(el as PosterImageElement | Poster3DTextElement)
           : '';
 
         const needsSrcRecreate = !!existing && !!newImageSrc && data?.imageSrc !== newImageSrc;
         const needsInPlaceImageEffects =
-          el.type === 'image' &&
+          (el.type === 'image' || el.type === '3d-text') &&
           !!existing &&
           !!newImageSrc &&
           data?.imageSrc === newImageSrc &&
@@ -360,11 +362,12 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
         if (existing && needsInPlaceImageEffects) {
           const img = existing as FabricImage;
-          const imgEl = el as PosterImageElement;
+          const rasterEl = el as PosterImageElement | Poster3DTextElement;
           const w = img.width ?? 1;
           const h = img.height ?? 1;
-          const baseScale = (imgEl.mask ?? 'none') !== 'none' ? getMaskedImageScale(imgEl, w, h) : { scaleX: el.scaleX, scaleY: el.scaleY };
-          const scale = applyImageFlip(baseScale, imgEl);
+          const baseScale =
+            (rasterEl.mask ?? 'none') !== 'none' ? getMaskedImageScale(rasterEl, w, h) : { scaleX: el.scaleX, scaleY: el.scaleY };
+          const scale = applyImageFlip(baseScale, rasterEl);
           img.set({
             left: el.left,
             top: el.top,
@@ -376,9 +379,9 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             originY: 'top',
           });
           img.setCoords();
-          void applyPosterImageEffectsInPlace(img, el as PosterImageElement)
+          void applyPosterImageEffectsInPlace(img, rasterEl)
             .then(() => {
-              applyImageAdjustmentFilters(img, el as PosterImageElement);
+              applyImageAdjustmentFilters(img, rasterEl);
               (img as { data?: Record<string, unknown> }).data = {
                 ...(img as { data?: Record<string, unknown> }).data,
                 adjustmentsKey: newAdjKey,
@@ -393,11 +396,12 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
         if (existing && needsAdjustmentUpdate) {
           const img = existing as FabricImage;
-          const imgEl = el as PosterImageElement;
+          const rasterEl = el as PosterImageElement | Poster3DTextElement;
           const w = img.width ?? 1;
           const h = img.height ?? 1;
-          const baseScale = (imgEl.mask ?? 'none') !== 'none' ? getMaskedImageScale(imgEl, w, h) : { scaleX: el.scaleX, scaleY: el.scaleY };
-          const scale = applyImageFlip(baseScale, imgEl);
+          const baseScale =
+            (rasterEl.mask ?? 'none') !== 'none' ? getMaskedImageScale(rasterEl, w, h) : { scaleX: el.scaleX, scaleY: el.scaleY };
+          const scale = applyImageFlip(baseScale, rasterEl);
           img.set({
             left: el.left,
             top: el.top,
@@ -475,13 +479,15 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
         if (existing && !needsSrcRecreate) {
           const locked = !!el.locked;
           const lockAll = locked || readOnly;
-          const imgEl = el as PosterImageElement;
+          const rasterEl =
+            el.type === 'image' || el.type === '3d-text' ? (el as PosterImageElement | Poster3DTextElement) : null;
           const w = existing.width ?? 1;
           const h = existing.height ?? 1;
-          let scale = el.type === 'image' && (imgEl.mask ?? 'none') !== 'none'
-            ? getMaskedImageScale(imgEl, w, h)
-            : { scaleX: el.scaleX, scaleY: el.scaleY };
-          if (el.type === 'image') scale = applyImageFlip(scale, imgEl);
+          let scale =
+            rasterEl && (rasterEl.mask ?? 'none') !== 'none'
+              ? getMaskedImageScale(rasterEl, w, h)
+              : { scaleX: el.scaleX, scaleY: el.scaleY };
+          if (rasterEl) scale = applyImageFlip(scale, rasterEl);
           const updates: Record<string, unknown> = {
             left: el.left,
             top: el.top,
@@ -652,7 +658,9 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                 const imageSrc =
                   el.type === 'image' ? el.src : el.type === '3d-text' ? (el as Poster3DTextElement).image : undefined;
                 const imageEffectsKey =
-                  el.type === 'image' ? getPosterImageEffectsKey(el as PosterImageElement) : undefined;
+                  el.type === 'image' || el.type === '3d-text'
+                    ? getPosterImageEffectsKey(el as PosterImageElement | Poster3DTextElement)
+                    : undefined;
                 const adjKey = elIsImageLike
                   ? getImageAdjustmentsKey(el as PosterImageElement | Poster3DTextElement)
                   : undefined;
@@ -673,8 +681,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                   let scaleY = obj.scaleY ?? 1;
                   let flipHorizontal: boolean | undefined;
                   let flipVertical: boolean | undefined;
-                  if (el.type === 'image') {
-                    const imgEl = el as PosterImageElement;
+                  if (el.type === 'image' || el.type === '3d-text') {
+                    const imgEl = el as PosterImageElement | Poster3DTextElement;
                     flipHorizontal = scaleX < 0;
                     flipVertical = scaleY < 0;
                     scaleX = Math.abs(scaleX);
@@ -896,15 +904,28 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
   const scaledW = canvasWidth * scale;
   const scaledH = canvasHeight * scale;
-  const renderX = canvasPan.x + SBUF;
-  const renderY = canvasPan.y + SBUF;
-  const contentW = Math.max(viewportWidth, renderX + scaledW + SBUF);
-  const contentH = Math.max(viewportHeight, renderY + scaledH + SBUF);
+
+  // On small viewports (mobile), skip the large scroll buffer and just center the poster.
+  const isCompact = viewportWidth < 768;
+  const effectiveSBUF = isCompact ? 0 : SBUF;
+
+  const renderX = isCompact
+    ? Math.max(0, (viewportWidth - scaledW) / 2)
+    : canvasPan.x + effectiveSBUF;
+  const renderY = isCompact
+    ? Math.max(0, (viewportHeight - scaledH) / 2)
+    : canvasPan.y + effectiveSBUF;
+  const contentW = isCompact
+    ? viewportWidth
+    : Math.max(viewportWidth, renderX + scaledW + effectiveSBUF);
+  const contentH = isCompact
+    ? viewportHeight
+    : Math.max(viewportHeight, renderY + scaledH + effectiveSBUF);
 
   return (
     <div
       ref={viewportRef}
-      className="h-full min-h-0 w-full min-w-0 flex-1 overflow-auto"
+      className={`h-full min-h-0 w-full min-w-0 flex-1 ${isCompact ? 'overflow-hidden' : 'overflow-auto'}`}
       title="Ctrl+Scroll to zoom toward cursor"
     >
       <div
@@ -1204,37 +1225,24 @@ async function createFabricObject(
       });
       return text;
     }
-    case 'image': {
-      const imgEl = el as PosterImageElement;
+    case 'image':
+    case '3d-text': {
+      const raster = el as PosterImageElement | Poster3DTextElement;
       try {
-        const url = await resolvePosterImageFabricSrc(imgEl);
+        const url = await resolvePosterImageFabricSrc(raster);
         const opts = /^https?:\/\//i.test(url) ? { crossOrigin: 'anonymous' as const } : undefined;
         const img = await FabricImage.fromURL(url, opts);
         const w = img.width ?? 1;
         const h = img.height ?? 1;
-        const baseScale = (imgEl.mask ?? 'none') !== 'none' ? getMaskedImageScale(imgEl, w, h) : { scaleX: el.scaleX, scaleY: el.scaleY };
-        const scale = applyImageFlip(baseScale, imgEl);
+        const baseScale =
+          (raster.mask ?? 'none') !== 'none' ? getMaskedImageScale(raster, w, h) : { scaleX: el.scaleX, scaleY: el.scaleY };
+        const scale = applyImageFlip(baseScale, raster);
         img.set({
           ...common,
           scaleX: scale.scaleX,
           scaleY: scale.scaleY,
         });
-        applyPosterImageClipPath(img, imgEl);
-        return img;
-      } catch {
-        return null;
-      }
-    }
-    case '3d-text': {
-      const src = (el as Poster3DTextElement).image;
-      try {
-        const opts = /^https?:\/\//i.test(src) ? { crossOrigin: 'anonymous' as const } : undefined;
-        const img = await FabricImage.fromURL(src, opts);
-        img.set({
-          ...common,
-          scaleX: el.scaleX,
-          scaleY: el.scaleY,
-        });
+        applyPosterImageClipPath(img, raster);
         return img;
       } catch {
         return null;

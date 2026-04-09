@@ -8,7 +8,6 @@ import { generateStyleFromPrompt, adjustStyleFromPrompt, getAiUsage } from '../.
 import { getToken } from '../../lib/api';
 import { ThemeToggle } from '../ThemeToggle';
 import { UserMenu } from '../../auth/UserMenu';
-
 export const LeftSidebar = memo(function LeftSidebar({
   force3dLayerUI = false,
   onPosterEditorClick,
@@ -93,23 +92,34 @@ export const LeftSidebar = memo(function LeftSidebar({
   };
 
   return (
-    <div className="flex h-full flex-col gap-6 p-4">
-      {onPosterEditorClick ? (
-        <button
-          type="button"
-          onClick={onPosterEditorClick}
-          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
-        >
-          Poster Editor →
-        </button>
-      ) : (
+    <div className="flex h-full flex-col gap-6 overflow-y-auto p-4">
+      <div className="flex items-center gap-2">
         <Link
-          to="/poster"
-          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
+          to="/"
+          className="rounded p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          title="Go to Home"
         >
-          Poster Editor →
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
         </Link>
-      )}
+        {onPosterEditorClick ? (
+          <button
+            type="button"
+            onClick={onPosterEditorClick}
+            className="flex-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
+          >
+            Poster Editor →
+          </button>
+        ) : (
+          <Link
+            to="/poster"
+            className="flex-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
+          >
+            Poster Editor →
+          </Link>
+        )}
+      </div>
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <UserMenu compact />

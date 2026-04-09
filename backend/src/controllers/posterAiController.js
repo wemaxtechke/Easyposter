@@ -16,18 +16,42 @@ CONTROL BY ELEMENT TYPE:
 
 **text** – Full control: text, fontSize, fontFamily, fill, left, top, scaleX, scaleY, angle, opacity, zIndex, width, fontWeight, fontStyle, underline, linethrough, charSpacing, textAlign.
 
-**image** – Full control EXCEPT src (cannot change image source): left, top, scaleX, scaleY, angle, opacity, zIndex, mask, edge, edgeFadeAmount, edgeFadeMinOpacity, edgeFadeDirection, maskCornerRadius, adjustBrightness, adjustContrast, adjustSaturation, adjustSharpness.
+**image** – Full control EXCEPT src (cannot change image source / bitmap URL): left, top, scaleX, scaleY, angle, opacity, zIndex, mask, edge, edgeFadeAmount, edgeFadeMinOpacity, edgeFadeDirection, maskCornerRadius, adjustBrightness, adjustContrast, adjustSaturation, adjustSharpness, flipHorizontal, flipVertical, textureOverlay, shadow, maskImageOffsetX, maskImageOffsetY, maskImageScale, maskScale, edgeTearSeed. Some elements typed as image in the JSON are raster exports from the 3D text tool — treat them like any other image (still never change src).
 
 **shapes** (rect, circle, triangle, ellipse, line, polygon) – Full control: fill, left, top, scaleX, scaleY, angle, opacity, zIndex, width, height, radius, rx, ry, strokeWidth, stroke, fillOpacity, polygonPoints, etc.
-
-**3d-text** – LIMITED: ONLY left, top, scaleX, scaleY, angle, opacity, zIndex. If the user asks for colors, materials, extrusion, fonts, or any 3D styling, respond with edits: [] and message: "I can only adjust the position and size of 3D text here. For colors and effects, please use the 3D Text editor by double-clicking the element."
 
 CANVAS: You may receive canvasWidth, canvasHeight, canvasBackground. Do not include these in element edits.
 
 elementId must match an existing element id. Only include updates for properties that change.`;
 
-const THREED_TEXT_ALLOWED_KEYS = new Set([
-  'left', 'top', 'scaleX', 'scaleY', 'angle', 'opacity', 'zIndex',
+/** Raster image-like edits allowed for real element type `3d-text` (stored as `image` in AI context). Never apply src/image from AI. */
+const RASTER_3D_TEXT_AI_KEYS = new Set([
+  'left',
+  'top',
+  'scaleX',
+  'scaleY',
+  'angle',
+  'opacity',
+  'zIndex',
+  'mask',
+  'edge',
+  'edgeFadeAmount',
+  'edgeFadeMinOpacity',
+  'edgeFadeDirection',
+  'edgeTearSeed',
+  'maskCornerRadius',
+  'maskImageOffsetX',
+  'maskImageOffsetY',
+  'maskImageScale',
+  'maskScale',
+  'adjustBrightness',
+  'adjustContrast',
+  'adjustSaturation',
+  'adjustSharpness',
+  'flipHorizontal',
+  'flipVertical',
+  'textureOverlay',
+  'shadow',
 ]);
 
 function buildProjectContextForAi(project) {
@@ -38,7 +62,7 @@ function buildProjectContextForAi(project) {
     if (el.type === '3d-text') {
       return {
         id: el.id,
-        type: '3d-text',
+        type: 'image',
         left: el.left,
         top: el.top,
         scaleX: el.scaleX,
@@ -46,6 +70,17 @@ function buildProjectContextForAi(project) {
         angle: el.angle,
         opacity: el.opacity,
         zIndex: el.zIndex,
+        src: '[image]',
+        mask: el.mask ?? 'none',
+        edge: el.edge ?? 'none',
+        edgeFadeAmount: el.edgeFadeAmount,
+        edgeFadeMinOpacity: el.edgeFadeMinOpacity,
+        edgeFadeDirection: el.edgeFadeDirection,
+        maskCornerRadius: el.maskCornerRadius,
+        adjustBrightness: el.adjustBrightness,
+        adjustContrast: el.adjustContrast,
+        adjustSaturation: el.adjustSaturation,
+        adjustSharpness: el.adjustSharpness,
       };
     }
     const clone = { ...el };
@@ -80,7 +115,8 @@ function sanitizeEdits(edits, project) {
     if (elType === '3d-text') {
       updates = {};
       for (const k of Object.keys(item.updates)) {
-        if (THREED_TEXT_ALLOWED_KEYS.has(k)) updates[k] = item.updates[k];
+        if (k === 'src' || k === 'image') continue;
+        if (RASTER_3D_TEXT_AI_KEYS.has(k)) updates[k] = item.updates[k];
       }
     }
     if (Object.keys(updates).length > 0) {

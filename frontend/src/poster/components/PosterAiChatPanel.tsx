@@ -3,8 +3,34 @@ import { usePosterStore } from '../store/posterStore';
 import { chatPosterAi, getPosterAiUsage, type ChatMessage } from '../services/posterAiApi';
 import type { PosterElement } from '../types';
 
-const THREED_TEXT_ALLOWED_KEYS = new Set([
-  'left', 'top', 'scaleX', 'scaleY', 'angle', 'opacity', 'zIndex',
+/** Same as backend RASTER_3D_TEXT_AI_KEYS — 3D text is a raster; AI may adjust like an image (never src/image). */
+const RASTER_3D_TEXT_AI_KEYS = new Set([
+  'left',
+  'top',
+  'scaleX',
+  'scaleY',
+  'angle',
+  'opacity',
+  'zIndex',
+  'mask',
+  'edge',
+  'edgeFadeAmount',
+  'edgeFadeMinOpacity',
+  'edgeFadeDirection',
+  'edgeTearSeed',
+  'maskCornerRadius',
+  'maskImageOffsetX',
+  'maskImageOffsetY',
+  'maskImageScale',
+  'maskScale',
+  'adjustBrightness',
+  'adjustContrast',
+  'adjustSaturation',
+  'adjustSharpness',
+  'flipHorizontal',
+  'flipVertical',
+  'textureOverlay',
+  'shadow',
 ]);
 
 function sanitizeUpdates(elementId: string, updates: Record<string, unknown>, elements: PosterElement[]): Record<string, unknown> | null {
@@ -13,7 +39,8 @@ function sanitizeUpdates(elementId: string, updates: Record<string, unknown>, el
   if (el.type === '3d-text') {
     const filtered: Record<string, unknown> = {};
     for (const k of Object.keys(updates)) {
-      if (THREED_TEXT_ALLOWED_KEYS.has(k)) filtered[k] = updates[k];
+      if (k === 'src' || k === 'image') continue;
+      if (RASTER_3D_TEXT_AI_KEYS.has(k)) filtered[k] = updates[k];
     }
     return Object.keys(filtered).length > 0 ? filtered : null;
   }
@@ -98,7 +125,19 @@ export function PosterAiChatPanel({ open, onClose }: PosterAiChatPanelProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed right-0 top-0 z-[100] flex h-full w-80 flex-col border-l border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+    <>
+      {/* Backdrop on mobile */}
+      <div
+        className="fixed inset-0 z-[99] bg-black/40 md:hidden"
+        onClick={onClose}
+      />
+      <div className={[
+        'fixed z-[100] flex flex-col border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900',
+        // Mobile: bottom sheet
+        'inset-x-0 bottom-0 h-[65vh] rounded-t-2xl border-t',
+        // Desktop: right panel
+        'md:inset-x-auto md:bottom-auto md:right-0 md:top-0 md:h-full md:w-80 md:rounded-none md:border-t-0 md:border-l',
+      ].join(' ')}>
       <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">AI Assistant</h3>
         <button
@@ -173,12 +212,13 @@ export function PosterAiChatPanel({ open, onClose }: PosterAiChatPanelProps) {
           <button
             type="submit"
             disabled={loading || !input.trim()}
-            className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Send
           </button>
         </form>
       </div>
     </div>
+    </>
   );
 }

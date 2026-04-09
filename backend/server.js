@@ -24,6 +24,7 @@ async function start() {
     console.log(`Backend http://localhost:${PORT}`);
     console.log('  Auth: POST /api/auth/signup | POST /api/auth/login | GET /api/auth/me');
     console.log('  GET  /api/hdrs, /api/textures, /api/fonts, /api/poster-templates, /api/poster-projects, /api/health');
+    console.log('  POST /api/magic-layers (multipart image → OCR draft layers; needs GOOGLE_CLOUD_VISION_API_KEY)');
     console.log('  POST /api/textures/upload | POST /api/fonts/upload | POST /api/poster-templates | POST /api/poster-projects');
   });
 }

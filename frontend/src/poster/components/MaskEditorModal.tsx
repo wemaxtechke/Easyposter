@@ -1,24 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { PosterImageElement, PosterImageMask } from '../types';
+import type { PosterElement, PosterImageElement, Poster3DTextElement, PosterImageMask } from '../types';
+import { posterRasterSrc } from '../posterRaster';
 import { bakeMaskedImage } from '../utils/bakeMaskedImage';
 
 interface MaskEditorModalProps {
   open: boolean;
-  image: PosterImageElement;
+  target: PosterImageElement | Poster3DTextElement;
   onClose: () => void;
-  onApply: (updates: Partial<PosterImageElement>) => void;
+  onApply: (updates: Partial<PosterElement>) => void;
 }
 
 const STAGE_W = 540;
 const STAGE_H = 340;
 
-export function MaskEditorModal({ open, image, onClose, onApply }: MaskEditorModalProps) {
-  const [mask, setMask] = useState<PosterImageMask>(image.mask ?? 'circle');
-  const [cornerRadius, setCornerRadius] = useState(image.maskCornerRadius ?? 0.18);
-  const [offsetX, setOffsetX] = useState(image.maskImageOffsetX ?? 0.5);
-  const [offsetY, setOffsetY] = useState(image.maskImageOffsetY ?? 0.5);
-  const [zoom, setZoom] = useState(image.maskImageScale ?? 1);
-  const [maskScale, setMaskScale] = useState(image.maskScale ?? 1);
+export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorModalProps) {
+  const [mask, setMask] = useState<PosterImageMask>(target.mask ?? 'circle');
+  const [cornerRadius, setCornerRadius] = useState(target.maskCornerRadius ?? 0.18);
+  const [offsetX, setOffsetX] = useState(target.maskImageOffsetX ?? 0.5);
+  const [offsetY, setOffsetY] = useState(target.maskImageOffsetY ?? 0.5);
+  const [zoom, setZoom] = useState(target.maskImageScale ?? 1);
+  const [maskScale, setMaskScale] = useState(target.maskScale ?? 1);
   const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [dragStart, setDragStart] = useState<{
     x: number;
@@ -27,19 +28,31 @@ export function MaskEditorModal({ open, image, onClose, onApply }: MaskEditorMod
     offsetY: number;
   } | null>(null);
 
-  const previewSrc = image.originalSrc ?? image.src;
+  const previewSrc = target.originalSrc ?? posterRasterSrc(target);
 
   useEffect(() => {
     if (!open) return;
-    setMask(image.mask ?? 'circle');
-    setCornerRadius(image.maskCornerRadius ?? 0.18);
-    setOffsetX(image.maskImageOffsetX ?? 0.5);
-    setOffsetY(image.maskImageOffsetY ?? 0.5);
-    setZoom(image.maskImageScale ?? 1);
-    setMaskScale(image.maskScale ?? 1);
+    setMask(target.mask ?? 'circle');
+    setCornerRadius(target.maskCornerRadius ?? 0.18);
+    setOffsetX(target.maskImageOffsetX ?? 0.5);
+    setOffsetY(target.maskImageOffsetY ?? 0.5);
+    setZoom(target.maskImageScale ?? 1);
+    setMaskScale(target.maskScale ?? 1);
     setImgNaturalSize(null);
     setDragStart(null);
-  }, [open, image.id, image.src, image.originalSrc, image.mask, image.maskCornerRadius, image.maskImageOffsetX, image.maskImageOffsetY, image.maskImageScale, image.maskScale]);
+  }, [
+    open,
+    target.id,
+    target.type,
+    target.type === '3d-text' ? target.image : (target as PosterImageElement).src,
+    target.originalSrc,
+    target.mask,
+    target.maskCornerRadius,
+    target.maskImageOffsetX,
+    target.maskImageOffsetY,
+    target.maskImageScale,
+    target.maskScale,
+  ]);
 
   const shape = mask === 'none' ? 'circle' : mask;
   const hasMask = mask !== 'none';
@@ -235,31 +248,57 @@ export function MaskEditorModal({ open, image, onClose, onApply }: MaskEditorMod
                   maskScale,
                   maskCornerRadius: cornerRadius,
                 });
-                const updates: Partial<PosterImageElement> = {
-                  src: baked,
-                  originalSrc: image.originalSrc ?? image.src,
-                  mask: 'none',
-                  maskCornerRadius: undefined,
-                  maskImageOffsetX: undefined,
-                  maskImageOffsetY: undefined,
-                  maskImageScale: undefined,
-                  maskScale: undefined,
-                };
-                if (image.edge === 'paper-tear' || image.edge === 'fade-paper-tear') {
-                  updates.edge = image.edge === 'fade-paper-tear' ? 'fade' : 'none';
+                const baseUrl = posterRasterSrc(target);
+                const updates: Partial<PosterElement> =
+                  target.type === '3d-text'
+                    ? {
+                        image: baked,
+                        originalSrc: target.originalSrc ?? baseUrl,
+                        mask: 'none',
+                        maskCornerRadius: undefined,
+                        maskImageOffsetX: undefined,
+                        maskImageOffsetY: undefined,
+                        maskImageScale: undefined,
+                        maskScale: undefined,
+                      }
+                    : {
+                        src: baked,
+                        originalSrc: target.originalSrc ?? (target as PosterImageElement).src,
+                        mask: 'none',
+                        maskCornerRadius: undefined,
+                        maskImageOffsetX: undefined,
+                        maskImageOffsetY: undefined,
+                        maskImageScale: undefined,
+                        maskScale: undefined,
+                      };
+                if (target.edge === 'paper-tear' || target.edge === 'fade-paper-tear') {
+                  updates.edge = target.edge === 'fade-paper-tear' ? 'fade' : 'none';
                 }
                 onApply(updates);
-              } else if (image.originalSrc) {
-                onApply({
-                  src: image.originalSrc,
-                  originalSrc: undefined,
-                  mask: 'none',
-                  maskCornerRadius: undefined,
-                  maskImageOffsetX: undefined,
-                  maskImageOffsetY: undefined,
-                  maskImageScale: undefined,
-                  maskScale: undefined,
-                });
+              } else if (target.originalSrc) {
+                onApply(
+                  target.type === '3d-text'
+                    ? {
+                        image: target.originalSrc,
+                        originalSrc: undefined,
+                        mask: 'none',
+                        maskCornerRadius: undefined,
+                        maskImageOffsetX: undefined,
+                        maskImageOffsetY: undefined,
+                        maskImageScale: undefined,
+                        maskScale: undefined,
+                      }
+                    : {
+                        src: target.originalSrc,
+                        originalSrc: undefined,
+                        mask: 'none',
+                        maskCornerRadius: undefined,
+                        maskImageOffsetX: undefined,
+                        maskImageOffsetY: undefined,
+                        maskImageScale: undefined,
+                        maskScale: undefined,
+                      }
+                );
               } else {
                 onApply({
                   mask: 'none',

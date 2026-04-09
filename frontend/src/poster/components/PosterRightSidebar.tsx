@@ -594,12 +594,12 @@ function ImageAdjustmentControls({
 }
 
 function PosterImageAppearanceControls({
-  image,
+  raster,
   updateElement,
   pushHistory,
   readOnly,
 }: {
-  image: PosterImageElement;
+  raster: PosterImageElement | Poster3DTextElement;
   updateElement: (id: string, updates: Partial<PosterElement>) => void;
   pushHistory: () => void;
   readOnly?: boolean;
@@ -610,15 +610,15 @@ function PosterImageAppearanceControls({
 
   useEffect(() => {
     setRemoveBgError(null);
-  }, [image.id]);
+  }, [raster.id]);
 
-  const mask: PosterImageMask = image.mask ?? 'none';
-  const edge: PosterImageEdge = image.edge ?? 'none';
+  const mask: PosterImageMask = raster.mask ?? 'none';
+  const edge: PosterImageEdge = raster.edge ?? 'none';
   const shapeMask = mask !== 'none';
   const tearDisabled = shapeMask;
-  const fadeAmount = image.edgeFadeAmount ?? 0.4;
-  const fadeMinOpacity = image.edgeFadeMinOpacity ?? 0;
-  const fadeDirection: PosterImageFadeDirection = image.edgeFadeDirection ?? 'radial';
+  const fadeAmount = raster.edgeFadeAmount ?? 0.4;
+  const fadeMinOpacity = raster.edgeFadeMinOpacity ?? 0;
+  const fadeDirection: PosterImageFadeDirection = raster.edgeFadeDirection ?? 'radial';
   const edgeUsesTear = edge === 'paper-tear' || edge === 'fade-paper-tear';
   const edgeUsesFade = edge === 'fade' || edge === 'fade-paper-tear';
 
@@ -630,13 +630,21 @@ function PosterImageAppearanceControls({
       : edge;
 
   const handleRemoveBackground = async () => {
-    if (readOnly || image.locked) return;
+    if (readOnly || raster.locked) return;
     setRemoveBgError(null);
     setRemoveBgBusy(true);
     try {
       pushHistory();
-      const { src, scaleX, scaleY } = await removeBackgroundFromElementPreservingLayout(image);
-      updateElement(image.id, { src, scaleX, scaleY });
+      const pick =
+        raster.type === '3d-text'
+          ? { image: raster.image, scaleX: raster.scaleX, scaleY: raster.scaleY }
+          : { src: raster.src, scaleX: raster.scaleX, scaleY: raster.scaleY };
+      const { primary, scaleX, scaleY } = await removeBackgroundFromElementPreservingLayout(pick);
+      if (raster.type === '3d-text') {
+        updateElement(raster.id, { image: primary, scaleX, scaleY });
+      } else {
+        updateElement(raster.id, { src: primary, scaleX, scaleY });
+      }
     } catch (err) {
       setRemoveBgError(err instanceof Error ? err.message : 'Background removal failed.');
     } finally {
@@ -652,7 +660,7 @@ function PosterImageAppearanceControls({
         <button
           type="button"
           onClick={handleRemoveBackground}
-          disabled={readOnly || !!image.locked || removeBgBusy}
+          disabled={readOnly || !!raster.locked || removeBgBusy}
           className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
         >
           {removeBgBusy ? 'Removing background…' : 'Remove background'}
@@ -678,7 +686,7 @@ function PosterImageAppearanceControls({
         </button>
         {shapeMask && (
           <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
-            Current: {mask} — image {Math.round((image.maskImageScale ?? 1) * 100)}%, mask {Math.round((image.maskScale ?? 1) * 100)}%
+            Current: {mask} — image {Math.round((raster.maskImageScale ?? 1) * 100)}%, mask {Math.round((raster.maskScale ?? 1) * 100)}%
           </p>
         )}
       </div>
@@ -688,9 +696,9 @@ function PosterImageAppearanceControls({
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => updateElement(image.id, { flipHorizontal: !image.flipHorizontal })}
+            onClick={() => updateElement(raster.id, { flipHorizontal: !raster.flipHorizontal })}
             className={`rounded border px-3 py-2 text-xs font-medium transition-colors ${
-              image.flipHorizontal
+              raster.flipHorizontal
                 ? 'border-accent-600 bg-accent-600 text-white dark:border-gold-500 dark:bg-gold-500 dark:text-zinc-950'
                 : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
             }`}
@@ -699,9 +707,9 @@ function PosterImageAppearanceControls({
           </button>
           <button
             type="button"
-            onClick={() => updateElement(image.id, { flipVertical: !image.flipVertical })}
+            onClick={() => updateElement(raster.id, { flipVertical: !raster.flipVertical })}
             className={`rounded border px-3 py-2 text-xs font-medium transition-colors ${
-              image.flipVertical
+              raster.flipVertical
                 ? 'border-accent-600 bg-accent-600 text-white dark:border-gold-500 dark:bg-gold-500 dark:text-zinc-950'
                 : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
             }`}
@@ -719,10 +727,10 @@ function PosterImageAppearanceControls({
             title="None"
             onClick={(e) => {
               e.stopPropagation();
-              updateElement(image.id, { textureOverlay: undefined });
+              updateElement(raster.id, { textureOverlay: undefined });
             }}
             className={`flex aspect-square items-center justify-center rounded border-2 text-[10px] ${
-              !image.textureOverlay
+              !raster.textureOverlay
                 ? 'border-amber-500 bg-amber-50 dark:bg-zinc-700'
                 : 'border-zinc-200 dark:border-zinc-600'
             }`}
@@ -736,15 +744,15 @@ function PosterImageAppearanceControls({
               title={tex.name}
               onClick={(e) => {
                 e.stopPropagation();
-                updateElement(image.id, {
+                updateElement(raster.id, {
                   textureOverlay: {
                     textureId: tex.id,
-                    opacity: image.textureOverlay?.opacity ?? 0.5,
+                    opacity: raster.textureOverlay?.opacity ?? 0.5,
                   },
                 });
               }}
               className={`aspect-square rounded border-2 p-0.5 ${
-                image.textureOverlay?.textureId === tex.id
+                raster.textureOverlay?.textureId === tex.id
                   ? 'border-amber-500 bg-amber-50 dark:bg-zinc-700'
                   : 'border-zinc-200 dark:border-zinc-600'
               }`}
@@ -755,21 +763,21 @@ function PosterImageAppearanceControls({
             />
           ))}
         </div>
-        {image.textureOverlay && (
+        {raster.textureOverlay && (
           <div className="flex flex-col gap-1">
             <label className="text-xs text-zinc-500">
-              Opacity ({Math.round((image.textureOverlay.opacity ?? 0.5) * 100)}%)
+              Opacity ({Math.round((raster.textureOverlay.opacity ?? 0.5) * 100)}%)
             </label>
             <input
               type="range"
               min={5}
               max={95}
               step={5}
-              value={(image.textureOverlay.opacity ?? 0.5) * 100}
+              value={(raster.textureOverlay.opacity ?? 0.5) * 100}
               onChange={(e) =>
-                updateElement(image.id, {
+                updateElement(raster.id, {
                   textureOverlay: {
-                    ...image.textureOverlay!,
+                    ...raster.textureOverlay!,
                     opacity: parseInt(e.target.value, 10) / 100,
                   },
                 })
@@ -786,11 +794,11 @@ function PosterImageAppearanceControls({
           value={edgeSelectValue}
           onChange={(e) => {
             const ed = e.target.value as PosterImageEdge;
-            const updates: Partial<PosterImageElement> = { edge: ed };
+            const updates: Partial<PosterElement> = { edge: ed };
             if ((ed === 'paper-tear' || ed === 'fade-paper-tear') && shapeMask) {
               updates.mask = 'none';
             }
-            updateElement(image.id, updates);
+            updateElement(raster.id, updates);
           }}
           className="rounded border border-zinc-200 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
         >
@@ -814,7 +822,7 @@ function PosterImageAppearanceControls({
             <select
               value={fadeDirection}
               onChange={(e) =>
-                updateElement(image.id, {
+                updateElement(raster.id, {
                   edgeFadeDirection: e.target.value as PosterImageFadeDirection,
                 })
               }
@@ -843,7 +851,7 @@ function PosterImageAppearanceControls({
               step={0.05}
               value={fadeAmount}
               onChange={(e) =>
-                updateElement(image.id, { edgeFadeAmount: parseFloat(e.target.value) })
+                updateElement(raster.id, { edgeFadeAmount: parseFloat(e.target.value) })
               }
               className="w-full"
             />
@@ -862,7 +870,7 @@ function PosterImageAppearanceControls({
               step={0.05}
               value={fadeMinOpacity}
               onChange={(e) =>
-                updateElement(image.id, { edgeFadeMinOpacity: parseFloat(e.target.value) })
+                updateElement(raster.id, { edgeFadeMinOpacity: parseFloat(e.target.value) })
               }
               className="w-full"
             />
@@ -878,7 +886,7 @@ function PosterImageAppearanceControls({
         <button
           type="button"
           onClick={() =>
-            updateElement(image.id, {
+            updateElement(raster.id, {
               edgeTearSeed: Math.floor(Math.random() * 1_000_000_000),
             })
           }
@@ -890,10 +898,10 @@ function PosterImageAppearanceControls({
 
       <MaskEditorModal
         open={maskEditorOpen}
-        image={image}
+        target={raster}
         onClose={() => setMaskEditorOpen(false)}
         onApply={(updates) => {
-          updateElement(image.id, updates);
+          updateElement(raster.id, updates);
           pushHistory();
         }}
       />
@@ -1816,9 +1824,9 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
             />
           </div>
 
-          {single.type === 'image' && (
+          {(single.type === 'image' || single.type === '3d-text') && (
             <PosterImageAppearanceControls
-              image={single as PosterImageElement}
+              raster={single as PosterImageElement | Poster3DTextElement}
               updateElement={updateElement}
               pushHistory={pushHistory}
               readOnly={readOnly}

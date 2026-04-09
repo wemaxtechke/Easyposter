@@ -1,5 +1,5 @@
 import { Client } from '@gradio/client';
-import type { PosterImageElement } from '../types';
+import type { PosterImageElement, Poster3DTextElement } from '../types';
 
 const SPACE = 'easyposterke/remove_bg';
 const SPACE_ROOT = 'https://easyposterke-remove-bg.hf.space';
@@ -95,24 +95,29 @@ export async function removeBackgroundFromFilePreservingDisplay(
   }
 }
 
+export type RemoveBgRasterElement =
+  | Pick<PosterImageElement, 'src' | 'scaleX' | 'scaleY'>
+  | Pick<Poster3DTextElement, 'image' | 'scaleX' | 'scaleY'>;
+
 /**
- * Existing canvas image: replace with background-removed version; keep same displayed size and position (left/top unchanged).
+ * Existing canvas raster (image or 3D text bitmap): replace with background-removed version; keep same displayed size and position (left/top unchanged).
  */
 export async function removeBackgroundFromElementPreservingLayout(
-  el: Pick<PosterImageElement, 'src' | 'scaleX' | 'scaleY'>
-): Promise<{ src: string; scaleX: number; scaleY: number }> {
-  const newSrc = await removeBackground(el.src);
+  el: RemoveBgRasterElement
+): Promise<{ primary: string; scaleX: number; scaleY: number }> {
+  const source = 'src' in el ? el.src : el.image;
+  const newSrc = await removeBackground(source);
   try {
     const [oldDims, newDims] = await Promise.all([
-      getImageDimensions(el.src),
+      getImageDimensions(source),
       getImageDimensions(newSrc),
     ]);
     const dw = oldDims.width * el.scaleX;
     const dh = oldDims.height * el.scaleY;
     const scaleX = newDims.width > 0 ? dw / newDims.width : el.scaleX;
     const scaleY = newDims.height > 0 ? dh / newDims.height : el.scaleY;
-    return { src: newSrc, scaleX, scaleY };
+    return { primary: newSrc, scaleX, scaleY };
   } catch {
-    return { src: newSrc, scaleX: el.scaleX, scaleY: el.scaleY };
+    return { primary: newSrc, scaleX: el.scaleX, scaleY: el.scaleY };
   }
 }

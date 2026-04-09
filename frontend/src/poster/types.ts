@@ -131,6 +131,31 @@ export interface PosterImageElement extends PosterElementBase, ImageAdjustments 
   flipVertical?: boolean;
 }
 
+/**
+ * Optional mask / edge / flip fields shared with poster images.
+ * 3D text is a raster bitmap on the canvas and uses the same Fabric image pipeline.
+ */
+export type PosterRasterStyleFields = Partial<
+  Pick<
+    PosterImageElement,
+    | 'mask'
+    | 'edge'
+    | 'edgeFadeAmount'
+    | 'edgeFadeMinOpacity'
+    | 'edgeFadeDirection'
+    | 'edgeTearSeed'
+    | 'maskCornerRadius'
+    | 'maskImageOffsetX'
+    | 'maskImageOffsetY'
+    | 'maskImageScale'
+    | 'maskScale'
+    | 'flipHorizontal'
+    | 'flipVertical'
+    | 'textureOverlay'
+    | 'originalSrc'
+  >
+>;
+
 export type PosterTextAlign = 'left' | 'center' | 'right';
 
 export interface PosterTextElement extends PosterElementBase {
@@ -173,7 +198,7 @@ export interface PosterTextElement extends PosterElementBase {
   fillOpacity?: number;
 }
 
-export interface Poster3DTextElement extends PosterElementBase, ImageAdjustments {
+export interface Poster3DTextElement extends PosterElementBase, ImageAdjustments, PosterRasterStyleFields {
   type: '3d-text';
   image: string; // data URL or blob URL
   config: Partial<EditorState>; // Full 3D editor config for re-editing

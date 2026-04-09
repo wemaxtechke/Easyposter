@@ -1,4 +1,6 @@
 import { useRef, useState, useCallback } from 'react';
+import { requestMagicLayersFromImage } from '../../services/magicLayersApi';
+import { buildPosterMagicImport } from '../magicPosterImport';
 import { useNavigate } from 'react-router-dom';
 import { Textbox } from 'fabric';
 import { usePosterStore } from '../store/posterStore';
@@ -56,7 +58,7 @@ function layerKindLabel(el: PosterElement): string {
     case 'image':
       return 'Image';
     case '3d-text':
-      return '3D Text';
+      return 'Image';
     default:
       return 'Element';
   }
@@ -70,12 +72,21 @@ interface PosterLeftSidebarProps {
 export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLeftSidebarProps) {
   const navigate = useNavigate();
   const addElement = usePosterStore((s) => s.addElement);
+  const batchImportMagicPoster = usePosterStore((s) => s.batchImportMagicPoster);
+  const canvasWidth = usePosterStore((s) => s.canvasWidth);
+  const canvasHeight = usePosterStore((s) => s.canvasHeight);
   const elements = usePosterStore((s) => s.elements);
   const selectedIds = usePosterStore((s) => s.selectedIds);
   const setSelected = usePosterStore((s) => s.setSelected);
   const updateElement = usePosterStore((s) => s.updateElement);
   const isAdmin = useAuthStore((s) => s.isAdmin());
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const magicPosterInputRef = useRef<HTMLInputElement>(null);
+  const [magicPosterBusy, setMagicPosterBusy] = useState(false);
+  const [magicPosterError, setMagicPosterError] = useState<string | null>(null);
+  const [magicPosterHint, setMagicPosterHint] = useState<string | null>(null);
+  const [magicIncludeBg, setMagicIncludeBg] = useState(true);
+  const [magicIncludeObjects, setMagicIncludeObjects] = useState(true);
   const [shapesModalOpen, setShapesModalOpen] = useState(false);
   const [customElementsModalOpen, setCustomElementsModalOpen] = useState(false);
   const [removeBgOnUpload, setRemoveBgOnUpload] = useState(false);
@@ -118,6 +129,47 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
         }
       });
     });
+  };
+
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => (typeof r.result === 'string' ? resolve(r.result) : reject(new Error('Read failed')));
+      r.onerror = () => reject(new Error('Read failed'));
+      r.readAsDataURL(file);
+    });
+
+  const handleMagicPosterImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setMagicPosterError(null);
+    setMagicPosterHint(null);
+    setMagicPosterBusy(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const api = await requestMagicLayersFromImage(file);
+      if (api.warning) setMagicPosterHint(api.warning);
+      const payload = await buildPosterMagicImport(api, canvasWidth, canvasHeight, dataUrl, {
+        includeBackground: magicIncludeBg,
+        includeObjectCrops: magicIncludeObjects,
+      });
+      const hasAnything =
+        !!payload.background || payload.regionImages.length > 0 || payload.texts.length > 0;
+      if (!hasAnything) {
+        setMagicPosterError(api.warning || 'Nothing detected to import.');
+        return;
+      }
+      batchImportMagicPoster({
+        background: payload.background,
+        regionImages: payload.regionImages,
+        texts: payload.texts,
+      });
+    } catch (err) {
+      setMagicPosterError(err instanceof Error ? err.message : 'Magic import failed');
+    } finally {
+      setMagicPosterBusy(false);
+    }
   };
 
   const handleAddText = () => {
@@ -223,6 +275,58 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
             Custom Elements
           </button>
         </div>
+      </div>
+
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          Magic import
+        </h3>
+        <p className="mb-2 text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
+          Upload a poster or flyer image. We add a fitted background, optional detected objects as crops,
+          and editable text you can move on the canvas (Google Cloud Vision on the backend).
+        </p>
+        <label className="mb-1 flex cursor-pointer items-center gap-2 text-[11px] text-zinc-600 dark:text-zinc-400">
+          <input
+            type="checkbox"
+            checked={magicIncludeBg}
+            onChange={(ev) => setMagicIncludeBg(ev.target.checked)}
+            disabled={readOnly || magicPosterBusy}
+            className="h-3.5 w-3.5 rounded border-zinc-300 text-violet-600 dark:border-zinc-600"
+          />
+          Full image as background layer
+        </label>
+        <label className="mb-2 flex cursor-pointer items-center gap-2 text-[11px] text-zinc-600 dark:text-zinc-400">
+          <input
+            type="checkbox"
+            checked={magicIncludeObjects}
+            onChange={(ev) => setMagicIncludeObjects(ev.target.checked)}
+            disabled={readOnly || magicPosterBusy}
+            className="h-3.5 w-3.5 rounded border-zinc-300 text-violet-600 dark:border-zinc-600"
+          />
+          Add detected objects as image layers
+        </label>
+        <input
+          ref={magicPosterInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          disabled={magicPosterBusy}
+          onChange={handleMagicPosterImport}
+        />
+        <button
+          type="button"
+          onClick={guard(() => magicPosterInputRef.current?.click())}
+          disabled={magicPosterBusy}
+          className="w-full rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-100 dark:hover:bg-violet-900/50"
+        >
+          {magicPosterBusy ? 'Analyzing…' : 'Import from image'}
+        </button>
+        {magicPosterError && (
+          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{magicPosterError}</p>
+        )}
+        {magicPosterHint && !magicPosterError && (
+          <p className="mt-2 text-[10px] text-amber-800 dark:text-amber-200/90">{magicPosterHint}</p>
+        )}
       </div>
 
       <CustomElementsModal

@@ -2,8 +2,8 @@ import type { PosterProject, PosterElement } from '../types';
 
 /**
  * Build a project context suitable for sending to the AI.
- * - 3d-text: only layout props (id, type, left, top, scaleX, scaleY, angle, opacity, zIndex)
- * - image/3d-text: replace src/image data/blob URLs with placeholder to save tokens
+ * - 3d-text: serialized as type `image` (raster bitmap); `src` placeholder — same rules as images (no changing the bitmap URL from AI).
+ * - image: replace data/blob URLs on `src` with placeholder
  * - Truncate long text content
  */
 export function buildProjectContextForAi(project: PosterProject): {
@@ -24,7 +24,7 @@ export function buildProjectContextForAi(project: PosterProject): {
     if (el.type === '3d-text') {
       return {
         id: el.id,
-        type: '3d-text',
+        type: 'image',
         left: el.left,
         top: el.top,
         scaleX: el.scaleX,
@@ -32,6 +32,17 @@ export function buildProjectContextForAi(project: PosterProject): {
         angle: el.angle,
         opacity: el.opacity,
         zIndex: el.zIndex,
+        src: '[image]',
+        mask: el.mask ?? 'none',
+        edge: el.edge ?? 'none',
+        edgeFadeAmount: el.edgeFadeAmount,
+        edgeFadeMinOpacity: el.edgeFadeMinOpacity,
+        edgeFadeDirection: el.edgeFadeDirection,
+        maskCornerRadius: el.maskCornerRadius,
+        adjustBrightness: el.adjustBrightness,
+        adjustContrast: el.adjustContrast,
+        adjustSaturation: el.adjustSaturation,
+        adjustSharpness: el.adjustSharpness,
       };
     }
     const clone = { ...el } as Record<string, unknown>;

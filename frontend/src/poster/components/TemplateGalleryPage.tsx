@@ -87,44 +87,59 @@ export function TemplateGalleryPage() {
   return (
     <div className="min-h-screen bg-zinc-100 dark:bg-zinc-950">
       <header className="border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Poster templates</h1>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Built-in, saved in this browser, and cloud library — select one, fill fields, then edit in the
-              designer.
-            </p>
-          </div>
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
+            <Link
+              to="/"
+              className="flex items-center gap-1.5 text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+              title="Home"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              <span className="hidden sm:inline">Home</span>
+            </Link>
+            <div>
+              <h1 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 sm:text-lg">Poster templates</h1>
+              <p className="hidden text-xs text-zinc-500 dark:text-zinc-400 sm:block">
+                Select a template, fill fields, then edit in the designer.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <UserMenu />
             {isCreator && (
               <button
                 type="button"
                 onClick={() => setShowMyTemplatesOnly((v) => !v)}
-                className={`rounded-lg border px-3 py-1.5 text-sm ${
+                className={`rounded-lg border px-2.5 py-1.5 text-sm ${
                   showMyTemplatesOnly
                     ? 'border-accent-500 bg-accent-50 text-accent-800 dark:border-accent-600 dark:bg-accent-900/30 dark:text-accent-200'
                     : 'border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800'
                 }`}
               >
-                My Templates
+                Mine
               </button>
             )}
             <button
               type="button"
               onClick={() => void refreshRemotePosterTemplates()}
-              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              className="hidden rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800 sm:block"
             >
-              Refresh cloud
+              Refresh
             </button>
+            <Link
+              to="/3d"
+              className="hidden rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800 md:block"
+            >
+              3D Text
+            </Link>
             <Link
               to="/poster"
               className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-500"
             >
-              Open poster editor
-            </Link>
-            <Link to="/" className="text-sm text-zinc-600 hover:underline dark:text-zinc-400">
-              3D Text
+              <span className="hidden sm:inline">Open poster editor</span>
+              <span className="sm:hidden">Editor</span>
             </Link>
           </div>
         </div>
@@ -150,12 +165,12 @@ export function TemplateGalleryPage() {
           <p className="text-sm text-zinc-600 dark:text-zinc-300">No templates available.</p>
         )}
 
-        <ul className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="mt-4 columns-2 gap-3 sm:gap-4 lg:columns-3 lg:gap-5">
           {items.map((t) => {
             const origin = originLabel(t.id, cloudIds);
             const isCloudTemplate = cloudIds.has(t.id);
             return (
-              <li key={t.id}>
+              <li key={t.id} className="mb-3 break-inside-avoid sm:mb-4 lg:mb-5">
                 <div className="group relative flex w-full flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition hover:border-gold-400 hover:shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-gold-500">
                   {((isAdmin && isCloudTemplate) ||
                     (isCreator && isCloudTemplate && t.creatorId === user?.id)) && (
@@ -193,12 +208,12 @@ export function TemplateGalleryPage() {
                     onClick={() => openTemplate(t.id)}
                     className="flex w-full flex-col items-stretch text-left"
                   >
-                  <div className="relative flex items-center justify-center bg-zinc-100 p-3 dark:bg-zinc-800">
+                  <div className="relative flex items-center justify-center bg-zinc-100 p-1.5 sm:p-3 dark:bg-zinc-800">
                     <TemplateThumbnail
                       project={t.project}
                       thumbnail={t.thumbnail}
                       width={280}
-                      className="rounded-md shadow-sm transition group-hover:scale-[1.02]"
+                      className="!h-auto !w-full max-w-full rounded-md shadow-sm transition group-hover:scale-[1.02]"
                     />
                     <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/10 group-hover:opacity-100 dark:group-hover:bg-white/5">
                       <span className="rounded-full bg-accent-600 px-4 py-1.5 text-xs font-semibold text-white shadow-lg">
@@ -206,7 +221,7 @@ export function TemplateGalleryPage() {
                       </span>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-1 p-3">
+                  <div className="flex flex-col gap-1 p-2.5 sm:p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[10px] font-medium uppercase tracking-wide text-accent-600 dark:text-accent-400">
                         {categoryLabel(t.category)}
@@ -217,9 +232,9 @@ export function TemplateGalleryPage() {
                         </span>
                       )}
                     </div>
-                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t.name}</span>
+                    <span className="text-xs font-semibold leading-tight text-zinc-900 sm:text-sm dark:text-zinc-100">{t.name}</span>
                     {t.description && (
-                      <span className="line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400">
+                      <span className="hidden line-clamp-2 text-xs text-zinc-500 sm:block dark:text-zinc-400">
                         {t.description}
                       </span>
                     )}

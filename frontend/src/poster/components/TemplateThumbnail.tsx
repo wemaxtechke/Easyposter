@@ -471,7 +471,7 @@ const CanvasFallbackThumbnail = memo(function CanvasFallbackThumbnail({
       width={renderW}
       height={renderH}
       className={className}
-      style={{ width: renderW, height: renderH }}
+      style={{ maxWidth: '100%', height: 'auto', aspectRatio: `${renderW}/${renderH}` }}
     />
   );
 });
@@ -499,7 +499,7 @@ export const TemplateThumbnail = memo(function TemplateThumbnail({
         width={renderW}
         height={renderH}
         className={className}
-        style={{ width: renderW, height: renderH, objectFit: 'cover' }}
+        style={{ maxWidth: '100%', height: 'auto', objectFit: 'cover', aspectRatio: `${renderW}/${renderH}` }}
         onError={() => setImgError(true)}
       />
     );

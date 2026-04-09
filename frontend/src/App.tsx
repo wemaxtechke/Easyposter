@@ -8,6 +8,7 @@ import { LoginPage } from './auth/LoginPage';
 import { SignupPage } from './auth/SignupPage';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { useAuthStore } from './auth/authStore';
+import { HomePage } from './home/HomePage';
 
 function App() {
   const init = useAuthStore((s) => s.init);
@@ -18,9 +19,9 @@ function App() {
   return (
     <HashRouter>
       <Routes>
+        <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
-        <Route path="/" element={<Navigate to="/poster" replace />} />
         <Route
           path="/3d"
           element={
@@ -32,7 +33,7 @@ function App() {
         <Route path="/poster" element={<PosterLayout />} />
         <Route path="/poster/templates" element={<TemplateGalleryPage />} />
         <Route path="/poster/my" element={<PosterMyStuffPage />} />
-        <Route path="*" element={<Navigate to="/poster" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>
   );

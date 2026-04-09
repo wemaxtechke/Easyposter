@@ -92,19 +92,32 @@ export function PosterMyStuffPage() {
   return (
     <div className="min-h-screen bg-zinc-100 dark:bg-zinc-950">
       <header className="border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">My stuff</h1>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Your saved posters (private to your account).
-            </p>
-          </div>
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
+            <Link
+              to="/"
+              className="flex items-center gap-1.5 text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+              title="Home"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              <span className="hidden sm:inline">Home</span>
+            </Link>
+            <div>
+              <h1 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 sm:text-lg">My stuff</h1>
+              <p className="hidden text-xs text-zinc-500 dark:text-zinc-400 sm:block">
+                Your saved posters (private to your account).
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
             <Link
               to="/poster"
               className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-500"
             >
-              Back to editor
+              <span className="hidden sm:inline">Back to editor</span>
+              <span className="sm:hidden">Editor</span>
             </Link>
           </div>
         </div>

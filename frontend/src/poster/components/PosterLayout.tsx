@@ -8,6 +8,7 @@ import { ThreeTextModal } from './ThreeTextModal';
 import { CanvasSizeModal } from './CanvasSizeModal';
 import { PosterAiWizardModal } from './PosterAiWizardModal';
 import { PosterAiChatPanel } from './PosterAiChatPanel';
+import { MobilePropertyBar } from './MobilePropertyBar';
 import { TemplateAuthoringBanner } from './TemplateAuthoringBanner';
 import { TemplateElementLabelModal } from './TemplateElementLabelModal';
 import { SavePosterTemplateModal } from './SavePosterTemplateModal';
@@ -46,6 +47,21 @@ export function PosterLayout() {
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
   const mainRef = useRef<HTMLElement>(null);
 
+  // Sidebar open state — default open only on large screens
+  const [leftOpen, setLeftOpen] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
+  const [rightOpen, setRightOpen] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
+
+  // Auto-open/close sidebars on breakpoint changes
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const handler = (e: MediaQueryListEvent) => {
+      setLeftOpen(e.matches);
+      setRightOpen(e.matches);
+    };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
   const selectedIds = usePosterStore((s) => s.selectedIds);
   const elements = usePosterStore((s) => s.elements);
   const lastCloudSaveRef = useRef<string | null>(null);
@@ -55,10 +71,12 @@ export function PosterLayout() {
     const el = mainRef.current;
     if (!el) return;
     const update = () => {
-      const pad = 24 * 2; // p-6
+      const style = window.getComputedStyle(el);
+      const padH = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      const padV = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
       setViewportSize({
-        width: Math.max(1, el.clientWidth - pad),
-        height: Math.max(1, el.clientHeight - pad),
+        width: Math.max(1, el.clientWidth - padH),
+        height: Math.max(1, el.clientHeight - padV),
       });
     };
     update();
@@ -461,7 +479,8 @@ export function PosterLayout() {
     <div className="flex h-screen w-full flex-col bg-zinc-100 dark:bg-zinc-950">
       {readOnly && (
         <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
-          <span>Explore the poster editor. Login to edit, download, and use AI features.</span>
+          <span className="hidden sm:inline">Explore the poster editor. Login to edit, download, and use AI features.</span>
+          <span className="sm:hidden">Login to edit and use AI features.</span>
           <Link
             to="/login"
             className="rounded bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-500"
@@ -480,6 +499,10 @@ export function PosterLayout() {
         onSaveToCloud={user ? handleSaveToCloud : undefined}
         cloudDirty={cloudDirty}
         savingToCloud={savingToCloud}
+        leftSidebarOpen={leftOpen}
+        rightSidebarOpen={rightOpen}
+        onToggleLeftSidebar={() => setLeftOpen((v) => !v)}
+        onToggleRightSidebar={() => setRightOpen((v) => !v)}
       />
       {templateAuthoring && (
         <TemplateAuthoringBanner
@@ -548,17 +571,39 @@ export function PosterLayout() {
           isNewProject={elements.length === 0}
         />
       )}
-      <div className="flex flex-1 min-h-0">
-        <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      {/* Mobile backdrop — closes left sidebar drawer */}
+      {leftOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          onClick={() => setLeftOpen(false)}
+        />
+      )}
+
+      <div className="relative flex min-h-0 flex-1">
+        {/* Left sidebar — fixed drawer on mobile/tablet, inline on desktop */}
+        <aside
+          className={[
+            'flex flex-col overflow-y-auto border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900',
+            'fixed inset-y-0 left-0 z-40 w-64 pt-0 transition-transform duration-300 ease-in-out',
+            'lg:relative lg:inset-y-auto lg:left-auto lg:z-auto lg:w-56 lg:shrink-0 lg:translate-x-0 lg:transition-none',
+            leftOpen ? 'translate-x-0' : '-translate-x-full',
+          ].join(' ')}
+        >
           <PosterLeftSidebar readOnly={readOnly} onOpen3DModal={(m) => setThreeTextModal(m)} />
         </aside>
-        <main ref={mainRef} className="flex min-w-0 flex-1 overflow-auto p-6">
+
+        <main ref={mainRef} className="flex min-w-0 flex-1 overflow-hidden p-1 sm:p-3 lg:overflow-auto lg:p-6">
           <PosterCanvas readOnly={readOnly} viewportWidth={viewportSize.width} viewportHeight={viewportSize.height} />
         </main>
-        <aside className="flex w-64 shrink-0 flex-col overflow-y-auto border-l border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+
+        {/* Right sidebar — hidden on mobile, inline on desktop */}
+        <aside className="hidden overflow-y-auto border-l border-zinc-200 bg-white lg:flex lg:w-64 lg:shrink-0 lg:flex-col dark:border-zinc-800 dark:bg-zinc-900">
           <PosterRightSidebar readOnly={readOnly} onOpenEdit3D={(id) => setThreeTextModal({ editId: id })} />
         </aside>
       </div>
+
+      {/* Mobile bottom property bar — full right sidebar in a bottom sheet */}
+      <MobilePropertyBar readOnly={readOnly} onOpenEdit3D={(id) => setThreeTextModal({ editId: id })} />
       {threeTextModal && (
         <ThreeTextModal
           mode={threeTextModal}
