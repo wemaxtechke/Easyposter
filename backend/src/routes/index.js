@@ -24,6 +24,7 @@ import threeTextAiRoutes from './threeTextAiRoutes.js';
 import aiRoutes from './aiRoutes.js';
 import customElementRoutes from './customElementRoutes.js';
 import { magicLayersFromPoster } from '../controllers/magicLayersController.js';
+import { removeBg } from '../controllers/removeBgController.js';
 import { upload } from '../utils/upload.js';
 
 const router = Router();
@@ -32,6 +33,7 @@ router.use('/auth', authRoutes);
 router.get('/hdrs', listHdrs);
 router.get('/health', getHealth);
 router.post('/magic-layers', upload.single('image'), magicLayersFromPoster);
+router.post('/remove-bg', upload.single('image'), removeBg);
 router.get('/poster-templates', listPosterTemplates);
 router.get('/poster-templates/:id', getPosterTemplate);
 router.post('/poster-templates', authenticateToken, createPosterTemplate);
