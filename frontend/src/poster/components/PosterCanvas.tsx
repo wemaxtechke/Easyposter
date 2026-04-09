@@ -848,6 +848,14 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const SBUF = 5000;
 
   const lastCenteredNonceRef = useRef(0);
+  const pinchRef = useRef<{
+    startDist: number;
+    startZoom: number;
+    startMidX: number;
+    startMidY: number;
+    startPanX: number;
+    startPanY: number;
+  } | null>(null);
 
   // Re-center when Fit / load / canvas size changes (fitCenterNonce bumps), or first time viewport becomes valid.
   useLayoutEffect(() => {
@@ -902,6 +910,78 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     return () => el.removeEventListener('wheel', handler, true);
   }, [viewportWidth, viewportHeight, canvasWidth, canvasHeight]);
 
+  // Two-finger pinch zoom on touch devices; prevents browser/page zoom hijacking canvas gestures.
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+
+    const distance = (t1: Touch, t2: Touch) => {
+      const dx = t2.clientX - t1.clientX;
+      const dy = t2.clientY - t1.clientY;
+      return Math.hypot(dx, dy);
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 2) return;
+      e.preventDefault();
+      const [t1, t2] = [e.touches[0], e.touches[1]];
+      const rect = el.getBoundingClientRect();
+      const midX = (t1.clientX + t2.clientX) / 2 - rect.left + el.scrollLeft;
+      const midY = (t1.clientY + t2.clientY) / 2 - rect.top + el.scrollTop;
+      const st = usePosterStore.getState();
+      pinchRef.current = {
+        startDist: Math.max(1, distance(t1, t2)),
+        startZoom: st.canvasZoom,
+        startMidX: midX,
+        startMidY: midY,
+        startPanX: st.canvasPan.x,
+        startPanY: st.canvasPan.y,
+      };
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 2 || !pinchRef.current) return;
+      e.preventDefault();
+      const [t1, t2] = [e.touches[0], e.touches[1]];
+      const rect = el.getBoundingClientRect();
+      const midX = (t1.clientX + t2.clientX) / 2 - rect.left + el.scrollLeft;
+      const midY = (t1.clientY + t2.clientY) / 2 - rect.top + el.scrollTop;
+
+      const base = pinchRef.current;
+      const ratio = distance(t1, t2) / base.startDist;
+      const z1 = Math.max(0.1, Math.min(5, base.startZoom * ratio));
+      const fit = Math.min(viewportWidth / canvasWidth, viewportHeight / canvasHeight);
+      const s0 = fit * base.startZoom;
+      const s1 = fit * z1;
+      const sb = viewportWidth < 768 ? 0 : SBUF;
+
+      const cx = (base.startMidX - base.startPanX - sb) / s0;
+      const cy = (base.startMidY - base.startPanY - sb) / s0;
+      const panXNew = midX - cx * s1 - sb;
+      const panYNew = midY - cy * s1 - sb;
+
+      usePosterStore.setState({
+        canvasZoom: z1,
+        canvasPan: { x: panXNew, y: panYNew },
+      });
+    };
+
+    const onTouchEnd = () => {
+      if (pinchRef.current) pinchRef.current = null;
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: false });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [viewportWidth, viewportHeight, canvasWidth, canvasHeight]);
+
   const scaledW = canvasWidth * scale;
   const scaledH = canvasHeight * scale;
 
@@ -926,6 +1006,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     <div
       ref={viewportRef}
       className={`h-full min-h-0 w-full min-w-0 flex-1 ${isCompact ? 'overflow-hidden' : 'overflow-auto'}`}
+      style={{ touchAction: isCompact ? 'none' : 'auto' }}
       title="Ctrl+Scroll to zoom toward cursor"
     >
       <div

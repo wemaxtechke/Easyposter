@@ -15,16 +15,13 @@ export function MobilePropertyBar({ readOnly = false, onOpenEdit3D }: MobileProp
   const hasSelection = selectedIds.length > 0;
   const hasElements = elements.length > 0;
 
-  // Show the bar when there's a selection OR when canvas needs background editing
-  if (!hasSelection && !hasElements) return null;
-
   return (
-    <div className="shrink-0 lg:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-30 lg:hidden">
       {/* Toggle handle */}
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center justify-center gap-2 border-t border-zinc-700 bg-zinc-900 px-3 py-1.5"
+        className="flex w-full items-center justify-center gap-2 border-t border-zinc-700 bg-zinc-900/95 px-3 py-1.5 backdrop-blur"
       >
         <div className="h-1 w-8 rounded-full bg-zinc-600" />
         <span className="text-[11px] font-medium text-zinc-400">

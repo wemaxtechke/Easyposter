@@ -592,7 +592,7 @@ export function PosterLayout() {
           <PosterLeftSidebar readOnly={readOnly} onOpen3DModal={(m) => setThreeTextModal(m)} />
         </aside>
 
-        <main ref={mainRef} className="flex min-w-0 flex-1 overflow-hidden p-1 sm:p-3 lg:overflow-auto lg:p-6">
+        <main ref={mainRef} className="flex min-w-0 flex-1 overflow-hidden p-1 pb-10 sm:p-3 lg:overflow-auto lg:p-6 lg:pb-6">
           <PosterCanvas readOnly={readOnly} viewportWidth={viewportSize.width} viewportHeight={viewportSize.height} />
         </main>
 
