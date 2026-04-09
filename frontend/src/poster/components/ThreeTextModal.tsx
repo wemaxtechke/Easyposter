@@ -194,8 +194,8 @@ export function ThreeTextModal({
         </aside>
 
         {/* Canvas */}
-        <main className="flex min-w-0 flex-1 items-center justify-center overflow-auto bg-zinc-100 p-2 pb-10 sm:p-4 lg:pb-4 dark:bg-zinc-950">
-          <div className="h-full max-h-[70vh] w-full max-w-2xl">
+        <main className="flex min-w-0 flex-1 items-center justify-center overflow-hidden bg-zinc-100 p-2 pb-12 sm:p-4 sm:pb-12 lg:pb-4 dark:bg-zinc-950">
+          <div className="h-full w-full max-w-2xl">
             <Canvas key={canvasRemountKey} forceMultiLayer orbitZoomScale={1.5} />
           </div>
         </main>

@@ -206,41 +206,50 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       pushHistory();
     });
 
-    // Fabric creates a hidden textarea on text edit and calls .focus() on it,
-    // causing the browser to scroll the page to make it visible. Prevent that.
-    let preEditScrollY = 0;
-    let preEditViewportScroll = { top: 0, left: 0 };
+    // Fabric creates a hidden textarea on text edit and calls .focus(),
+    // which makes the browser scroll every scrollable ancestor to bring it
+    // into view. Prevent this by:
+    //  1. Patching focus() on any textarea Fabric inserts (MutationObserver)
+    //  2. Keeping the textarea fixed at top-left so the browser has no reason to scroll
+    //  3. Temporarily blocking scroll on every ancestor during edit entry
 
-    canvas.on('text:editing:entered', () => {
-      const vp = viewportRef.current;
-      if (vp) {
-        vp.scrollTop = preEditViewportScroll.top;
-        vp.scrollLeft = preEditViewportScroll.left;
-      }
-      window.scrollTo(0, preEditScrollY);
+    const patchTextarea = (ta: HTMLTextAreaElement) => {
+      const origFocus = HTMLTextAreaElement.prototype.focus;
+      ta.focus = function (opts?: FocusOptions) {
+        origFocus.call(this, { ...opts, preventScroll: true });
+      };
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.opacity = '0';
+      ta.style.width = '1px';
+      ta.style.height = '1px';
+      ta.style.pointerEvents = 'none';
+    };
 
-      const obj = canvas.getActiveObject();
-      const ta = obj && (obj as { hiddenTextarea?: HTMLTextAreaElement }).hiddenTextarea;
-      if (ta) {
-        const origFocus = HTMLTextAreaElement.prototype.focus;
-        ta.focus = function (opts?: FocusOptions) {
-          origFocus.call(this, { ...opts, preventScroll: true });
-        };
-        ta.focus();
+    const textareaObserver = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        m.addedNodes.forEach((node) => {
+          if (node instanceof HTMLTextAreaElement) patchTextarea(node);
+        });
       }
     });
+    textareaObserver.observe(host, { childList: true, subtree: true });
 
-    const saveScrollPositions = () => {
-      preEditScrollY = window.scrollY;
-      const vp = viewportRef.current;
-      if (vp) {
-        preEditViewportScroll = { top: vp.scrollTop, left: vp.scrollLeft };
-      }
-    };
+    canvas.on('text:editing:entered', () => {
+      const obj = canvas.getActiveObject();
+      const ta = obj && (obj as { hiddenTextarea?: HTMLTextAreaElement }).hiddenTextarea;
+      if (ta) patchTextarea(ta);
+    });
+
+    // No-op: scroll save/restore is no longer needed since the textarea is
+    // always fixed at top-left and focus uses preventScroll.
+    const saveScrollPositions = () => {};
     host.addEventListener('mousedown', saveScrollPositions, true);
     host.addEventListener('touchstart', saveScrollPositions, true);
 
     return () => {
+      textareaObserver.disconnect();
       host.removeEventListener('mousedown', saveScrollPositions, true);
       host.removeEventListener('touchstart', saveScrollPositions, true);
       canvas.dispose();
