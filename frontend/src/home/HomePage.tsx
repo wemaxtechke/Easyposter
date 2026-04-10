@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { UserMenu } from '../auth/UserMenu';
 import { useAuthStore } from '../auth/authStore';
 import { usePosterStore } from '../poster/store/posterStore';
 import type { PosterTemplateDefinition } from '../poster/templateTypes';
+import { recreateDesignFromImage } from '../poster/services/recreateDesignApi';
 
 /** Typographic wordmark: script “Sanaa” + caps “Studio” on one line (shown on large screens next to mark). */
 function HomeBrandWordmark({ className = '' }: { className?: string }) {
@@ -151,15 +152,37 @@ function PlaceholderTemplateCard({ index }: { index: number }) {
 
 export function HomePage() {
   const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const templates = usePosterStore((s) => s.remotePosterTemplates);
   const refreshRemotePosterTemplates = usePosterStore((s) => s.refreshRemotePosterTemplates);
+  const [recreateStatus, setRecreateStatus] = useState<string | null>(null);
+  const recreateInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void refreshRemotePosterTemplates();
   }, [refreshRemotePosterTemplates]);
 
   const showcaseTemplates = templates.slice(0, 10);
+
+  const handleRecreateUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    try {
+      setRecreateStatus('AI is analyzing your design…');
+      const { project } = await recreateDesignFromImage(file, setRecreateStatus);
+      usePosterStore.getState().loadProject(project);
+      navigate('/poster');
+    } catch (err) {
+      setRecreateStatus(null);
+      alert(err instanceof Error ? err.message : 'Failed to recreate design');
+    }
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-zinc-950">
@@ -320,6 +343,26 @@ export function HomePage() {
               </span>
               Create with AI
             </Link>
+            <button
+              type="button"
+              onClick={() => recreateInputRef.current?.click()}
+              disabled={!!recreateStatus}
+              className="w-full rounded-xl border border-gold-500 bg-gold-900/30 px-8 py-3.5 text-base font-semibold text-gold-200 shadow-lg transition-colors hover:bg-gold-800/50 disabled:opacity-60 sm:w-auto"
+            >
+              <span className="mr-1.5 inline-block">
+                <svg className="inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </span>
+              {recreateStatus || 'Recreate from Image'}
+            </button>
+            <input
+              ref={recreateInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleRecreateUpload}
+            />
             <Link
               to="/poster/templates"
               className="w-full rounded-xl border border-zinc-600 px-8 py-3.5 text-base font-semibold text-zinc-200 transition-colors hover:bg-zinc-800 sm:w-auto"

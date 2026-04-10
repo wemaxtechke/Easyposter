@@ -25,6 +25,7 @@ import aiRoutes from './aiRoutes.js';
 import customElementRoutes from './customElementRoutes.js';
 import { magicLayersFromPoster } from '../controllers/magicLayersController.js';
 import { removeBg } from '../controllers/removeBgController.js';
+import { recreateDesign } from '../controllers/recreateDesignController.js';
 import { upload } from '../utils/upload.js';
 
 const router = Router();
@@ -34,6 +35,7 @@ router.get('/hdrs', listHdrs);
 router.get('/health', getHealth);
 router.post('/magic-layers', authenticateToken, upload.single('image'), magicLayersFromPoster);
 router.post('/remove-bg', authenticateToken, upload.single('image'), removeBg);
+router.post('/recreate-design', authenticateToken, upload.single('image'), recreateDesign);
 router.get('/poster-templates', listPosterTemplates);
 router.get('/poster-templates/:id', getPosterTemplate);
 router.post('/poster-templates', authenticateToken, createPosterTemplate);

@@ -50,6 +50,20 @@ import { usePosterZoom, SBUF } from '../hooks/usePosterZoom';
  * Re-apply store selection on Fabric (used after async recreate — the selectedIds effect
  * may have run while the object was missing and skipped restoring).
  */
+/** Full poster element ids currently selected on Fabric (ActiveSelection or single object). */
+function getPosterIdsFromFabricActive(canvas: Canvas): string[] {
+  const active = canvas.getActiveObject();
+  if (!active) return [];
+  if (active instanceof ActiveSelection) {
+    return active
+      .getObjects()
+      .map((o) => (o as { data?: { posterId?: string } }).data?.posterId)
+      .filter((id): id is string => Boolean(id));
+  }
+  const id = (active as { data?: { posterId?: string } }).data?.posterId;
+  return id ? [id] : [];
+}
+
 function syncFabricSelectionFromStore(
   canvas: Canvas,
   selectedIds: string[],
@@ -160,14 +174,17 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       height: h,
       backgroundColor: isSolidBackground(bg) ? (bg.color || '#ffffff') : 'transparent',
       preserveObjectStacking: true,
+      /** Ctrl (Windows/Linux) or Cmd (macOS) + click to add/remove objects from the selection */
+      selectionKey: ['ctrlKey', 'metaKey'],
     });
     canvasRef.current = canvas;
     setFabricCanvasRef(canvas);
 
-    const onFabricSelectionChange = (e: { selected?: unknown[] }) => {
+    // Fabric's `selection:updated` only lists newly selected objects in `e.selected`, not the full set.
+    // Reading `getActiveObject()` keeps Ctrl/Cmd multi-select in sync with Zustand and avoids collapsing the group.
+    const onFabricSelectionChange = () => {
       if (syncingSelectionFromStoreRef.current) return;
-      const selected = (e.selected ?? []).map((o) => (o as { data?: { posterId?: string } }).data?.posterId).filter(Boolean) as string[];
-      setSelected(selected);
+      setSelected(getPosterIdsFromFabricActive(canvas));
     };
     canvas.on('selection:created', onFabricSelectionChange);
     canvas.on('selection:updated', onFabricSelectionChange);

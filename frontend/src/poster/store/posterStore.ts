@@ -65,6 +65,8 @@ interface PosterStore {
   sendBackward: (ids: string[]) => void;
   bringToFront: (ids: string[]) => void;
   sendToBack: (ids: string[]) => void;
+  /** `orderedIds` is front-to-back (first = top/front). Must list every element id exactly once. */
+  reorderLayersFrontToBack: (orderedIds: string[]) => void;
   setCanvasSize: (width: number, height: number) => void;
   setCanvasZoom: (zoom: number) => void;
   setCanvasZoomFit: () => void;
@@ -267,6 +269,19 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
       elements: s.elements.map((e) =>
         idsSet.has(e.id) ? { ...e, zIndex: nextZ-- } : e
       ),
+    }));
+  },
+
+  reorderLayersFrontToBack: (orderedIds) => {
+    const els = get().elements;
+    if (orderedIds.length !== els.length || els.length === 0) return;
+    const idSet = new Set(orderedIds);
+    if (idSet.size !== orderedIds.length || els.some((e) => !idSet.has(e.id))) return;
+    get().pushHistory();
+    const n = orderedIds.length;
+    const zById = new Map(orderedIds.map((id, i) => [id, n - i]));
+    set((s) => ({
+      elements: s.elements.map((e) => ({ ...e, zIndex: zById.get(e.id) ?? e.zIndex })),
     }));
   },
 
