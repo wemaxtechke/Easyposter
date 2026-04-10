@@ -1,15 +1,32 @@
 import jwt from 'jsonwebtoken';
 import User, { isAdminEmail } from '../models/User.js';
+import RefreshToken, {
+  generateRefreshToken,
+  hashRefreshToken,
+} from '../models/RefreshToken.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
-const JWT_EXPIRY = process.env.JWT_EXPIRY || '7d';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is not set. Auth will not work.');
+}
 
-function signToken(user) {
+const ACCESS_TOKEN_EXPIRY = process.env.JWT_EXPIRY || '15m';
+const REFRESH_TOKEN_DAYS = 7;
+
+function signAccessToken(user) {
   return jwt.sign(
     { userId: user._id.toString(), email: user.email, role: user.role },
     JWT_SECRET,
-    { expiresIn: JWT_EXPIRY }
+    { expiresIn: ACCESS_TOKEN_EXPIRY }
   );
+}
+
+async function createRefreshTokenForUser(userId) {
+  const raw = generateRefreshToken();
+  const tokenHash = hashRefreshToken(raw);
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
+  await RefreshToken.create({ userId, tokenHash, expiresAt });
+  return raw;
 }
 
 function userToJson(user) {
@@ -21,6 +38,19 @@ function userToJson(user) {
   };
 }
 
+const PASSWORD_POLICY_MSG =
+  'Password must be at least 8 characters with at least one uppercase letter, one lowercase letter, and one digit.';
+
+export function isStrongPassword(pw) {
+  return (
+    typeof pw === 'string' &&
+    pw.length >= 8 &&
+    /[A-Z]/.test(pw) &&
+    /[a-z]/.test(pw) &&
+    /[0-9]/.test(pw)
+  );
+}
+
 export async function signup(req, res) {
   try {
     const { email, password, name } = req.body;
@@ -30,8 +60,9 @@ export async function signup(req, res) {
     }
 
     const emailNorm = String(email).toLowerCase().trim();
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({ error: PASSWORD_POLICY_MSG });
     }
 
     const existing = await User.findOne({ email: emailNorm });
@@ -47,10 +78,13 @@ export async function signup(req, res) {
       role,
     });
 
-    const token = signToken(user);
+    const token = signAccessToken(user);
+    const refreshToken = await createRefreshTokenForUser(user._id);
+
     res.status(201).json({
       user: userToJson(user),
       token,
+      refreshToken,
     });
   } catch (err) {
     console.error('Signup error:', err);
@@ -77,20 +111,73 @@ export async function login(req, res) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Ensure admin role for easyposterke@gmail.com (in case it was created before we added the pre-save hook)
     if (isAdminEmail(user.email) && user.role !== 'admin') {
       user.role = 'admin';
       await user.save({ validateBeforeSave: false });
     }
 
-    const token = signToken(user);
+    const token = signAccessToken(user);
+    const refreshToken = await createRefreshTokenForUser(user._id);
+
     res.json({
       user: userToJson(user),
       token,
+      refreshToken,
     });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Login failed' });
+  }
+}
+
+export async function refresh(req, res) {
+  try {
+    const { refreshToken } = req.body || {};
+    if (!refreshToken || typeof refreshToken !== 'string') {
+      return res.status(400).json({ error: 'Missing refresh token' });
+    }
+
+    const tokenHash = hashRefreshToken(refreshToken);
+    const stored = await RefreshToken.findOne({ tokenHash });
+
+    if (!stored || stored.expiresAt < new Date()) {
+      if (stored) await RefreshToken.deleteOne({ _id: stored._id });
+      return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    }
+
+    const user = await User.findById(stored.userId);
+    if (!user) {
+      await RefreshToken.deleteOne({ _id: stored._id });
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Rotate: delete old, create new
+    await RefreshToken.deleteOne({ _id: stored._id });
+
+    const newAccessToken = signAccessToken(user);
+    const newRefreshToken = await createRefreshTokenForUser(user._id);
+
+    res.json({
+      token: newAccessToken,
+      refreshToken: newRefreshToken,
+    });
+  } catch (err) {
+    console.error('Refresh error:', err);
+    res.status(500).json({ error: 'Token refresh failed' });
+  }
+}
+
+export async function logout(req, res) {
+  try {
+    const { refreshToken } = req.body || {};
+    if (refreshToken && typeof refreshToken === 'string') {
+      const tokenHash = hashRefreshToken(refreshToken);
+      await RefreshToken.deleteOne({ tokenHash });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Logout error:', err);
+    res.json({ ok: true });
   }
 }
 

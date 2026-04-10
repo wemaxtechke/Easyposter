@@ -1,5 +1,7 @@
 import OpenAI from 'openai';
 import User, { FREE_TIER_TOKEN_LIMIT } from '../models/User.js';
+import { sanitizeMessages, sanitizePrompt } from '../middleware/aiValidation.js';
+import { incrementTokenUsage } from '../utils/tokenAccounting.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -111,13 +113,15 @@ function sanitizeEdits(edits, project) {
     if (!item || typeof item.elementId !== 'string' || typeof item.updates !== 'object') continue;
     if (!elementIds.has(item.elementId)) continue;
     const elType = elementTypes.get(item.elementId);
-    let updates = item.updates;
+    let updates = { ...item.updates };
+    delete updates.src;
+    delete updates.image;
     if (elType === '3d-text') {
-      updates = {};
-      for (const k of Object.keys(item.updates)) {
-        if (k === 'src' || k === 'image') continue;
-        if (RASTER_3D_TEXT_AI_KEYS.has(k)) updates[k] = item.updates[k];
+      const filtered = {};
+      for (const k of Object.keys(updates)) {
+        if (RASTER_3D_TEXT_AI_KEYS.has(k)) filtered[k] = updates[k];
       }
+      updates = filtered;
     }
     if (Object.keys(updates).length > 0) {
       out.push({ elementId: item.elementId, updates });
@@ -161,7 +165,7 @@ export async function posterAiChat(req, res) {
   }
 
   const body = req.body || {};
-  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const messages = sanitizeMessages(body.messages);
   const project = body.project;
   const fields = Array.isArray(body.fields) ? body.fields : [];
   const projectContext = project ? buildProjectContextForAi(project) : { elements: [], canvasWidth: 800, canvasHeight: 600, canvasBackground: { type: 'solid', color: '#ffffff' } };
@@ -177,7 +181,7 @@ export async function posterAiChat(req, res) {
   const conversationPart =
     messages.length > 0
       ? '\n\n---\nConversation:\n' +
-        messages.map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content || ''}`).join('\n')
+        messages.map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`).join('\n')
       : '';
   const apiMessages = [
     { role: 'system', content: POSTER_AI_SYSTEM_PROMPT },
@@ -195,8 +199,7 @@ export async function posterAiChat(req, res) {
     const raw = completion.choices[0]?.message?.content?.trim();
     const totalTokens = completion.usage?.total_tokens ?? 0;
 
-    user.tokensUsedThisPeriod += totalTokens;
-    await user.save();
+    const newTotal = await incrementTokenUsage(user._id, totalTokens);
 
     const parsed = parseJsonResponse(raw);
     const edits = Array.isArray(parsed?.edits) ? sanitizeEdits(parsed.edits, project) : [];
@@ -207,9 +210,9 @@ export async function posterAiChat(req, res) {
       message: message || 'Done.',
       usage: {
         totalTokens,
-        tokensUsed: user.tokensUsedThisPeriod,
+        tokensUsed: newTotal,
         limit: limit === Infinity ? null : limit,
-        remaining: limit === Infinity ? null : Math.max(0, limit - user.tokensUsedThisPeriod),
+        remaining: limit === Infinity ? null : Math.max(0, limit - newTotal),
       },
     });
   } catch (err) {
@@ -254,10 +257,10 @@ export async function suggestPosterFields(req, res) {
   }
 
   const body = req.body || {};
-  const category = typeof body.category === 'string' ? body.category : '';
-  const userDescription = typeof body.userDescription === 'string' ? body.userDescription.trim() : '';
-  const templates = Array.isArray(body.templates) ? body.templates : [];
-  const requiredKeys = Array.isArray(body.requiredKeys) ? body.requiredKeys : [];
+  const category = typeof body.category === 'string' ? body.category.slice(0, 200) : '';
+  const userDescription = sanitizePrompt(body.userDescription);
+  const templates = Array.isArray(body.templates) ? body.templates.slice(0, 20) : [];
+  const requiredKeys = Array.isArray(body.requiredKeys) ? body.requiredKeys.slice(0, 50) : [];
 
   if (!userDescription) {
     return res.status(400).json({ error: 'userDescription is required' });
@@ -289,8 +292,7 @@ export async function suggestPosterFields(req, res) {
     const raw = completion.choices[0]?.message?.content?.trim();
     const totalTokens = completion.usage?.total_tokens ?? 0;
 
-    user.tokensUsedThisPeriod += totalTokens;
-    await user.save();
+    const newTotal = await incrementTokenUsage(user._id, totalTokens);
 
     const parsed = parseJsonResponse(raw);
     if (!parsed || typeof parsed !== 'object') {
@@ -310,9 +312,9 @@ export async function suggestPosterFields(req, res) {
     return res.json({
       ...out,
       usage: {
-        tokensUsed: user.tokensUsedThisPeriod,
+        tokensUsed: newTotal,
         limit: limit === Infinity ? null : limit,
-        remaining: limit === Infinity ? null : Math.max(0, limit - user.tokensUsedThisPeriod),
+        remaining: limit === Infinity ? null : Math.max(0, limit - newTotal),
       },
     });
   } catch (err) {
@@ -385,13 +387,14 @@ export async function wizardIdentify(req, res) {
     return res.status(402).json({ error: 'Token limit reached', message: 'Upgrade to Pro for more tokens.' });
   }
 
-  const { messages = [], categories = [] } = req.body || {};
-  const catList = categories.map((c) => `${c.value} — "${c.label}"`).join('\n');
+  const { categories = [] } = req.body || {};
+  const messages = sanitizeMessages(req.body?.messages);
+  const catList = categories.slice(0, 50).map((c) => `${c.value} — "${c.label}"`).join('\n');
   const systemPrompt = WIZARD_IDENTIFY_SYSTEM.replace('{{categories}}', catList);
 
   const apiMessages = [
     { role: 'system', content: systemPrompt },
-    ...messages.map((m) => ({ role: m.role, content: m.content })),
+    ...messages,
   ];
 
   try {
@@ -404,8 +407,7 @@ export async function wizardIdentify(req, res) {
     });
     const raw = completion.choices[0]?.message?.content?.trim();
     const totalTokens = completion.usage?.total_tokens ?? 0;
-    user.tokensUsedThisPeriod += totalTokens;
-    await user.save();
+    await incrementTokenUsage(user._id, totalTokens);
 
     const parsed = parseJsonResponse(raw);
     const message = typeof parsed?.message === 'string' ? parsed.message : raw || 'How can I help?';
@@ -431,17 +433,19 @@ export async function wizardGatherFields(req, res) {
     return res.status(402).json({ error: 'Token limit reached', message: 'Upgrade to Pro for more tokens.' });
   }
 
-  const { messages = [], templateName = '', fieldKeys = [], fieldLabels = {} } = req.body || {};
-  const fieldsDesc = fieldKeys
+  const { templateName = '', fieldKeys = [], fieldLabels = {} } = req.body || {};
+  const messages = sanitizeMessages(req.body?.messages);
+  const safeFieldKeys = Array.isArray(fieldKeys) ? fieldKeys.slice(0, 50) : [];
+  const fieldsDesc = safeFieldKeys
     .map((k) => `- ${k}: "${fieldLabels[k] || k}"`)
     .join('\n');
   const systemPrompt = WIZARD_GATHER_SYSTEM
-    .replace('{{templateName}}', templateName)
+    .replace('{{templateName}}', String(templateName).slice(0, 200))
     .replace('{{fieldsDescription}}', fieldsDesc);
 
   const apiMessages = [
     { role: 'system', content: systemPrompt },
-    ...messages.map((m) => ({ role: m.role, content: m.content })),
+    ...messages,
   ];
 
   try {
@@ -454,8 +458,7 @@ export async function wizardGatherFields(req, res) {
     });
     const raw = completion.choices[0]?.message?.content?.trim();
     const totalTokens = completion.usage?.total_tokens ?? 0;
-    user.tokensUsedThisPeriod += totalTokens;
-    await user.save();
+    await incrementTokenUsage(user._id, totalTokens);
 
     const parsed = parseJsonResponse(raw);
     const message = typeof parsed?.message === 'string' ? parsed.message : raw || '';

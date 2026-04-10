@@ -1,5 +1,7 @@
 import OpenAI from 'openai';
 import User from '../models/User.js';
+import { sanitizePrompt } from '../middleware/aiValidation.js';
+import { incrementTokenUsage } from '../utils/tokenAccounting.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -176,7 +178,7 @@ export async function threeTextAiGenerate(req, res) {
 
   const { user, limit } = auth;
   const body = req.body || {};
-  const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+  const prompt = sanitizePrompt(body.prompt);
 
   if (!prompt) {
     return res.status(400).json({ error: 'Missing prompt' });
@@ -198,8 +200,7 @@ export async function threeTextAiGenerate(req, res) {
     const raw = completion.choices[0]?.message?.content?.trim();
     const totalTokens = completion.usage?.total_tokens ?? 0;
 
-    user.tokensUsedThisPeriod += totalTokens;
-    await user.save();
+    const newTotal = await incrementTokenUsage(user._id, totalTokens);
 
     const obj = parseJsonResponse(raw);
     if (!obj) {
@@ -217,9 +218,9 @@ export async function threeTextAiGenerate(req, res) {
       preset,
       usage: {
         totalTokens,
-        tokensUsed: user.tokensUsedThisPeriod,
+        tokensUsed: newTotal,
         limit: limit === Infinity ? null : limit,
-        remaining: limit === Infinity ? null : Math.max(0, limit - user.tokensUsedThisPeriod),
+        remaining: limit === Infinity ? null : Math.max(0, limit - newTotal),
       },
     });
   } catch (err) {
@@ -237,7 +238,7 @@ export async function threeTextAiAdjust(req, res) {
 
   const { user, limit } = auth;
   const body = req.body || {};
-  const adjustment = typeof body.adjustment === 'string' ? body.adjustment.trim() : '';
+  const adjustment = sanitizePrompt(body.adjustment);
   const currentState = body.currentState && typeof body.currentState === 'object' ? body.currentState : {};
 
   if (!adjustment) {
@@ -272,8 +273,7 @@ export async function threeTextAiAdjust(req, res) {
     const raw = completion.choices[0]?.message?.content?.trim();
     const totalTokens = completion.usage?.total_tokens ?? 0;
 
-    user.tokensUsedThisPeriod += totalTokens;
-    await user.save();
+    const newTotal = await incrementTokenUsage(user._id, totalTokens);
 
     const obj = parseJsonResponse(raw);
     if (!obj) {
@@ -289,9 +289,9 @@ export async function threeTextAiAdjust(req, res) {
       preset,
       usage: {
         totalTokens,
-        tokensUsed: user.tokensUsedThisPeriod,
+        tokensUsed: newTotal,
         limit: limit === Infinity ? null : limit,
-        remaining: limit === Infinity ? null : Math.max(0, limit - user.tokensUsedThisPeriod),
+        remaining: limit === Infinity ? null : Math.max(0, limit - newTotal),
       },
     });
   } catch (err) {

@@ -1,3 +1,4 @@
+import { getToken } from '../../lib/api';
 import { apiUrl } from '../../lib/apiUrl';
 import type { PosterImageElement, Poster3DTextElement } from '../types';
 
@@ -21,8 +22,13 @@ export async function removeBackground(input: File | Blob | string): Promise<str
   const fd = new FormData();
   fd.append('image', blob, 'image.png');
 
+  const headers: HeadersInit = {};
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
   const res = await fetch(apiUrl('/api/remove-bg'), {
     method: 'POST',
+    headers,
     body: fd,
   });
 

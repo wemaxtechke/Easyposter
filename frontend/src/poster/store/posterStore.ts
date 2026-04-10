@@ -3,13 +3,10 @@ import type { PosterElement, PosterProject, CanvasBackground } from '../types';
 import { DEFAULT_GRADIENT_STOPS } from '../types';
 import type { PosterTemplateDefinition, PosterTemplateFieldBinding } from '../templateTypes';
 import { fetchPosterTemplateById, fetchPosterTemplateList } from '../services/posterTemplatesApi';
+import { generateElementId as generateId } from '../utils/generateElementId';
 
 const DEFAULT_WIDTH = 800;
 const DEFAULT_HEIGHT = 600;
-
-function generateId(): string {
-  return `el_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
 
 let scheduleHistoryPushTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleHistoryPush(push: () => void): void {

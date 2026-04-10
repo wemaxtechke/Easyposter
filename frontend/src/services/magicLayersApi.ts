@@ -1,3 +1,4 @@
+import { getToken } from '../lib/api';
 import { apiUrl } from '../lib/apiUrl';
 
 /** Normalized 0–1 coordinates relative to source image (Vision / layout). */
@@ -46,8 +47,13 @@ export async function requestMagicLayersFromImage(
   fd.append('image', file);
   fd.append('maxLayers', String(maxLayers));
 
+  const headers: HeadersInit = {};
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
   const res = await fetch(apiUrl('/api/magic-layers'), {
     method: 'POST',
+    headers,
     body: fd,
   });
 

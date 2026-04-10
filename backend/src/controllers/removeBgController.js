@@ -14,6 +14,11 @@ export async function removeBg(req, res) {
     return res.status(400).json({ error: 'Missing image file (field name: image).' });
   }
 
+  const mime = file.mimetype || '';
+  if (!mime.startsWith('image/')) {
+    return res.status(400).json({ error: 'File must be an image (JPEG, PNG, WebP, etc.).' });
+  }
+
   try {
     const formData = new FormData();
     formData.append('image_file', new Blob([file.buffer], { type: file.mimetype || 'image/png' }), file.originalname || 'image.png');

@@ -23,8 +23,15 @@ export function SignupPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+    if (
+      password.length < 8 ||
+      !/[A-Z]/.test(password) ||
+      !/[a-z]/.test(password) ||
+      !/[0-9]/.test(password)
+    ) {
+      setError(
+        'Password must be at least 8 characters with at least one uppercase letter, one lowercase letter, and one digit.'
+      );
       return;
     }
     setLoading(true);
@@ -92,7 +99,7 @@ export function SignupPage() {
               htmlFor="password"
               className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
             >
-              Password (min 6 characters)
+              Password (min 8 chars, mixed case + digit)
             </label>
             <input
               id="password"
@@ -101,7 +108,7 @@ export function SignupPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-500 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
             />
           </div>

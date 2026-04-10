@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import {
   Canvas,
   Rect,
@@ -44,6 +44,7 @@ import {
   roundedRectPathD,
   perCornerRadiiFromShape,
 } from '../roundedRectPath';
+import { usePosterZoom, SBUF } from '../hooks/usePosterZoom';
 
 /**
  * Re-apply store selection on Fabric (used after async recreate — the selectedIds effect
@@ -888,173 +889,15 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   );
   const scale = fitScale * canvasZoom;
 
-  /**
-   * Scroll buffer: `canvasPan` can go negative when zooming near an edge,
-   * but CSS scroll positions can't be negative. SBUF shifts the poster
-   * inside the content area so it's always at a positive coordinate.
-   * All coordinate math (zoom, fit-center) accounts for this offset.
-   */
-  const SBUF = 5000;
-
-  const lastCenteredNonceRef = useRef(0);
-  const pinchRef = useRef<{
-    startDist: number;
-    startZoom: number;
-    startMidX: number;
-    startMidY: number;
-    startPanX: number;
-    startPanY: number;
-  } | null>(null);
-
-  // Re-center when Fit / load / canvas size changes (fitCenterNonce bumps), or first time viewport becomes valid.
-  useLayoutEffect(() => {
-    if (viewportWidth < 32 || viewportHeight < 32) return;
-    if (fitCenterNonce === lastCenteredNonceRef.current) return;
-    lastCenteredNonceRef.current = fitCenterNonce;
-    const fit = Math.min(viewportWidth / canvasWidth, viewportHeight / canvasHeight);
-    const z = usePosterStore.getState().canvasZoom;
-    const s = fit * z;
-    const sw = canvasWidth * s;
-    const sh = canvasHeight * s;
-    const px = Math.max(0, (viewportWidth - sw) / 2);
-    const py = Math.max(0, (viewportHeight - sh) / 2);
-    usePosterStore.setState({ canvasPan: { x: px, y: py } });
-    viewportRef.current?.scrollTo(SBUF, SBUF);
-  }, [fitCenterNonce, viewportWidth, viewportHeight, canvasWidth, canvasHeight]);
-
-  // Ctrl+Scroll = zoom toward pointer; plain scroll = normal pan/scroll.
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const handler = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
-      e.preventDefault();
-      const v = viewportRef.current;
-      if (!v) return;
-      const r = v.getBoundingClientRect();
-      const vx = e.clientX - r.left + v.scrollLeft;
-      const vy = e.clientY - r.top + v.scrollTop;
-
-      const st = usePosterStore.getState();
-      const z0 = st.canvasZoom;
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      const z1 = Math.max(0.1, Math.min(5, z0 + delta));
-      if (Math.abs(z1 - z0) < 1e-9) return;
-
-      const fit = Math.min(viewportWidth / canvasWidth, viewportHeight / canvasHeight);
-      const s0 = fit * z0;
-      const s1 = fit * z1;
-      const { x: panX, y: panY } = st.canvasPan;
-      const cx = (vx - panX - SBUF) / s0;
-      const cy = (vy - panY - SBUF) / s0;
-      const panXNew = vx - cx * s1 - SBUF;
-      const panYNew = vy - cy * s1 - SBUF;
-
-      usePosterStore.setState({
-        canvasZoom: z1,
-        canvasPan: { x: panXNew, y: panYNew },
-      });
-    };
-    el.addEventListener('wheel', handler, { passive: false, capture: true });
-    return () => el.removeEventListener('wheel', handler, true);
-  }, [viewportWidth, viewportHeight, canvasWidth, canvasHeight]);
-
-  // Two-finger pinch zoom on touch devices.
-  // Disables Fabric.js interaction during the gesture so objects don't get dragged.
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-
-    const distance = (t1: Touch, t2: Touch) =>
-      Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-
-    const disableFabric = () => {
-      const c = canvasRef.current;
-      if (!c) return;
-      c.selection = false;
-      c.forEachObject((o) => { o.set('evented', false); o.set('selectable', false); });
-      c.discardActiveObject();
-      c.requestRenderAll();
-    };
-
-    const enableFabric = () => {
-      const c = canvasRef.current;
-      if (!c) return;
-      c.selection = true;
-      const els = usePosterStore.getState().elements;
-      c.forEachObject((o) => {
-        const id = (o as { data?: { posterId?: string } }).data?.posterId;
-        const el = id ? els.find((e) => e.id === id) : null;
-        const locked = !!el?.locked;
-        o.set('evented', !locked);
-        o.set('selectable', !locked);
-      });
-      c.requestRenderAll();
-    };
-
-    const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length !== 2) return;
-      e.preventDefault();
-      disableFabric();
-      const [t1, t2] = [e.touches[0], e.touches[1]];
-      const rect = el.getBoundingClientRect();
-      const midX = (t1.clientX + t2.clientX) / 2 - rect.left + el.scrollLeft;
-      const midY = (t1.clientY + t2.clientY) / 2 - rect.top + el.scrollTop;
-      const st = usePosterStore.getState();
-      pinchRef.current = {
-        startDist: Math.max(1, distance(t1, t2)),
-        startZoom: st.canvasZoom,
-        startMidX: midX,
-        startMidY: midY,
-        startPanX: st.canvasPan.x,
-        startPanY: st.canvasPan.y,
-      };
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length !== 2 || !pinchRef.current) return;
-      e.preventDefault();
-      const [t1, t2] = [e.touches[0], e.touches[1]];
-      const rect = el.getBoundingClientRect();
-      const midX = (t1.clientX + t2.clientX) / 2 - rect.left + el.scrollLeft;
-      const midY = (t1.clientY + t2.clientY) / 2 - rect.top + el.scrollTop;
-
-      const base = pinchRef.current;
-      const ratio = distance(t1, t2) / base.startDist;
-      const z1 = Math.max(0.1, Math.min(5, base.startZoom * ratio));
-      const fit = Math.min(viewportWidth / canvasWidth, viewportHeight / canvasHeight);
-      const s0 = fit * base.startZoom;
-      const s1 = fit * z1;
-      const compact = viewportWidth < 768;
-      const sb = compact ? 0 : SBUF;
-
-      // Focal-point zoom: keep the point between the user's fingers stable
-      const cx = (base.startMidX - base.startPanX - sb) / s0;
-      const cy = (base.startMidY - base.startPanY - sb) / s0;
-      usePosterStore.setState({
-        canvasZoom: z1,
-        canvasPan: { x: midX - cx * s1 - sb, y: midY - cy * s1 - sb },
-      });
-    };
-
-    const onTouchEnd = () => {
-      if (pinchRef.current) {
-        pinchRef.current = null;
-        enableFabric();
-      }
-    };
-
-    el.addEventListener('touchstart', onTouchStart, { passive: false });
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
-    el.addEventListener('touchend', onTouchEnd, { passive: true });
-    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
-    return () => {
-      el.removeEventListener('touchstart', onTouchStart);
-      el.removeEventListener('touchmove', onTouchMove);
-      el.removeEventListener('touchend', onTouchEnd);
-      el.removeEventListener('touchcancel', onTouchEnd);
-    };
-  }, [viewportWidth, viewportHeight, canvasWidth, canvasHeight]);
+  usePosterZoom({
+    viewportRef,
+    canvasRef,
+    viewportWidth,
+    viewportHeight,
+    canvasWidth,
+    canvasHeight,
+    fitCenterNonce,
+  });
 
   const scaledW = canvasWidth * scale;
   const scaledH = canvasHeight * scale;

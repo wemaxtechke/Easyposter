@@ -1,5 +1,6 @@
 import type { PosterElement, PosterImageElement, PosterProject, PosterTextElement } from './types';
 import type { PosterTemplateDefinition, PosterTemplateFieldBinding } from './templateTypes';
+import { generateElementId } from './utils/generateElementId';
 
 function getImageDimensions(src: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
@@ -11,10 +12,6 @@ function getImageDimensions(src: string): Promise<{ width: number; height: numbe
     }
     img.src = src;
   });
-}
-
-function generateElementId(): string {
-  return `el_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
 /** Deep clone a poster project (JSON-safe). */

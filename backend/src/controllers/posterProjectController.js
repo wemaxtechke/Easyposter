@@ -1,7 +1,7 @@
 import PosterProject from '../models/PosterProject.js';
 import { isMongoReady } from '../config/db.js';
-import { cloudinary } from '../config/cloudinary.js';
 import { uploadDataUrlsInPosterProject } from '../utils/posterTemplateImages.js';
+import { destroyCloudinaryAssets, diffRemovedIds } from '../utils/cloudinaryCleanup.js';
 
 function hasCloudinaryConfig() {
   return !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
@@ -60,11 +60,19 @@ export async function savePosterProject(req, res) {
       }
     }
 
+    const existing = await PosterProject.findOne({ userId }).select('cloudinaryPublicIds').lean();
+    const oldIds = existing?.cloudinaryPublicIds ?? [];
+
     const doc = await PosterProject.findOneAndUpdate(
       { userId },
       { project: processedProject, cloudinaryPublicIds: publicIds },
       { upsert: true, new: true }
     );
+
+    const removed = diffRemovedIds(oldIds, publicIds);
+    if (removed.length > 0) {
+      destroyCloudinaryAssets(removed).catch(() => {});
+    }
 
     res.json({ ok: true, updatedAt: doc.updatedAt, project: processedProject });
   } catch (e) {

@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import { getToken, setToken, clearToken } from '../lib/api';
+import {
+  getToken,
+  setToken,
+  clearAllTokens,
+  setRefreshToken,
+  getRefreshToken,
+} from '../lib/api';
 import { apiUrl } from '../lib/apiUrl';
 
 export type UserRole = 'user' | 'creator' | 'admin';
@@ -49,21 +55,47 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           initState: 'ready',
           initError: null,
         });
+      } else if (res.status === 401) {
+        // Access token expired — try refresh
+        const rt = getRefreshToken();
+        if (rt) {
+          try {
+            const refreshRes = await fetch(apiUrl('/api/auth/refresh'), {
+              method: 'POST',
+              headers: JSON_HEADERS,
+              body: JSON.stringify({ refreshToken: rt }),
+            });
+            if (refreshRes.ok) {
+              const refreshData = (await refreshRes.json()) as {
+                token?: string;
+                refreshToken?: string;
+              };
+              if (refreshData.token && refreshData.refreshToken) {
+                setToken(refreshData.token);
+                setRefreshToken(refreshData.refreshToken);
+                const meRes = await fetch(apiUrl('/api/auth/me'), {
+                  headers: { Authorization: `Bearer ${refreshData.token}` },
+                });
+                if (meRes.ok) {
+                  const meData = (await meRes.json()) as { user: User };
+                  set({ user: meData.user, initState: 'ready', initError: null });
+                  return;
+                }
+              }
+            }
+          } catch {
+            /* refresh failed */
+          }
+        }
+        clearAllTokens();
+        set({ user: null, initState: 'ready', initError: null });
       } else {
-        clearToken();
-        set({
-          user: null,
-          initState: 'ready',
-          initError: null,
-        });
+        clearAllTokens();
+        set({ user: null, initState: 'ready', initError: null });
       }
     } catch {
-      clearToken();
-      set({
-        user: null,
-        initState: 'ready',
-        initError: null,
-      });
+      clearAllTokens();
+      set({ user: null, initState: 'ready', initError: null });
     }
   },
 
@@ -78,6 +110,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error?: string;
         user?: User;
         token?: string;
+        refreshToken?: string;
       };
       if (!res.ok) {
         return { error: data.error || 'Login failed' };
@@ -86,6 +119,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return { error: 'Invalid response from server' };
       }
       setToken(data.token);
+      if (data.refreshToken) setRefreshToken(data.refreshToken);
       set({ user: data.user });
       return {};
     } catch (e) {
@@ -104,6 +138,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error?: string;
         user?: User;
         token?: string;
+        refreshToken?: string;
       };
       if (!res.ok) {
         return { error: data.error || 'Registration failed' };
@@ -112,6 +147,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return { error: 'Invalid response from server' };
       }
       setToken(data.token);
+      if (data.refreshToken) setRefreshToken(data.refreshToken);
       set({ user: data.user });
       return {};
     } catch (e) {
@@ -120,7 +156,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
-    clearToken();
+    const rt = getRefreshToken();
+    if (rt) {
+      fetch(apiUrl('/api/auth/logout'), {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ refreshToken: rt }),
+      }).catch(() => {});
+    }
+    clearAllTokens();
     set({ user: null });
   },
 
@@ -137,11 +181,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const data = (await res.json()) as { user: User };
         set({ user: data.user });
       } else {
-        clearToken();
+        clearAllTokens();
         set({ user: null });
       }
     } catch {
-      clearToken();
+      clearAllTokens();
       set({ user: null });
     }
   },
