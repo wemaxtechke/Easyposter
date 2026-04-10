@@ -46,6 +46,7 @@ import {
 } from '../roundedRectPath';
 import { usePosterZoom, SBUF } from '../hooks/usePosterZoom';
 import { loadFontsForPosterElements } from '../loadPosterFonts';
+import { PosterImageCropOverlay } from './PosterImageCropOverlay';
 
 /** Stable signature of text font stacks for poster font preload + Fabric sync gating. */
 function posterFontSignature(elements: PosterElement[]): string {
@@ -168,6 +169,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const canvasPan = usePosterStore((s) => s.canvasPan);
   const fitCenterNonce = usePosterStore((s) => s.fitCenterNonce);
   const selectedIds = usePosterStore((s) => s.selectedIds);
+  const imageCropTargetId = usePosterStore((s) => s.imageCropTargetId);
+  const setImageCropTargetId = usePosterStore((s) => s.setImageCropTargetId);
   const setSelected = usePosterStore((s) => s.setSelected);
   const updateElement = usePosterStore((s) => s.updateElement);
   const pushHistory = usePosterStore((s) => s.pushHistory);
@@ -324,6 +327,64 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     }
     canvas.requestRenderAll();
   }, [readOnly, elements]);
+
+  useEffect(() => {
+    if (!imageCropTargetId) return;
+    if (!selectedIds.includes(imageCropTargetId)) {
+      setImageCropTargetId(null);
+    }
+  }, [selectedIds, imageCropTargetId, setImageCropTargetId]);
+
+  useEffect(() => {
+    if (!imageCropTargetId) return;
+    if (!elements.some((e) => e.id === imageCropTargetId)) {
+      setImageCropTargetId(null);
+    }
+  }, [elements, imageCropTargetId, setImageCropTargetId]);
+
+  /** Block Fabric interaction while the in-canvas image crop UI is active. */
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !imageCropTargetId) return;
+    canvas.selection = false;
+    // discardActiveObject fires selection:cleared → avoid syncing that to setSelected([]),
+    // which would drop the crop target from selectedIds and exit crop mode (sidebar → Canvas).
+    syncingSelectionFromStoreRef.current = true;
+    try {
+      canvas.discardActiveObject();
+      for (const obj of canvas.getObjects()) {
+        obj.set({ selectable: false, evented: false });
+      }
+      canvas.requestRenderAll();
+    } finally {
+      syncingSelectionFromStoreRef.current = false;
+    }
+    return () => {
+      const c = canvasRef.current;
+      if (!c) return;
+      const els = usePosterStore.getState().elements;
+      for (const obj of c.getObjects()) {
+        const id = (obj as { data?: { posterId?: string } }).data?.posterId;
+        const el = id ? els.find((e) => e.id === id) : null;
+        const locked = !!el?.locked;
+        const lockAll = locked || readOnly;
+        obj.set({
+          selectable: true,
+          evented: true,
+          lockMovementX: lockAll,
+          lockMovementY: lockAll,
+          lockScalingX: lockAll,
+          lockScalingY: lockAll,
+          lockRotation: lockAll,
+        });
+        if (obj instanceof Textbox) {
+          obj.set({ editable: !readOnly });
+        }
+      }
+      c.selection = true;
+      c.requestRenderAll();
+    };
+  }, [imageCropTargetId, readOnly]);
 
   const creatingRef = useRef<Set<string>>(new Set());
   /**
@@ -1006,6 +1067,17 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             className="absolute inset-0"
             style={{ width: canvasWidth, height: canvasHeight }}
           />
+          {imageCropTargetId && (
+            <PosterImageCropOverlay
+              zoomWrapperRef={zoomWrapperRef}
+              canvasRef={canvasRef}
+              canvasWidth={canvasWidth}
+              canvasHeight={canvasHeight}
+              scale={scale}
+              targetId={imageCropTargetId}
+              readOnly={readOnly}
+            />
+          )}
         </div>
       </div>
     </div>

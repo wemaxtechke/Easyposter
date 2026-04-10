@@ -45,6 +45,9 @@ interface PosterStore {
   canvasPan: CanvasPan;
   /** Bumped when Fit / load should re-center the view in the viewport (PosterCanvas reads viewport size). */
   fitCenterNonce: number;
+  /** When set, poster canvas shows in-place crop UI for this image element id. */
+  imageCropTargetId: string | null;
+  setImageCropTargetId: (id: string | null) => void;
   selectedIds: string[];
   history: HistoryEntry[];
   historyIndex: number;
@@ -95,6 +98,8 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
   canvasZoom: 1,
   canvasPan: { x: 0, y: 0 },
   fitCenterNonce: 1,
+  imageCropTargetId: null,
+  setImageCropTargetId: (id) => set({ imageCropTargetId: id }),
   selectedIds: [],
   history: [[]],
   historyIndex: 0,
@@ -349,6 +354,7 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
       canvasPan: { x: 0, y: 0 },
       fitCenterNonce: s.fitCenterNonce + 1,
       fieldBindings: options?.fieldBindings ?? null,
+      imageCropTargetId: null,
     }));
   },
 

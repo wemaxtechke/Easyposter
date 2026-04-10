@@ -264,7 +264,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /**
- * Compute cropX, cropY for panning and zooming the image within the mask.
+ * Compute cropX, cropY and the source pixel size (cropW × cropH) for mask / paper-tear pan-zoom.
  * - maskImageOffsetX/Y: 0 = left/top, 0.5 = center, 1 = right/bottom (position of crop center in source image)
  * - maskImageScale: 1 = fill mask, >1 = zoom in (smaller crop region)
  */
@@ -273,7 +273,7 @@ function computeMaskImageCrop(
   el: PosterRasterElement,
   visibleW: number,
   visibleH: number
-): { cropX: number; cropY: number } {
+): { cropX: number; cropY: number; cropW: number; cropH: number } {
   const elWidth = (img.getElement() as HTMLImageElement)?.naturalWidth || img.width || 1;
   const elHeight = (img.getElement() as HTMLImageElement)?.naturalHeight || img.height || 1;
 
@@ -291,7 +291,44 @@ function computeMaskImageCrop(
   const cropX = Math.max(0, Math.min(elWidth - cropW, centerX - cropW / 2));
   const cropY = Math.max(0, Math.min(elHeight - cropH, centerY - cropH / 2));
 
-  return { cropX, cropY };
+  return { cropX, cropY, cropW, cropH };
+}
+
+/**
+ * Same mask / edge rules as `applyPosterImageClipPath`: returns the source rectangle in bitmap pixels
+ * and Fabric object local width/height so canvas → local → source can use linear UV (not cropX+local when cropW≠localW).
+ */
+export function getPosterImageSourceRectForCropBake(
+  img: FabricImage,
+  el: PosterRasterElement
+): { cropX: number; cropY: number; cropW: number; cropH: number; localW: number; localH: number } {
+  const w = img.width || 1;
+  const h = img.height || 1;
+  const elWidth = (img.getElement() as HTMLImageElement)?.naturalWidth || img.width || 1;
+  const elHeight = (img.getElement() as HTMLImageElement)?.naturalHeight || img.height || 1;
+  const mask = el.mask ?? 'none';
+  const maskScale = el.maskScale ?? 1;
+
+  if (mask === 'circle' || mask === 'ellipse' || mask === 'rounded-rect') {
+    const baseW = mask === 'circle' ? Math.min(w, h) : w;
+    const baseH = mask === 'circle' ? Math.min(w, h) : h;
+    const visibleW = baseW * maskScale;
+    const visibleH = baseH * maskScale;
+    const { cropX, cropY, cropW, cropH } = computeMaskImageCrop(img, el, visibleW, visibleH);
+    return { cropX, cropY, cropW, cropH, localW: w, localH: h };
+  }
+  if (usesPaperTearClip(el.edge ?? 'none')) {
+    const { cropX, cropY, cropW, cropH } = computeMaskImageCrop(img, el, w, h);
+    return { cropX, cropY, cropW, cropH, localW: w, localH: h };
+  }
+  return {
+    cropX: 0,
+    cropY: 0,
+    cropW: elWidth,
+    cropH: elHeight,
+    localW: w,
+    localH: h,
+  };
 }
 
 /** Apply vector clip: any shape mask overrides paper-tear when both are set. */
