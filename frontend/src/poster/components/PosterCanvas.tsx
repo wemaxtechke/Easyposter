@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import {
   Canvas,
   Rect,
@@ -45,6 +45,20 @@ import {
   perCornerRadiiFromShape,
 } from '../roundedRectPath';
 import { usePosterZoom, SBUF } from '../hooks/usePosterZoom';
+import { loadFontsForPosterElements } from '../loadPosterFonts';
+
+/** Stable signature of text font stacks for poster font preload + Fabric sync gating. */
+function posterFontSignature(elements: PosterElement[]): string {
+  const parts: string[] = [];
+  for (const el of elements) {
+    if (el.type === 'text') {
+      const f = el.fontFamily?.trim();
+      if (f) parts.push(f);
+    }
+  }
+  parts.sort();
+  return parts.join('\0');
+}
 
 /**
  * Re-apply store selection on Fabric (used after async recreate — the selectedIds effect
@@ -143,6 +157,10 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   });
 
   const elements = usePosterStore((s) => s.elements);
+  const fontSig = useMemo(() => posterFontSignature(elements), [elements]);
+  const fontsLoadedForSigRef = useRef('');
+  const posterFontLoadGenRef = useRef(0);
+  const [posterFontsGateNonce, setPosterFontsGateNonce] = useState(0);
   const canvasWidth = usePosterStore((s) => s.canvasWidth);
   const canvasHeight = usePosterStore((s) => s.canvasHeight);
   const canvasBackground = usePosterStore((s) => s.canvasBackground);
@@ -336,11 +354,32 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     };
   }, [fontsReady]);
 
+  // Register cloud/session preview fonts before Fabric measures text (My stuff + recreate).
+  useEffect(() => {
+    const gen = ++posterFontLoadGenRef.current;
+    if (!fontSig) {
+      fontsLoadedForSigRef.current = '';
+      setPosterFontsGateNonce((n) => n + 1);
+      return;
+    }
+    let cancelled = false;
+    const els = usePosterStore.getState().elements;
+    loadFontsForPosterElements(els).finally(() => {
+      if (cancelled || gen !== posterFontLoadGenRef.current) return;
+      fontsLoadedForSigRef.current = fontSig;
+      setPosterFontsGateNonce((n) => n + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fontSig]);
+
   // Sync store -> Fabric
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     if (!fontsReady) return;
+    if (fontSig && fontsLoadedForSigRef.current !== fontSig) return;
 
     syncingSelectionFromStoreRef.current = true;
     try {
@@ -830,7 +869,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     } finally {
       syncingSelectionFromStoreRef.current = false;
     }
-  }, [elements, updateElement, readOnly, fontsReady]);
+  }, [elements, updateElement, readOnly, fontsReady, fontSig, posterFontsGateNonce]);
 
   // Update selection in Fabric (skip if Fabric already matches store to avoid discard→cleared→loop)
   useEffect(() => {

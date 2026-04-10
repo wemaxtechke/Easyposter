@@ -20,6 +20,11 @@ function cssSafeKey(key: string): string {
   return key.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
+/** CSS `font-family` for a preview cache key (matches `fontFamily` stored on poster text). */
+export function familyNameForPreviewKey(key: string): string {
+  return `Editor3DCustom_${cssSafeKey(key)}`;
+}
+
 /**
  * Load a font from a URL for UI preview (dropdown labels). Returns CSS font-family name.
  */
@@ -27,7 +32,7 @@ export async function ensureFontPreviewFromUrl(key: string, url: string): Promis
   const existing = previewFaces.get(key);
   if (existing) return existing.family;
 
-  const family = `Editor3DCustom_${cssSafeKey(key)}`;
+  const family = familyNameForPreviewKey(key);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Font preview fetch failed: ${res.status}`);
   const buf = await res.arrayBuffer();
