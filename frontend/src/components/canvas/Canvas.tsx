@@ -155,6 +155,7 @@ export const Canvas = memo(function Canvas({
             fontSize={debouncedFontSize}
             letterSpacing={debouncedLetterSpacing}
             frontColor={state.frontColor ?? '#ffffff'}
+            frontOpacity={state.frontOpacity ?? 1}
             extrusionColor={state.extrusionColor ?? '#d4af37'}
             extrusionGlass={state.extrusionGlass ?? false}
             frontClearcoat={state.frontClearcoat}

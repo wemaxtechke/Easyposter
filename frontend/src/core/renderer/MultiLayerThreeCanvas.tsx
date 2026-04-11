@@ -4,9 +4,16 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '../../store/editorStore';
 import { useDebounce } from '../../hooks/useDebounce';
-import type { TextLayer3D } from '../types';
-import { buildThreeTextMeshGroup, loadEnvironmentMap, loadFont } from './threeTextMeshCore';
-import { meshPropsFromTextLayer, environmentPathFromState } from './meshPropsFromTextLayer';
+import type { EditorSceneLayer, TextLayer3D } from '../types';
+import { isShapeLayer } from '../types';
+import {
+  buildThreeTextMeshGroup,
+  frontMaterialOpacityFields,
+  loadEnvironmentMap,
+  loadFont,
+} from './threeTextMeshCore';
+import { buildThreeShapeMeshGroup } from './threeShapeMeshCore';
+import { meshPropsFromTextLayer, meshPropsFromShapeLayer, environmentPathFromState } from './meshPropsFromTextLayer';
 import { getCustomFont } from '../font/customFontCache';
 
 const DEG2RAD = Math.PI / 180;
@@ -19,7 +26,7 @@ const GEOMETRY_REBUILD_DEBOUNCE_MS = 42;
  * materials (`shine`, `metallic`); those use `applyInPlaceSideExtrusionLook`. `edgeRoundness` affects
  * bevel/geometry and stays. `extrusion` keeps depth + angle only (steps/shine are SVG-oriented).
  */
-function layerGeometryFingerprint(layers: TextLayer3D[]): string {
+function layerGeometryFingerprint(layers: EditorSceneLayer[]): string {
   return JSON.stringify(
     layers.map((l) => {
       const {
@@ -33,7 +40,7 @@ function layerGeometryFingerprint(layers: TextLayer3D[]): string {
         filters,
         ...rest
       } = l;
-      return {
+      const base = {
         ...rest,
         extrusion: {
           depth: extrusion.depth,
@@ -43,17 +50,30 @@ function layerGeometryFingerprint(layers: TextLayer3D[]): string {
           edgeRoundness: filters.edgeRoundness ?? 0,
         },
       };
+      if (isShapeLayer(l)) {
+        return {
+          ...base,
+          layerType: 'shape' as const,
+          shape: {
+            kind: l.shape.kind,
+            width: l.shape.width,
+            height: l.shape.height,
+            ringHoleRatio: l.shape.ringHoleRatio,
+          },
+        };
+      }
+      return base;
     })
   );
 }
 
-function applyInPlaceLayerTransform(group: THREE.Group, layer: TextLayer3D): void {
+function applyInPlaceLayerTransform(group: THREE.Group, layer: EditorSceneLayer): void {
   group.position.set(layer.positionX, layer.positionY, layer.positionZ);
   group.scale.setScalar(Math.max(0.05, layer.scale));
 }
 
 /** Matches `buildThreeTextMeshGroup` side `effectiveMetalness` / `effectiveRoughness` (non-glass). */
-function applyInPlaceSideExtrusionLook(group: THREE.Group, layer: TextLayer3D): void {
+function applyInPlaceSideExtrusionLook(group: THREE.Group, layer: EditorSceneLayer): void {
   const shine = Math.max(layer.filters.shine ?? 0, layer.extrusion.shine ?? 0);
   const metalness = layer.metalness ?? 1;
   const roughness = layer.roughness ?? 0.25;
@@ -84,10 +104,11 @@ function tagMeshRoles(group: THREE.Group): void {
   });
 }
 
-function applyInPlaceLayerColors(group: THREE.Group, layer: TextLayer3D): void {
+function applyInPlaceLayerColors(group: THREE.Group, layer: EditorSceneLayer): void {
   const front = new THREE.Color(layer.frontColor ?? '#ffffff');
   const ext = new THREE.Color(layer.extrusionColor ?? '#d4af37');
   const glass = layer.extrusionGlass ?? false;
+  const frontOp = frontMaterialOpacityFields(layer.frontOpacity ?? 1);
   for (let i = 0; i < group.children.length; i++) {
     const child = group.children[i]!;
     const mesh = child as THREE.Mesh;
@@ -101,7 +122,12 @@ function applyInPlaceLayerColors(group: THREE.Group, layer: TextLayer3D): void {
       if (isExtrusion) {
         if (!glass) (m as THREE.MeshStandardMaterial).color.copy(ext);
       } else {
-        (m as THREE.MeshStandardMaterial).color.copy(front);
+        const std = m as THREE.MeshStandardMaterial;
+        std.color.copy(front);
+        std.transparent = frontOp.transparent;
+        std.opacity = frontOp.opacity;
+        std.depthWrite = frontOp.depthWrite;
+        std.needsUpdate = true;
       }
     }
   }
@@ -179,11 +205,13 @@ export const MultiLayerThreeCanvas = memo(function MultiLayerThreeCanvas({
   const environmentPath = environmentPathFromState(environmentId, hdrPresets);
 
   const [fontsReady, setFontsReady] = useState(false);
-  const fontKey = textLayers.map((l) => l.text.fontFamily).join('|');
+  const textLayersOnly = textLayers.filter((l): l is TextLayer3D => !isShapeLayer(l));
+  const fontKey = textLayersOnly.map((l) => l.text.fontFamily).join('|');
+  const needsFontLoading = textLayersOnly.length > 0;
 
   useEffect(() => {
     setFontsReady(false);
-    const families = [...new Set(textLayers.map((l) => l.text.fontFamily))];
+    const families = [...new Set(textLayersOnly.map((l) => l.text.fontFamily))];
     if (families.length === 0) {
       setFontsReady(true);
       return;
@@ -568,6 +596,7 @@ export const MultiLayerThreeCanvas = memo(function MultiLayerThreeCanvas({
       (s.textLayers ?? []).map((l) => ({
         id: l.id,
         frontColor: l.frontColor ?? '#ffffff',
+        frontOpacity: l.frontOpacity ?? 1,
         extrusionColor: l.extrusionColor ?? '#d4af37',
         extrusionGlass: l.extrusionGlass ?? false,
       }))
@@ -616,6 +645,18 @@ export const MultiLayerThreeCanvas = memo(function MultiLayerThreeCanvas({
       };
 
       for (const layer of tl) {
+        if (isShapeLayer(layer)) {
+          const props = meshPropsFromShapeLayer(layer, shared);
+          const built = await buildThreeShapeMeshGroup(props, layer.shape, { signal: ac.signal });
+          if (ac.signal.aborted) return;
+          if (!built) continue;
+          built.group.position.set(layer.positionX, layer.positionY, layer.positionZ);
+          built.group.scale.setScalar(Math.max(0.05, layer.scale));
+          built.group.userData.layerId = layer.id;
+          tagMeshRoles(built.group);
+          root.add(built.group);
+          continue;
+        }
         if (!layer.text.content.trim()) continue;
         const customFont = layer.selectedCustomFontId
           ? getCustomFont(layer.selectedCustomFontId)?.font ?? null
@@ -644,7 +685,7 @@ export const MultiLayerThreeCanvas = memo(function MultiLayerThreeCanvas({
     // Debounced so depth / angle sliders don’t re-extrude every pointer event. Steps & shine omitted from fingerprint (SVG-only).
   ]);
 
-  /** Cheap path: only `material.color` updates when front/extrusion hex changes. */
+  /** Cheap path: front/extrusion colors and front opacity without re-extruding. */
   useEffect(() => {
     const root = layersRootRef.current;
     if (!root || !fontsReady) return;
@@ -726,7 +767,7 @@ export const MultiLayerThreeCanvas = memo(function MultiLayerThreeCanvas({
   return (
     <div className="relative h-full min-h-[200px] w-full">
       <div ref={glHostRef} className="h-full min-h-[200px] w-full" />
-      {!fontsReady && (
+      {!fontsReady && needsFontLoading && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-zinc-200/80 text-sm text-zinc-500 dark:bg-zinc-900/80 dark:text-zinc-400">
           Loading 3D fonts…
         </div>

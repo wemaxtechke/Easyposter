@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   type ThreeTextRendererProps,
   buildThreeTextMeshGroup,
+  frontMaterialOpacityFields,
   loadEnvironmentMap,
   loadFont,
   setTextureRepeat,
@@ -20,6 +21,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
   fontSize,
   letterSpacing = 0,
   frontColor,
+  frontOpacity = 1,
   extrusionColor,
   metalness,
   roughness,
@@ -223,6 +225,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
           fontSize,
           letterSpacing,
           frontColor,
+          frontOpacity,
           extrusionColor,
           metalness,
           roughness,
@@ -469,6 +472,22 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
     if (loaded.metalnessMap) setTextureRepeat(loaded.metalnessMap, textureRepeatX, textureRepeatY);
     mat.needsUpdate = true;
   }, [textureRepeatX, textureRepeatY, frontNormalStrength]);
+
+  useEffect(() => {
+    const group = meshGroupRef.current;
+    if (!group) return;
+    const op = frontMaterialOpacityFields(frontOpacity);
+    for (const idx of [0, 2] as const) {
+      const mesh = group.children[idx] as THREE.Mesh | undefined;
+      if (!mesh?.material) continue;
+      const m = mesh.material as THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
+      if (!m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial) continue;
+      m.transparent = op.transparent;
+      m.opacity = op.opacity;
+      m.depthWrite = op.depthWrite;
+      m.needsUpdate = true;
+    }
+  }, [frontOpacity]);
 
   // CPU-heavy params (intensity blending) â€” debounced to avoid lag while dragging sliders.
   const texIntensityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

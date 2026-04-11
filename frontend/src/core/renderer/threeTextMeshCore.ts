@@ -74,6 +74,17 @@ export function loadEnvironmentMap(path: string): Promise<THREE.Texture | null> 
   });
 }
 
+/** Front-face `transparent` / `opacity` / `depthWrite` for Three.js materials. */
+export function frontMaterialOpacityFields(opacity: number): {
+  transparent: boolean;
+  opacity: number;
+  depthWrite: boolean;
+} {
+  const o = Math.max(0, Math.min(1, opacity));
+  const trans = o < 1;
+  return { transparent: trans, opacity: o, depthWrite: !trans };
+}
+
 export interface ThreeTextRendererProps {
   content: string;
   fontFamily: string;
@@ -81,6 +92,8 @@ export interface ThreeTextRendererProps {
   /** Extra horizontal space between glyphs in pixels (same units as font size in the UI). */
   letterSpacing?: number;
   frontColor: string;
+  /** Front fill opacity 0–1 (default 1). */
+  frontOpacity?: number;
   extrusionColor: string;
   metalness: number;
   roughness: number;
@@ -327,6 +340,59 @@ function ensureGeometryUVs(geometry: THREE.BufferGeometry): void {
   geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 }
 
+/** Same depth/bevel math as built-in typeface `TextGeometry` extrusion (not custom-font path). */
+export function typefaceLikeExtrudeOptions(
+  size: number,
+  props: Pick<
+    ThreeTextRendererProps,
+    'inflate' | 'bevelSize' | 'edgeRoundness' | 'extrusionDepth' | 'bevelThickness' | 'bevelSegments' | 'curveSegments'
+  >
+): {
+  inf: number;
+  rawDepth: number;
+  depth: number;
+  effectiveBevelSize: number;
+  effectiveBT: number;
+  effectiveBS: number;
+  curveSegments: number;
+} {
+  const inflate = props.inflate ?? 0;
+  const bevelSegments = props.bevelSegments ?? 5;
+  const bevelThickness = props.bevelThickness ?? 0.2;
+  const curveSegments = props.curveSegments ?? 12;
+  const inf = Math.max(0, Math.min(1, inflate));
+  const rawDepth = props.extrusionDepth * 0.5;
+  const depth = inf > 0 ? Math.max(0.01, rawDepth * (1 - inf * 0.97)) : Math.max(0.01, rawDepth);
+  const maxBevelSize = 0.35 + inf * 0.25;
+  const effectiveBevelSize = Math.max(
+    0.02,
+    Math.min(maxBevelSize, props.bevelSize + props.edgeRoundness * 0.15 + inf * 0.1)
+  );
+  const normalBT = Math.min(rawDepth > 0 ? rawDepth * 0.3 : 0.1, bevelThickness);
+  const effectiveBT = inf > 0 ? normalBT + inf * size * 0.35 : Math.min(depth * 0.6, bevelThickness);
+  const effectiveBS = Math.round(bevelSegments + inf * 20);
+  return { inf, rawDepth, depth, effectiveBevelSize, effectiveBT, effectiveBS, curveSegments };
+}
+
+export function applyExtrusionShearToGeometry(
+  geometry: THREE.BufferGeometry,
+  extrusionAngleDeg: number
+): void {
+  if (extrusionAngleDeg === 0) return;
+  const pos = geometry.attributes.position;
+  const shearX = 0.5 * Math.tan(extrusionAngleDeg * DEG2RAD);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    pos.setX(i, x + shearX * z);
+  }
+  pos.needsUpdate = true;
+  geometry.computeBoundingBox();
+  const boxAfter = geometry.boundingBox!;
+  const centerAfter = new THREE.Vector3();
+  boxAfter.getCenter(centerAfter);
+  geometry.translate(-centerAfter.x, -centerAfter.y, -centerAfter.z);
+}
 
 export type ThreeTextMeshLoadedTextures = {
   map?: THREE.Texture;
@@ -335,30 +401,20 @@ export type ThreeTextMeshLoadedTextures = {
   metalnessMap?: THREE.Texture;
 };
 
-/** Build centered text mesh group (front / sides / back). Caller adds to scene and owns lights. */
-export async function buildThreeTextMeshGroup(
+/** Front/side materials + mesh split for any centered extruded `BufferGeometry`. */
+export async function finalizeExtrudedMeshGroup(
+  geometry: THREE.BufferGeometry,
   props: Omit<ThreeTextRendererProps, 'onReady'>,
   opts?: { signal?: AbortSignal }
 ): Promise<{ group: THREE.Group; loadedTextures: ThreeTextMeshLoadedTextures | null } | null> {
   const signal = opts?.signal;
   const {
-    content,
-    fontFamily,
-    fontSize,
-    letterSpacing = 0,
     frontColor,
     extrusionColor,
     metalness,
     roughness,
-    bevelSize,
-    bevelSegments = 5,
-    bevelThickness = 0.2,
-    curveSegments = 12,
-    extrusionDepth,
-    extrusionAngle = 0,
     filtersShine,
     filtersMetallic,
-    edgeRoundness,
     frontClearcoat,
     frontClearcoatRoughness = 0.1,
     frontMetalness = 0.6,
@@ -376,21 +432,13 @@ export async function buildThreeTextMeshGroup(
     textureRoughnessIntensity = 1,
     textureRepeatX = 2,
     textureRepeatY = 2,
-    inflate = 0,
-    customFont,
+    frontOpacity = 1,
   } = props;
 
-  if (!content.trim()) return null;
+  const frontOpFields = frontMaterialOpacityFields(frontOpacity);
 
-  const size = Math.max(0.1, fontSize * 0.012);
-  const inf = Math.max(0, Math.min(1, inflate));
-  const rawDepth = extrusionDepth * 0.5;
-  const depth = inf > 0 ? Math.max(0.01, rawDepth * (1 - inf * 0.97)) : Math.max(0.01, rawDepth);
-  const maxBevelSize = 0.35 + inf * 0.25;
-  const effectiveBevelSize = Math.max(0.02, Math.min(maxBevelSize, bevelSize + edgeRoundness * 0.15 + inf * 0.1));
   const effectiveMetalness = Math.min(1, metalness * (0.3 + 0.7 * filtersMetallic));
   const effectiveRoughness = Math.max(0.05, Math.min(1, roughness * (1.2 - filtersShine * 0.5)));
-
   const useGlossyFront = frontClearcoat != null && frontClearcoat > 0;
 
   const sideMaterial = new THREE.MeshPhysicalMaterial(
@@ -415,6 +463,193 @@ export async function buildThreeTextMeshGroup(
         }
   );
 
+  ensureGeometryUVs(geometry);
+  geometry.computeBoundingBox();
+
+  let loadedTexturesOut: ThreeTextMeshLoadedTextures | null = null;
+  let frontMaterial: THREE.Material;
+  const textureSource = customFrontTextureUrl || frontTextureId;
+  const useTexture = frontTextureEnabled && !!textureSource;
+  const usePbrSet =
+    !!customFrontTextureUrl &&
+    (!!customFrontTextureRoughnessUrl ||
+      !!customFrontTextureNormalUrl ||
+      !!customFrontTextureMetalnessUrl);
+  if (useTexture) {
+    const loaded = usePbrSet
+      ? await loadFrontTexturesFromSet(
+          customFrontTextureUrl!,
+          customFrontTextureRoughnessUrl ?? undefined,
+          customFrontTextureNormalUrl ?? undefined,
+          customFrontTextureMetalnessUrl ?? undefined
+        )
+      : await loadFrontTextures(textureSource);
+    if (signal?.aborted) {
+      geometry.dispose();
+      sideMaterial.dispose();
+      return null;
+    }
+    if (loaded?.map) {
+      loadedTexturesOut = {
+        map: loaded.map,
+        roughnessMap: loaded.roughnessMap,
+        normalMap: loaded.normalMap,
+        metalnessMap: loaded.metalnessMap,
+      };
+      const blendedMap = blendMapWithIntensity(loaded.map, Math.max(0, Math.min(1, textureIntensity)));
+      setTextureRepeat(blendedMap, textureRepeatX, textureRepeatY);
+      let roughnessMapForMat: THREE.Texture | undefined;
+      if (loaded.roughnessMap) {
+        const rInt = Math.max(0, Math.min(1, textureRoughnessIntensity ?? 1));
+        roughnessMapForMat =
+          rInt >= 0.998
+            ? loaded.roughnessMap
+            : (blendRoughnessMapWithIntensity(loaded.roughnessMap, rInt) as THREE.Texture);
+        setTextureRepeat(roughnessMapForMat, textureRepeatX, textureRepeatY);
+      }
+      if (loaded.normalMap) {
+        setTextureRepeat(loaded.normalMap, textureRepeatX, textureRepeatY);
+      }
+      if (loaded.metalnessMap) {
+        setTextureRepeat(loaded.metalnessMap, textureRepeatX, textureRepeatY);
+      }
+      const baseMetalness = useGlossyFront ? (frontMetalness ?? 0.6) : 0;
+      const baseRoughness = useGlossyFront ? (frontRoughness ?? 0.2) : 0.35;
+      const effectiveFrontMetalness = loaded.metalnessMap ? 1 : baseMetalness;
+      const effectiveFrontRoughness = roughnessMapForMat ? 1 : baseRoughness;
+
+      const normalStrength = Math.max(0, Math.min(10, frontNormalStrength ?? 1));
+      const normalScaleVal = (loaded.normalMap ? 1 : FRONT_NORMAL_SCALE) * normalStrength;
+      const normalScaleVec = new THREE.Vector2(normalScaleVal, normalScaleVal);
+      const basePhys: Record<string, unknown> = {
+        color: frontColor,
+        metalness: effectiveFrontMetalness,
+        roughness: effectiveFrontRoughness,
+        map: blendedMap,
+        normalScale: normalScaleVec,
+        ...frontOpFields,
+        ...(roughnessMapForMat ? { roughnessMap: roughnessMapForMat } : {}),
+        ...(loaded.normalMap
+          ? {
+              normalMap: loaded.normalMap,
+              normalMapType: THREE.TangentSpaceNormalMap,
+            }
+          : {}),
+        ...(loaded.metalnessMap ? { metalnessMap: loaded.metalnessMap } : {}),
+      };
+      if (useGlossyFront) {
+        basePhys.clearcoat = frontClearcoat ?? 1;
+        basePhys.clearcoatRoughness = frontClearcoatRoughness ?? 0.1;
+        basePhys.envMapIntensity = frontEnvMapIntensity ?? 2;
+        if (loaded.normalMap) {
+          basePhys.clearcoatNormalMap = loaded.normalMap;
+          basePhys.clearcoatNormalScale = normalScaleVec.clone();
+        }
+      }
+      frontMaterial = new THREE.MeshPhysicalMaterial(basePhys as THREE.MeshPhysicalMaterialParameters);
+    } else {
+      loadedTexturesOut = null;
+      frontMaterial = useGlossyFront
+        ? new THREE.MeshPhysicalMaterial({
+            color: frontColor,
+            metalness: frontMetalness ?? 0.6,
+            roughness: frontRoughness ?? 0.2,
+            clearcoat: frontClearcoat ?? 1,
+            clearcoatRoughness: frontClearcoatRoughness ?? 0.1,
+            envMapIntensity: frontEnvMapIntensity ?? 2,
+            ...frontOpFields,
+          })
+        : new THREE.MeshStandardMaterial({
+            color: frontColor,
+            metalness: 0,
+            roughness: 0.35,
+            ...frontOpFields,
+          });
+    }
+  } else {
+    loadedTexturesOut = null;
+    frontMaterial = useGlossyFront
+      ? new THREE.MeshPhysicalMaterial({
+          color: frontColor,
+          metalness: frontMetalness ?? 0.6,
+          roughness: frontRoughness ?? 0.2,
+          clearcoat: frontClearcoat ?? 1,
+          clearcoatRoughness: frontClearcoatRoughness ?? 0.1,
+          envMapIntensity: frontEnvMapIntensity ?? 2,
+          ...frontOpFields,
+        })
+      : new THREE.MeshStandardMaterial({
+          color: frontColor,
+          metalness: 0,
+          roughness: 0.35,
+          ...frontOpFields,
+        });
+  }
+
+  if (signal?.aborted) {
+    geometry.dispose();
+    sideMaterial.dispose();
+    return null;
+  }
+  const materials = [frontMaterial, sideMaterial, frontMaterial];
+  const mesh = new THREE.Mesh(geometry, materials);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  const meshGroup = createMeshesFromMultiMaterialMesh(mesh) as THREE.Group;
+  geometry.dispose();
+  if (meshGroup.children.length === 0) {
+    sideMaterial.dispose();
+    frontMaterial.dispose();
+    return null;
+  }
+  meshGroup.children[0]?.layers.set(0);
+  meshGroup.children[1]?.layers.set(1);
+  if (meshGroup.children[2]) meshGroup.children[2].layers.set(0);
+
+  meshGroup.children.forEach((child) => {
+    const m = child as THREE.Mesh;
+    m.castShadow = true;
+    m.receiveShadow = true;
+  });
+
+  return { group: meshGroup, loadedTextures: loadedTexturesOut };
+}
+
+/** Build centered text mesh group (front / sides / back). Caller adds to scene and owns lights. */
+export async function buildThreeTextMeshGroup(
+  props: Omit<ThreeTextRendererProps, 'onReady'>,
+  opts?: { signal?: AbortSignal }
+): Promise<{ group: THREE.Group; loadedTextures: ThreeTextMeshLoadedTextures | null } | null> {
+  const {
+    content,
+    fontFamily,
+    fontSize,
+    letterSpacing = 0,
+    bevelSize,
+    bevelSegments = 5,
+    bevelThickness = 0.2,
+    curveSegments = 12,
+    extrusionDepth,
+    extrusionAngle = 0,
+    edgeRoundness,
+    inflate = 0,
+    customFont,
+  } = props;
+
+  if (!content.trim()) return null;
+
+  const size = Math.max(0.1, fontSize * 0.012);
+  const ext = typefaceLikeExtrudeOptions(size, {
+    inflate,
+    bevelSize,
+    edgeRoundness,
+    extrusionDepth,
+    bevelThickness,
+    bevelSegments,
+    curveSegments,
+  });
+  const { inf, depth, effectiveBevelSize, curveSegments: curveSeg } = ext;
+
   let geometry: THREE.BufferGeometry;
   if (customFont) {
     const scale = size / Math.max(1, fontSize);
@@ -424,7 +659,6 @@ export async function buildThreeTextMeshGroup(
       letterSpacing,
     });
     if (shapes.length === 0) {
-      sideMaterial.dispose();
       return null;
     }
     const customDepth = depth * 0.35;
@@ -438,7 +672,7 @@ export async function buildThreeTextMeshGroup(
       bevelThickness: customBevelThickness,
       bevelSize: customBevelSize,
       bevelSegments: customBevelSegments,
-      curveSegments,
+      curveSegments: curveSeg,
     });
     geometry.computeBoundingBox();
     const box = geometry.boundingBox!;
@@ -450,18 +684,14 @@ export async function buildThreeTextMeshGroup(
     let font = fontCache.get(typefaceUrl);
     if (!font) font = fontCache.get(getTypefaceUrl('Arial Black, sans-serif'));
     if (!font) {
-      sideMaterial.dispose();
       return null;
     }
-    const normalBT = Math.min(rawDepth > 0 ? rawDepth * 0.3 : 0.1, bevelThickness);
-    const effectiveBT = inf > 0 ? normalBT + inf * size * 0.35 : Math.min(depth * 0.6, bevelThickness);
-    const effectiveBS = Math.round(bevelSegments + inf * 20);
-    // Built-in typeface fonts use standard TextGeometry; WebGL letter spacing is only applied for custom (OTF/TTF) fonts.
+    const { effectiveBT, effectiveBS } = ext;
     geometry = new TextGeometry(content, {
       font,
       size,
       depth,
-      curveSegments,
+      curveSegments: curveSeg,
       bevelEnabled: true,
       bevelThickness: effectiveBT,
       bevelSize: effectiveBevelSize,
@@ -474,168 +704,6 @@ export async function buildThreeTextMeshGroup(
     geometry.translate(-center.x, -center.y, -center.z);
   }
 
-  if (extrusionAngle !== 0) {
-    const pos = geometry.attributes.position;
-    const shearX = 0.5 * Math.tan(extrusionAngle * DEG2RAD);
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const z = pos.getZ(i);
-      pos.setX(i, x + shearX * z);
-    }
-    pos.needsUpdate = true;
-    geometry.computeBoundingBox();
-    const boxAfter = geometry.boundingBox!;
-    const centerAfter = new THREE.Vector3();
-    boxAfter.getCenter(centerAfter);
-    geometry.translate(-centerAfter.x, -centerAfter.y, -centerAfter.z);
-  }
-
-  ensureGeometryUVs(geometry);
-  geometry.computeBoundingBox();
-
-  return await (async () => {
-    let loadedTexturesOut: ThreeTextMeshLoadedTextures | null = null;
-    let frontMaterial: THREE.Material;
-    const textureSource = customFrontTextureUrl || frontTextureId;
-    const useTexture = frontTextureEnabled && !!textureSource;
-    const usePbrSet =
-      !!customFrontTextureUrl &&
-      (!!customFrontTextureRoughnessUrl ||
-        !!customFrontTextureNormalUrl ||
-        !!customFrontTextureMetalnessUrl);
-    if (useTexture) {
-      const loaded = usePbrSet
-        ? await loadFrontTexturesFromSet(
-            customFrontTextureUrl!,
-            customFrontTextureRoughnessUrl ?? undefined,
-            customFrontTextureNormalUrl ?? undefined,
-            customFrontTextureMetalnessUrl ?? undefined
-          )
-        : await loadFrontTextures(textureSource);
-      if (signal?.aborted) {
-        geometry.dispose();
-        sideMaterial.dispose();
-        return null;
-      }
-      if (loaded?.map) {
-        loadedTexturesOut = {
-          map: loaded.map,
-          roughnessMap: loaded.roughnessMap,
-          normalMap: loaded.normalMap,
-          metalnessMap: loaded.metalnessMap,
-        };
-        const blendedMap = blendMapWithIntensity(loaded.map, Math.max(0, Math.min(1, textureIntensity)));
-        setTextureRepeat(blendedMap, textureRepeatX, textureRepeatY);
-        let roughnessMapForMat: THREE.Texture | undefined;
-        if (loaded.roughnessMap) {
-          const rInt = Math.max(0, Math.min(1, textureRoughnessIntensity ?? 1));
-          roughnessMapForMat =
-            rInt >= 0.998
-              ? loaded.roughnessMap
-              : (blendRoughnessMapWithIntensity(loaded.roughnessMap, rInt) as THREE.Texture);
-          setTextureRepeat(roughnessMapForMat, textureRepeatX, textureRepeatY);
-        }
-        if (loaded.normalMap) {
-          setTextureRepeat(loaded.normalMap, textureRepeatX, textureRepeatY);
-        }
-        if (loaded.metalnessMap) {
-          setTextureRepeat(loaded.metalnessMap, textureRepeatX, textureRepeatY);
-        }
-        const baseMetalness = useGlossyFront ? (frontMetalness ?? 0.6) : 0;
-        const baseRoughness = useGlossyFront ? (frontRoughness ?? 0.2) : 0.35;
-        const effectiveFrontMetalness = loaded.metalnessMap ? 1 : baseMetalness;
-        const effectiveFrontRoughness = roughnessMapForMat ? 1 : baseRoughness;
-
-        const normalStrength = Math.max(0, Math.min(10, frontNormalStrength ?? 1));
-        const normalScaleVal = (loaded.normalMap ? 1 : FRONT_NORMAL_SCALE) * normalStrength;
-        const normalScaleVec = new THREE.Vector2(normalScaleVal, normalScaleVal);
-        const basePhys: Record<string, unknown> = {
-          color: frontColor,
-          metalness: effectiveFrontMetalness,
-          roughness: effectiveFrontRoughness,
-          map: blendedMap,
-          normalScale: normalScaleVec,
-          ...(roughnessMapForMat ? { roughnessMap: roughnessMapForMat } : {}),
-          ...(loaded.normalMap
-            ? {
-                normalMap: loaded.normalMap,
-                normalMapType: THREE.TangentSpaceNormalMap,
-              }
-            : {}),
-          ...(loaded.metalnessMap ? { metalnessMap: loaded.metalnessMap } : {}),
-        };
-        if (useGlossyFront) {
-          basePhys.clearcoat = frontClearcoat ?? 1;
-          basePhys.clearcoatRoughness = frontClearcoatRoughness ?? 0.1;
-          basePhys.envMapIntensity = frontEnvMapIntensity ?? 2;
-          if (loaded.normalMap) {
-            basePhys.clearcoatNormalMap = loaded.normalMap;
-            basePhys.clearcoatNormalScale = normalScaleVec.clone();
-          }
-        }
-        frontMaterial = new THREE.MeshPhysicalMaterial(basePhys as THREE.MeshPhysicalMaterialParameters);
-      } else {
-        loadedTexturesOut = null;
-        frontMaterial = useGlossyFront
-          ? new THREE.MeshPhysicalMaterial({
-              color: frontColor,
-              metalness: frontMetalness ?? 0.6,
-              roughness: frontRoughness ?? 0.2,
-              clearcoat: frontClearcoat ?? 1,
-              clearcoatRoughness: frontClearcoatRoughness ?? 0.1,
-              envMapIntensity: frontEnvMapIntensity ?? 2,
-            })
-          : new THREE.MeshStandardMaterial({
-              color: frontColor,
-              metalness: 0,
-              roughness: 0.35,
-            });
-      }
-    } else {
-      loadedTexturesOut = null;
-      frontMaterial = useGlossyFront
-        ? new THREE.MeshPhysicalMaterial({
-            color: frontColor,
-            metalness: frontMetalness ?? 0.6,
-            roughness: frontRoughness ?? 0.2,
-            clearcoat: frontClearcoat ?? 1,
-            clearcoatRoughness: frontClearcoatRoughness ?? 0.1,
-            envMapIntensity: frontEnvMapIntensity ?? 2,
-          })
-        : new THREE.MeshStandardMaterial({
-            color: frontColor,
-            metalness: 0,
-            roughness: 0.35,
-          });
-    }
-
-    if (signal?.aborted) {
-      geometry.dispose();
-      sideMaterial.dispose();
-      return null;
-    }
-    const materials = [frontMaterial, sideMaterial, frontMaterial];
-    const mesh = new THREE.Mesh(geometry, materials);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    const meshGroup = createMeshesFromMultiMaterialMesh(mesh) as THREE.Group;
-    geometry.dispose();
-    // ExtrudeGeometry uses two draw groups (caps = material 0, sides = material 1), not three.
-    if (meshGroup.children.length === 0) {
-      sideMaterial.dispose();
-      frontMaterial.dispose();
-      return null;
-    }
-    meshGroup.children[0]?.layers.set(0);
-    meshGroup.children[1]?.layers.set(1);
-    if (meshGroup.children[2]) meshGroup.children[2].layers.set(0);
-
-    meshGroup.children.forEach((child) => {
-      const m = child as THREE.Mesh;
-      m.castShadow = true;
-      m.receiveShadow = true;
-    });
-
-    return { group: meshGroup, loadedTextures: loadedTexturesOut };
-  })();
+  applyExtrusionShearToGeometry(geometry, extrusionAngle);
+  return finalizeExtrudedMeshGroup(geometry, props, opts);
 }

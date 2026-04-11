@@ -80,6 +80,8 @@ export interface EditorState {
   hdrPresets?: HdriPreset[];
   /** WebGL preset: front face color (e.g. #ffffff). */
   frontColor?: string;
+  /** WebGL preset: front face opacity 0–1 (1 = opaque). */
+  frontOpacity?: number;
   /** WebGL preset: extrusion/sides color (e.g. #d4af37). */
   extrusionColor?: string;
   /** WebGL preset: metalness 0–1. */
@@ -144,11 +146,11 @@ export interface EditorState {
   selectedCustomFontId?: string | null;
 
   /** Multi-layer 3D composition (standalone `/3d` editor). Always ≥1 layer when present. */
-  textLayers?: TextLayer3D[];
+  textLayers?: EditorSceneLayer[];
   activeTextLayerId?: string | null;
 }
 
-/** Max 3D text layers in one WebGL scene (standalone editor). */
+/** Max 3D scene layers (text + shapes) in one WebGL scene (standalone editor). */
 export const MAX_TEXT_LAYERS = 6;
 
 export interface TextLayerTransform {
@@ -159,10 +161,53 @@ export interface TextLayerTransform {
   scale: number;
 }
 
+/** Style shared by text and shape layers (no text body / font selection). */
+export type EditorLayerStyleFields = Omit<EditorPerLayerFields, 'text' | 'selectedCustomFontId'>;
+
+export type ShapeLayerKind =
+  | 'rect'
+  | 'roundedRect'
+  | 'circle'
+  | 'ring'
+  | 'ellipse'
+  | 'triangle'
+  | 'crescent'
+  | 'star';
+
+/** Default inner-hole radius as a fraction of outer radius for `kind: 'ring'`. */
+export const DEFAULT_RING_HOLE_RATIO = 0.4;
+
+/** 2D footprint in scene units (before layer `scale`). Centered in XY when meshed. */
+export interface ShapeLayerSpec {
+  kind: ShapeLayerKind;
+  width: number;
+  height: number;
+  /**
+   * Ring only: inner hole radius ÷ outer radius (about 0.06–0.92).
+   * Larger = bigger hole, thinner ring band. Omitted → {@link DEFAULT_RING_HOLE_RATIO}.
+   */
+  ringHoleRatio?: number;
+}
+
 /** Per-layer 3D text: content/style + transform. Scene lighting/HDRI stay on `EditorState`. */
 export type TextLayer3D = TextLayerTransform & {
   id: string;
+  /** Absent or `'text'` = text layer (default for saved projects). */
+  layerType?: 'text';
 } & EditorPerLayerFields;
+
+/** Extruded 2D shape with the same material/extrusion stack as text layers. */
+export type ShapeLayer3D = TextLayerTransform & {
+  id: string;
+  layerType: 'shape';
+  shape: ShapeLayerSpec;
+} & EditorLayerStyleFields;
+
+export type EditorSceneLayer = TextLayer3D | ShapeLayer3D;
+
+export function isShapeLayer(l: EditorSceneLayer): l is ShapeLayer3D {
+  return l.layerType === 'shape';
+}
 
 /** Fields stored per text layer (mirrors root `EditorState` slice for the active layer). */
 export type EditorPerLayerFields = Pick<
@@ -180,6 +225,7 @@ export type EditorPerLayerFields = Pick<
   | 'shadowOpacity'
   | 'reflectionStrength'
   | 'frontColor'
+  | 'frontOpacity'
   | 'extrusionColor'
   | 'metalness'
   | 'roughness'

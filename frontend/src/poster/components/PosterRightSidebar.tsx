@@ -667,7 +667,7 @@ function PosterImageAppearanceControls({
         )}
       </div>
 
-      {raster.type === 'image' && (
+      {(raster.type === 'image' || raster.type === '3d-text') && (
         <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-600 dark:bg-zinc-800/50">
           <button
             type="button"

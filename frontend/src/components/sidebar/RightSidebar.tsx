@@ -3,6 +3,9 @@ import { useLocation } from 'react-router-dom';
 import opentype from 'opentype.js';
 import { ColorPickerPopover } from '../ColorPickerPopover';
 import { useEditorStore } from '../../store/editorStore';
+import type { ShapeLayerKind } from '../../core/types';
+import { DEFAULT_RING_HOLE_RATIO } from '../../core/types';
+import { isShapeLayer } from '../../core/types';
 import { renderMetallicText } from '../../core/renderer/metallicTextRenderer';
 import { exportPNG, exportWebP } from '../../core/export/pngExport';
 import {
@@ -105,7 +108,9 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
     const id = s.activeTextLayerId ?? layers[0]?.id;
     return layers.find((l) => l.id === id) ?? null;
   });
+  const activeIsShape = Boolean(activeLayer && isShapeLayer(activeLayer));
   const updateActiveLayerTransform = useEditorStore((s) => s.updateActiveLayerTransform);
+  const updateActiveShape = useEditorStore((s) => s.updateActiveShape);
   const setLayerColors = useEditorStore((s) => s.setLayerColors);
   const [layerColorHexDraft, setLayerColorHexDraft] = useState({
     front: '#ffffff',
@@ -710,9 +715,87 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                           </label>
                         );
                       })}
+                      <Slider
+                        label={`Fill opacity (${Math.round((activeLayer.frontOpacity ?? 1) * 100)}%)`}
+                        value={activeLayer.frontOpacity ?? 1}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        onChange={(v) => setLayerColors({ frontOpacity: Math.max(0, Math.min(1, v)) })}
+                      />
                     </div>
                   </div>
                 )}
+                {is3dRoute && renderEngine === 'webgl' && activeIsShape && isShapeLayer(activeLayer!) && (
+                  <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900/40">
+                    <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">Shape</span>
+                    <label className="flex flex-col gap-0.5 text-xs">
+                      <span className="text-zinc-500 dark:text-zinc-400">Kind</span>
+                      <select
+                        value={activeLayer.shape.kind}
+                        onChange={(e) =>
+                          updateActiveShape({ kind: e.target.value as ShapeLayerKind })
+                        }
+                        className="w-full rounded border border-zinc-200 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                      >
+                        <option value="rect">Rectangle</option>
+                        <option value="roundedRect">Rounded rectangle</option>
+                        <option value="circle">Circle</option>
+                        <option value="ring">Ring (hole in center)</option>
+                        <option value="ellipse">Ellipse</option>
+                        <option value="triangle">Triangle</option>
+                        <option value="crescent">Crescent</option>
+                        <option value="star">Star</option>
+                      </select>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="flex flex-col gap-0.5 text-xs">
+                        <span className="text-zinc-500 dark:text-zinc-400">Width</span>
+                        <input
+                          type="number"
+                          step={0.1}
+                          min={0.1}
+                          value={activeLayer.shape.width}
+                          onChange={(e) => {
+                            const v = parseFloat(e.target.value);
+                            if (Number.isNaN(v)) return;
+                            updateActiveShape({ width: v });
+                          }}
+                          className="w-full rounded border border-zinc-200 bg-white px-2 py-1 font-mono text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-0.5 text-xs">
+                        <span className="text-zinc-500 dark:text-zinc-400">Height</span>
+                        <input
+                          type="number"
+                          step={0.1}
+                          min={0.1}
+                          value={activeLayer.shape.height}
+                          onChange={(e) => {
+                            const v = parseFloat(e.target.value);
+                            if (Number.isNaN(v)) return;
+                            updateActiveShape({ height: v });
+                          }}
+                          className="w-full rounded border border-zinc-200 bg-white px-2 py-1 font-mono text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                        />
+                      </label>
+                    </div>
+                    {activeLayer.shape.kind === 'ring' && (
+                      <Slider
+                        label={`Hole size (${Math.round((activeLayer.shape.ringHoleRatio ?? DEFAULT_RING_HOLE_RATIO) * 100)}% of outer radius)`}
+                        value={activeLayer.shape.ringHoleRatio ?? DEFAULT_RING_HOLE_RATIO}
+                        min={0.06}
+                        max={0.92}
+                        step={0.01}
+                        onChange={(v) =>
+                          updateActiveShape({ ringHoleRatio: Math.max(0.06, Math.min(0.92, v)) })
+                        }
+                      />
+                    )}
+                  </div>
+                )}
+                {!(is3dRoute && renderEngine === 'webgl' && activeIsShape) && (
+                <>
                 <div>
                   <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">
                     Content
@@ -928,6 +1011,8 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                   <p className="rounded bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-400">
                     {fontError}
                   </p>
+                )}
+                </>
                 )}
               </div>
             ),

@@ -1,5 +1,5 @@
 import { util, type FabricImage } from 'fabric';
-import type { PosterImageElement } from './types';
+import type { PosterRasterElement } from './posterRaster';
 import { getPosterImageSourceRectForCropBake, resolvePosterImageFabricSrc } from './imageEffects';
 
 export type PosterImageCropRect = { left: number; top: number; width: number; height: number };
@@ -24,7 +24,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
  * stays visually aligned. Uses the same resolved bitmap as Fabric (fade/texture overlay).
  */
 export async function bakePosterImageCrop(
-  el: PosterImageElement,
+  el: PosterRasterElement,
   fabricImg: FabricImage,
   cropCanvas: PosterImageCropRect
 ): Promise<{

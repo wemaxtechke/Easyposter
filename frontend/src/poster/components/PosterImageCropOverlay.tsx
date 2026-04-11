@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { FabricImage, type Canvas } from 'fabric';
 import { usePosterStore } from '../store/posterStore';
-import type { PosterImageElement } from '../types';
+import type { PosterImageElement, Poster3DTextElement } from '../types';
 import { bakePosterImageCrop, type PosterImageCropRect } from '../posterImageCrop';
 
 const MIN_CROP = 8;
@@ -205,8 +205,11 @@ export function PosterImageCropOverlay({
   const handleApply = async () => {
     const canvas = canvasRef.current;
     if (!canvas || readOnly || busy || !cropRect || !imageBounds) return;
-    const el = elements.find((x) => x.id === targetId) as PosterImageElement | undefined;
-    if (!el || el.type !== 'image') {
+    const el = elements.find((x) => x.id === targetId) as
+      | PosterImageElement
+      | Poster3DTextElement
+      | undefined;
+    if (!el || (el.type !== 'image' && el.type !== '3d-text')) {
       setImageCropTargetId(null);
       return;
     }
@@ -223,8 +226,7 @@ export function PosterImageCropOverlay({
     try {
       const baked = await bakePosterImageCrop(el, obj, cropRect);
       pushHistory();
-      updateElement(targetId, {
-        src: baked.dataUrl,
+      const layout = {
         left: baked.left,
         top: baked.top,
         scaleX: baked.scaleX,
@@ -233,7 +235,12 @@ export function PosterImageCropOverlay({
         maskImageOffsetX: 0.5,
         maskImageOffsetY: 0.5,
         maskImageScale: 1,
-      });
+      };
+      if (el.type === '3d-text') {
+        updateElement(targetId, { image: baked.dataUrl, ...layout });
+      } else {
+        updateElement(targetId, { src: baked.dataUrl, ...layout });
+      }
       setImageCropTargetId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not crop image');

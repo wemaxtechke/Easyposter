@@ -1,6 +1,16 @@
 import { create } from 'zustand';
-import type { EditorState, TextLayer3D, TextSettings, ExtrusionSettings, LightingSettings, FilterSettings, ExtrusionLightingSettings } from '../core/types';
-import { MAX_TEXT_LAYERS } from '../core/types';
+import type {
+  EditorState,
+  EditorSceneLayer,
+  ShapeLayerSpec,
+  TextLayer3D,
+  TextSettings,
+  ExtrusionSettings,
+  LightingSettings,
+  FilterSettings,
+  ExtrusionLightingSettings,
+} from '../core/types';
+import { MAX_TEXT_LAYERS, isShapeLayer } from '../core/types';
 import {
   DEFAULT_EXTRUSION,
   DEFAULT_LIGHTING,
@@ -8,9 +18,16 @@ import {
   DEFAULT_FILTERS,
 } from '../core/types';
 import {
+  assignTextureRepeatDefaults,
+  extractStyleFields,
   newTextLayerId,
+  normalizeEditorStateTextureRepeat,
   posterConfigToSingleLayerState,
+  rootFieldsFromSceneLayer,
+  rootFieldsFromShapeLayer,
   rootFieldsFromTextLayer,
+  shapeLayerFromRoot,
+  styleFieldsFromRoot,
   syncLayersFromMerged,
   textLayerContentFromRoot,
   textLayerFromRoot,
@@ -76,6 +93,7 @@ const BASE_FLAT: EditorState = {
   environmentId: 'studio',
   hdrPresets: undefined,
   frontColor: WHITE_GOLD_STATE.frontColor,
+  frontOpacity: 1,
   extrusionColor: WHITE_GOLD_STATE.extrusionColor,
   metalness: WHITE_GOLD_STATE.metalness,
   roughness: WHITE_GOLD_STATE.roughness,
@@ -84,12 +102,16 @@ const BASE_FLAT: EditorState = {
   lightIntensity: WHITE_GOLD_STATE.lightIntensity,
   inflate: 0,
   selectedCustomFontId: null,
+  textureRepeatX: 2,
+  textureRepeatY: 2,
 };
 
-const INITIAL_TEXT_LAYERS: TextLayer3D[] = [
-  textLayerFromRoot(
-    { ...BASE_FLAT, textLayers: undefined, activeTextLayerId: undefined },
-    INITIAL_LAYER_ID
+const INITIAL_TEXT_LAYERS: EditorSceneLayer[] = [
+  assignTextureRepeatDefaults(
+    textLayerFromRoot(
+      { ...BASE_FLAT, textLayers: undefined, activeTextLayerId: undefined },
+      INITIAL_LAYER_ID
+    )
   ),
 ];
 
@@ -106,12 +128,16 @@ interface EditorStore extends EditorState {
   setWebGLExportAPI: (api: WebGLExportAPI | null) => void;
   reset: () => void;
   addTextLayer: () => void;
+  addShapeLayer: () => void;
   removeTextLayer: (id: string) => void;
   duplicateTextLayer: () => void;
   setActiveTextLayerId: (id: string) => void;
   updateActiveLayerTransform: (patch: Partial<Pick<TextLayer3D, 'positionX' | 'positionY' | 'positionZ' | 'scale'>>) => void;
-  /** Update front / extrusion colors for the active layer (avoids preset `setState` material reset). */
-  setLayerColors: (patch: Partial<Pick<EditorState, 'frontColor' | 'extrusionColor'>>) => void;
+  updateActiveShape: (patch: Partial<ShapeLayerSpec>) => void;
+  /** Update front / extrusion colors and front opacity for the active layer (avoids preset `setState` material reset). */
+  setLayerColors: (
+    patch: Partial<Pick<EditorState, 'frontColor' | 'frontOpacity' | 'extrusionColor'>>
+  ) => void;
   /** Poster modal: replace with one layer from saved flat config. */
   loadPoster3DConfig: (config: Partial<EditorState>) => void;
   undo: () => void;
@@ -141,6 +167,7 @@ function toHistoryEntry(state: EditorState): EditorState {
       environmentId: state.environmentId,
       hdrPresets: state.hdrPresets,
       frontColor: state.frontColor,
+      frontOpacity: state.frontOpacity,
       extrusionColor: state.extrusionColor,
       metalness: state.metalness,
       roughness: state.roughness,
@@ -260,6 +287,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         bevelThickness: 0.2,
         curveSegments: 12,
         inflate: 0,
+        frontOpacity: 1,
       };
 
       const isPreset = newState.frontColor !== undefined || newState.extrusionColor !== undefined;
@@ -283,6 +311,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         environmentId: base.environmentId ?? state.environmentId,
         hdrPresets: base.hdrPresets ?? state.hdrPresets,
         frontColor: base.frontColor ?? state.frontColor,
+        frontOpacity: base.frontOpacity !== undefined ? base.frontOpacity : state.frontOpacity,
         extrusionColor: base.extrusionColor ?? state.extrusionColor,
         metalness: base.metalness ?? state.metalness,
         roughness: base.roughness ?? state.roughness,
@@ -358,21 +387,65 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const layers = state.textLayers ?? [];
       if (layers.length >= MAX_TEXT_LAYERS) return {};
       const aid = state.activeTextLayerId ?? layers[0].id;
-      const synced = layers.map((l) =>
-        l.id === aid ? { ...l, ...textLayerContentFromRoot(state as EditorState) } : l
-      );
+      const synced = layers
+        .map((l) =>
+          l.id === aid
+            ? isShapeLayer(l)
+              ? { ...l, ...styleFieldsFromRoot(state as EditorState) }
+              : { ...l, ...textLayerContentFromRoot(state as EditorState) }
+            : l
+        )
+        .map(assignTextureRepeatDefaults);
       const activeLayer = synced.find((l) => l.id === aid)!;
       const newId = newTextLayerId();
-      const dup: TextLayer3D = {
-        ...activeLayer,
-        id: newId,
-        positionZ: activeLayer.positionZ + 0.2,
-        scale: activeLayer.scale,
-      };
+      const dup: TextLayer3D = assignTextureRepeatDefaults(
+        isShapeLayer(activeLayer)
+          ? {
+              ...textLayerFromRoot(state as EditorState, newId, { positionZ: activeLayer.positionZ + 0.2 }),
+              ...extractStyleFields(activeLayer),
+            }
+          : {
+              ...activeLayer,
+              id: newId,
+              positionZ: activeLayer.positionZ + 0.2,
+              scale: activeLayer.scale,
+            }
+      );
       return withHistory(state, {
         textLayers: [...synced, dup],
         activeTextLayerId: newId,
         ...rootFieldsFromTextLayer(dup),
+      });
+    }),
+
+  addShapeLayer: () =>
+    set((state) => {
+      const layers = state.textLayers ?? [];
+      if (layers.length >= MAX_TEXT_LAYERS) return {};
+      const aid = state.activeTextLayerId ?? layers[0].id;
+      const synced = layers
+        .map((l) =>
+          l.id === aid
+            ? isShapeLayer(l)
+              ? { ...l, ...styleFieldsFromRoot(state as EditorState) }
+              : { ...l, ...textLayerContentFromRoot(state as EditorState) }
+            : l
+        )
+        .map(assignTextureRepeatDefaults);
+      const activeLayer = synced.find((l) => l.id === aid);
+      const newId = newTextLayerId();
+      const newShape = assignTextureRepeatDefaults(
+        shapeLayerFromRoot(
+          { ...(state as EditorState), textLayers: synced, activeTextLayerId: aid },
+          newId,
+          undefined,
+          { positionZ: (activeLayer?.positionZ ?? 0) + 0.2 }
+        )
+      );
+      return withHistory(state, {
+        textLayers: [...synced, newShape],
+        activeTextLayerId: newId,
+        ...rootFieldsFromShapeLayer(newShape),
       });
     }),
 
@@ -381,21 +454,27 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const layers = state.textLayers ?? [];
       if (layers.length >= MAX_TEXT_LAYERS) return {};
       const aid = state.activeTextLayerId ?? layers[0].id;
-      const synced = layers.map((l) =>
-        l.id === aid ? { ...l, ...textLayerContentFromRoot(state as EditorState) } : l
-      );
+      const synced = layers
+        .map((l) =>
+          l.id === aid
+            ? isShapeLayer(l)
+              ? { ...l, ...styleFieldsFromRoot(state as EditorState) }
+              : { ...l, ...textLayerContentFromRoot(state as EditorState) }
+            : l
+        )
+        .map(assignTextureRepeatDefaults);
       const activeLayer = synced.find((l) => l.id === aid)!;
       const newId = newTextLayerId();
-      const dup: TextLayer3D = {
+      const dup: EditorSceneLayer = assignTextureRepeatDefaults({
         ...activeLayer,
         id: newId,
         positionX: activeLayer.positionX + 0.3,
         positionZ: activeLayer.positionZ + 0.15,
-      };
+      });
       return withHistory(state, {
         textLayers: [...synced, dup],
         activeTextLayerId: newId,
-        ...rootFieldsFromTextLayer(dup),
+        ...rootFieldsFromSceneLayer(dup),
       });
     }),
 
@@ -404,16 +483,22 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const layers = state.textLayers ?? [];
       if (layers.length <= 1) return {};
       const aid = state.activeTextLayerId ?? layers[0].id;
-      const synced = layers.map((l) =>
-        l.id === aid ? { ...l, ...textLayerContentFromRoot(state as EditorState) } : l
-      );
+      const synced = layers
+        .map((l) =>
+          l.id === aid
+            ? isShapeLayer(l)
+              ? { ...l, ...styleFieldsFromRoot(state as EditorState) }
+              : { ...l, ...textLayerContentFromRoot(state as EditorState) }
+            : l
+        )
+        .map(assignTextureRepeatDefaults);
       const filtered = synced.filter((l) => l.id !== id);
       if (filtered.length === 0) return {};
       const newActive = filtered[0].id;
       return withHistory(state, {
         textLayers: filtered,
         activeTextLayerId: newActive,
-        ...rootFieldsFromTextLayer(filtered[0]),
+        ...rootFieldsFromSceneLayer(filtered[0]),
       });
     }),
 
@@ -422,16 +507,48 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const layers = state.textLayers ?? [];
       if (!layers.length) return {};
       const aid = state.activeTextLayerId ?? layers[0].id;
-      const synced = layers.map((l) =>
-        l.id === aid ? { ...l, ...textLayerContentFromRoot(state as EditorState) } : l
-      );
+      const synced = layers
+        .map((l) =>
+          l.id === aid
+            ? isShapeLayer(l)
+              ? { ...l, ...styleFieldsFromRoot(state as EditorState) }
+              : { ...l, ...textLayerContentFromRoot(state as EditorState) }
+            : l
+        )
+        .map(assignTextureRepeatDefaults);
       const target = synced.find((l) => l.id === id);
       if (!target) return withHistory(state, { textLayers: synced });
       return withHistory(state, {
         textLayers: synced,
         activeTextLayerId: id,
-        ...rootFieldsFromTextLayer(target),
+        ...rootFieldsFromSceneLayer(target),
       });
+    }),
+
+  updateActiveShape: (patch) =>
+    set((state) => {
+      const layers = state.textLayers ?? [];
+      const aid = state.activeTextLayerId ?? layers[0]?.id;
+      if (!aid) return {};
+      const next = layers.map((l) => {
+        if (l.id !== aid || !isShapeLayer(l)) return l;
+        const nextKind = patch.kind ?? l.shape.kind;
+        const nextShape: ShapeLayerSpec = {
+          ...l.shape,
+          kind: nextKind,
+          width: Math.max(0.1, patch.width ?? l.shape.width),
+          height: Math.max(0.1, patch.height ?? l.shape.height),
+        };
+        if (patch.ringHoleRatio !== undefined) {
+          nextShape.ringHoleRatio = Math.max(0.06, Math.min(0.92, patch.ringHoleRatio));
+        }
+        return assignTextureRepeatDefaults({
+          ...l,
+          shape: nextShape,
+        });
+      });
+      const merged = { ...state, textLayers: next } as EditorState;
+      return withHistory(state, { textLayers: next, ...syncLayersFromMerged(merged) });
     }),
 
   updateActiveLayerTransform: (patch) =>
@@ -439,18 +556,30 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const layers = state.textLayers ?? [];
       const aid = state.activeTextLayerId ?? layers[0]?.id;
       if (!aid) return {};
-      const next = layers.map((l) => (l.id === aid ? { ...l, ...patch } : l));
+      const next = layers.map((l) =>
+        l.id === aid ? assignTextureRepeatDefaults({ ...l, ...patch }) : l
+      );
       return withHistory(state, { textLayers: next });
     }),
 
   setLayerColors: (patch) =>
     set((state) => {
-      if (patch.frontColor === undefined && patch.extrusionColor === undefined) return {};
+      if (
+        patch.frontColor === undefined &&
+        patch.frontOpacity === undefined &&
+        patch.extrusionColor === undefined
+      ) {
+        return {};
+      }
       const frontColor = patch.frontColor !== undefined ? patch.frontColor : state.frontColor;
       const extrusionColor = patch.extrusionColor !== undefined ? patch.extrusionColor : state.extrusionColor;
-      const merged = { ...state, frontColor, extrusionColor } as EditorState;
+      const rawOp =
+        patch.frontOpacity !== undefined ? patch.frontOpacity : (state.frontOpacity ?? 1);
+      const frontOpacity = Math.max(0, Math.min(1, rawOp));
+      const merged = { ...state, frontColor, frontOpacity, extrusionColor } as EditorState;
       return withHistory(state, {
         frontColor,
+        frontOpacity,
         extrusionColor,
         ...syncLayersFromMerged(merged),
       });
@@ -474,7 +603,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         renderEngine: WHITE_GOLD_STATE.renderEngine ?? 'webgl',
       };
       const mergedFlat = { ...s, ...nextFlat, textLayers: [], activeTextLayerId: null } as EditorState;
-      const layer = textLayerFromRoot(mergedFlat, lid);
+      const layer = assignTextureRepeatDefaults(textLayerFromRoot(mergedFlat, lid));
       const patch = {
         ...nextFlat,
         ...rootFieldsFromTextLayer(layer),
@@ -495,7 +624,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((state) => {
       if (state.editorHistoryIndex <= 0) return {};
       const idx = state.editorHistoryIndex - 1;
-      const entry = state.editorHistory[idx];
+      const entry = normalizeEditorStateTextureRepeat(state.editorHistory[idx]);
       return {
         ...entry,
         editorHistoryIndex: idx,
@@ -507,7 +636,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((state) => {
       if (state.editorHistoryIndex >= state.editorHistory.length - 1) return {};
       const idx = state.editorHistoryIndex + 1;
-      const entry = state.editorHistory[idx];
+      const entry = normalizeEditorStateTextureRepeat(state.editorHistory[idx]);
       return {
         ...entry,
         editorHistoryIndex: idx,

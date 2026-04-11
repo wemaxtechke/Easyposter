@@ -45,7 +45,7 @@ interface PosterStore {
   canvasPan: CanvasPan;
   /** Bumped when Fit / load should re-center the view in the viewport (PosterCanvas reads viewport size). */
   fitCenterNonce: number;
-  /** When set, poster canvas shows in-place crop UI for this image element id. */
+  /** When set, poster canvas shows in-place crop UI for this image or 3D text raster id. */
   imageCropTargetId: string | null;
   setImageCropTargetId: (id: string | null) => void;
   selectedIds: string[];

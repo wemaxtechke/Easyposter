@@ -1,7 +1,7 @@
 import { memo, useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import type { EditorState } from '../../core/types';
-import { MAX_TEXT_LAYERS } from '../../core/types';
+import { MAX_TEXT_LAYERS, isShapeLayer } from '../../core/types';
 import { useEditorStore } from '../../store/editorStore';
 import { PRESETS } from '../../data/presets';
 import { generateStyleFromPrompt, adjustStyleFromPrompt, getAiUsage } from '../../services/threeTextAiApi';
@@ -21,6 +21,7 @@ export const LeftSidebar = memo(function LeftSidebar({
   const textLayers = useEditorStore((s) => s.textLayers ?? []);
   const activeTextLayerId = useEditorStore((s) => s.activeTextLayerId);
   const addTextLayer = useEditorStore((s) => s.addTextLayer);
+  const addShapeLayer = useEditorStore((s) => s.addShapeLayer);
   const duplicateTextLayer = useEditorStore((s) => s.duplicateTextLayer);
   const removeTextLayer = useEditorStore((s) => s.removeTextLayer);
   const setActiveTextLayerId = useEditorStore((s) => s.setActiveTextLayerId);
@@ -72,6 +73,7 @@ export const LeftSidebar = memo(function LeftSidebar({
       const s = useEditorStore.getState();
       const currentSummary: Partial<EditorState> = {
         frontColor: s.frontColor,
+        frontOpacity: s.frontOpacity,
         extrusionColor: s.extrusionColor,
         extrusionGlass: s.extrusionGlass,
         metalness: s.metalness,
@@ -156,7 +158,7 @@ export const LeftSidebar = memo(function LeftSidebar({
             3D layers
           </h2>
           <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
-            Stack multiple text objects in one scene (position in the right sidebar).
+            Stack text and extruded shapes in one scene (position in the right sidebar).
           </p>
           <ul className="mb-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-900/50">
             {textLayers.map((layer) => (
@@ -170,7 +172,13 @@ export const LeftSidebar = memo(function LeftSidebar({
                       : 'hover:bg-zinc-200 dark:hover:bg-zinc-800'
                   }`}
                 >
-                  <span className="line-clamp-1">{layer.text.content || '(empty)'}</span>
+                  {isShapeLayer(layer) ? (
+                    <span className="line-clamp-1 capitalize text-zinc-700 dark:text-zinc-200">
+                      {layer.shape.kind} {layer.shape.width.toFixed(1)}×{layer.shape.height.toFixed(1)}
+                    </span>
+                  ) : (
+                    <span className="line-clamp-1">{layer.text.content || '(empty)'}</span>
+                  )}
                 </button>
               </li>
             ))}
@@ -182,7 +190,15 @@ export const LeftSidebar = memo(function LeftSidebar({
               onClick={() => addTextLayer()}
               className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800"
             >
-              Add layer
+              Add text
+            </button>
+            <button
+              type="button"
+              disabled={textLayers.length >= MAX_TEXT_LAYERS}
+              onClick={() => addShapeLayer()}
+              className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800"
+            >
+              Add shape
             </button>
             <button
               type="button"
