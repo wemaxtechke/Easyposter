@@ -5,7 +5,9 @@ import type { PosterImageElement, Poster3DTextElement } from '../types';
 import { bakePosterImageCrop, type PosterImageCropRect } from '../posterImageCrop';
 
 const MIN_CROP = 8;
-const HANDLE = 10;
+/** Minimum touch target (~44px) so corners are usable on phones; knob stays visually small. */
+const HANDLE_HIT = 44;
+const HANDLE_KNOB = 14;
 
 type HandleId = 'move' | 'nw' | 'ne' | 'sw' | 'se';
 
@@ -296,9 +298,9 @@ export function PosterImageCropOverlay({
         />
       </svg>
 
-      {/* Move + handles */}
+      {/* Move + handles — large hit areas + touch-action:none to avoid scroll/zoom fighting the drag */}
       <div
-        className="pointer-events-auto absolute cursor-move border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
+        className="pointer-events-auto absolute cursor-move touch-none select-none overscroll-contain border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
         style={{ left, top, width, height }}
         onPointerDown={(e) => onPointerDown(e, 'move')}
         onPointerMove={onPointerMove}
@@ -306,38 +308,41 @@ export function PosterImageCropOverlay({
         onPointerCancel={onPointerUp}
       >
         {(['nw', 'ne', 'sw', 'se'] as const).map((h) => {
-          const style: React.CSSProperties = {
+          const outer: React.CSSProperties = {
             position: 'absolute',
-            width: HANDLE,
-            height: HANDLE,
-            background: 'white',
-            border: '1px solid rgba(0,0,0,0.45)',
-            borderRadius: 2,
+            width: HANDLE_HIT,
+            height: HANDLE_HIT,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            touchAction: 'none',
           };
+          const inset = HANDLE_HIT / 2;
           if (h === 'nw') {
-            style.left = -HANDLE / 2;
-            style.top = -HANDLE / 2;
-            style.cursor = 'nwse-resize';
+            outer.left = -inset;
+            outer.top = -inset;
+            outer.cursor = 'nwse-resize';
           }
           if (h === 'ne') {
-            style.right = -HANDLE / 2;
-            style.top = -HANDLE / 2;
-            style.cursor = 'nesw-resize';
+            outer.right = -inset;
+            outer.top = -inset;
+            outer.cursor = 'nesw-resize';
           }
           if (h === 'sw') {
-            style.left = -HANDLE / 2;
-            style.bottom = -HANDLE / 2;
-            style.cursor = 'nesw-resize';
+            outer.left = -inset;
+            outer.bottom = -inset;
+            outer.cursor = 'nesw-resize';
           }
           if (h === 'se') {
-            style.right = -HANDLE / 2;
-            style.bottom = -HANDLE / 2;
-            style.cursor = 'nwse-resize';
+            outer.right = -inset;
+            outer.bottom = -inset;
+            outer.cursor = 'nwse-resize';
           }
           return (
             <div
               key={h}
-              style={style}
+              style={outer}
+              className="select-none"
               onPointerDown={(e) => {
                 e.stopPropagation();
                 onPointerDown(e, h);
@@ -345,12 +350,17 @@ export function PosterImageCropOverlay({
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerCancel={onPointerUp}
-            />
+            >
+              <div
+                className="pointer-events-none rounded-sm border border-black/45 bg-white shadow-sm"
+                style={{ width: HANDLE_KNOB, height: HANDLE_KNOB }}
+              />
+            </div>
           );
         })}
       </div>
 
-      <div className="pointer-events-auto absolute bottom-3 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
+      <div className="pointer-events-auto absolute bottom-3 left-1/2 flex -translate-x-1/2 touch-none flex-col items-center gap-2 overscroll-contain">
         {error && (
           <p className="max-w-xs rounded bg-red-600 px-2 py-1 text-center text-xs text-white shadow">
             {error}
@@ -361,7 +371,7 @@ export function PosterImageCropOverlay({
             type="button"
             onClick={handleCancel}
             disabled={busy}
-            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            className="min-h-11 min-w-[4.5rem] touch-manipulation rounded-md border border-zinc-300 px-4 py-2.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
           >
             Cancel
           </button>
@@ -369,7 +379,7 @@ export function PosterImageCropOverlay({
             type="button"
             onClick={() => void handleApply()}
             disabled={busy}
-            className="rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+            className="min-h-11 min-w-[6.5rem] touch-manipulation rounded-md bg-amber-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
           >
             {busy ? 'Applying…' : 'Apply crop'}
           </button>
