@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { PosterTopBar } from './PosterTopBar';
 import { PosterLeftSidebar } from './PosterLeftSidebar';
@@ -22,6 +22,20 @@ import { projectHasBlobImageUrls } from '../userTemplatesStorage';
 import { computePosterProjectPatch, patchIsEmpty } from '../utils/projectPatch';
 import type { PosterTemplateCategory, PosterTemplateFieldBinding } from '../templateTypes';
 import type { PosterElement, PosterImageElement, PosterTextElement } from '../types';
+
+/** Set on full unload from `#/poster`; same tab refresh keeps sessionStorage → restore cloud/local autosave. New tab has no flag → cold start. */
+const POSTER_RESTORE_AUTOSAVE_AFTER_RELOAD_KEY = 'poster_restore_autosave_after_reload';
+
+function markPosterRestoreAutosaveAfterReload(): void {
+  try {
+    const raw = window.location.hash.replace(/^#/, '').split('?')[0];
+    if (raw === '/poster') {
+      sessionStorage.setItem(POSTER_RESTORE_AUTOSAVE_AFTER_RELOAD_KEY, '1');
+    }
+  } catch {
+    // ignore
+  }
+}
 
 type TemplateAuthoringState = {
   templateId: string;
@@ -75,7 +89,19 @@ export function PosterLayout() {
   const selectedIds = usePosterStore((s) => s.selectedIds);
   const elements = usePosterStore((s) => s.elements);
   const lastCloudSaveRef = useRef<string | null>(null);
+  /** When set, debounced localStorage autosave skips until project JSON diverges (avoids wiping prior autosave on cold editor open). */
+  const coldAutosaveBaselineRef = useRef<string | null>(null);
   const [cloudDirty, setCloudDirty] = useState(false);
+  /** True while reloading tab on `#/poster` and cloud/local autosave is still being applied (avoids canvas-size modal flash). */
+  const [posterHydrating, setPosterHydrating] = useState(false);
+
+  useLayoutEffect(() => {
+    if (typeof sessionStorage === 'undefined') return;
+    if (sessionStorage.getItem(POSTER_RESTORE_AUTOSAVE_AFTER_RELOAD_KEY) === '1') {
+      setPosterHydrating(true);
+      setShowCanvasSizeModal(false);
+    }
+  }, []);
 
   useEffect(() => {
     const el = mainRef.current;
@@ -113,7 +139,10 @@ export function PosterLayout() {
   useEffect(() => {
     if (!authReady) return;
     const edit = (location.state as { editTemplate?: unknown })?.editTemplate;
-    if (edit) return; // Template edit will load its own project
+    if (edit) {
+      setPosterHydrating(false);
+      return; // Template edit will load its own project
+    }
 
     // Skip restore when coming from template fill — project already loaded in store.
     // Use timestamp + delayed clear so both React Strict Mode effect runs skip (double-mount in dev).
@@ -131,6 +160,7 @@ export function PosterLayout() {
           setCloudDirty(false);
         }
         setTimeout(() => sessionStorage.removeItem('poster_skip_restore'), 500);
+        setPosterHydrating(false);
         return;
       }
       sessionStorage.removeItem('poster_skip_restore');
@@ -142,25 +172,49 @@ export function PosterLayout() {
       sessionStorage.removeItem('poster_edit_my_project_updated_at');
     }
 
+    const shouldRestoreAutosave =
+      typeof sessionStorage !== 'undefined' &&
+      sessionStorage.getItem(POSTER_RESTORE_AUTOSAVE_AFTER_RELOAD_KEY) === '1';
+
+    if (!shouldRestoreAutosave) {
+      coldAutosaveBaselineRef.current = JSON.stringify(usePosterStore.getState().getProject());
+      setPosterHydrating(false);
+      return;
+    }
+
     let cancelled = false;
     (async () => {
-      if (user) {
-        try {
-          const cloudProject = await loadPosterProjectFromCloud();
-          if (!cancelled && cloudProject) {
-            loadProject(cloudProject);
-            lastCloudSaveRef.current = JSON.stringify(cloudProject);
-            return;
+      try {
+        if (user) {
+          try {
+            const cloudProject = await loadPosterProjectFromCloud();
+            if (!cancelled && cloudProject) {
+              loadProject(cloudProject);
+              lastCloudSaveRef.current = JSON.stringify(cloudProject);
+              coldAutosaveBaselineRef.current = null;
+              return;
+            }
+          } catch {
+            // Fall through to localStorage
           }
-        } catch {
-          // Fall through to localStorage
         }
-      }
-      lastCloudSaveRef.current = null;
-      if (!cancelled) {
-        const saved = loadPosterProjectFromStorage();
-        if (saved && saved.elements.length > 0) {
-          loadProject(saved);
+        lastCloudSaveRef.current = null;
+        if (!cancelled) {
+          const saved = loadPosterProjectFromStorage();
+          if (saved && saved.elements.length > 0) {
+            loadProject(saved);
+          }
+          coldAutosaveBaselineRef.current = null;
+        }
+      } finally {
+        if (!cancelled && typeof sessionStorage !== 'undefined') {
+          sessionStorage.removeItem(POSTER_RESTORE_AUTOSAVE_AFTER_RELOAD_KEY);
+        }
+        if (!cancelled) {
+          setPosterHydrating(false);
+          if (usePosterStore.getState().elements.length === 0) {
+            setShowCanvasSizeModal(true);
+          }
         }
       }
     })();
@@ -197,8 +251,12 @@ export function PosterLayout() {
     }
   }, [location.state, navigate]);
 
-  // Show canvas size modal when starting with empty canvas
+  // Show canvas size modal when starting with empty canvas (not while tab-reload autosave is still loading)
   useEffect(() => {
+    const willRestoreAutosave =
+      typeof sessionStorage !== 'undefined' &&
+      sessionStorage.getItem(POSTER_RESTORE_AUTOSAVE_AFTER_RELOAD_KEY) === '1';
+    if (willRestoreAutosave) return;
     if (elements.length === 0) setShowCanvasSizeModal(true);
   }, []);
   // Close modal when project is loaded (elements populated)
@@ -213,7 +271,12 @@ export function PosterLayout() {
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
         saveTimer = null;
-        savePosterProjectToStorage(usePosterStore.getState().getProject());
+        const project = usePosterStore.getState().getProject();
+        const cur = JSON.stringify(project);
+        const baseline = coldAutosaveBaselineRef.current;
+        if (baseline !== null && cur === baseline) return;
+        if (baseline !== null && cur !== baseline) coldAutosaveBaselineRef.current = null;
+        savePosterProjectToStorage(project);
       }, 1000);
     });
     return () => {
@@ -251,14 +314,22 @@ export function PosterLayout() {
   }, [user?.id]);
 
   useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      markPosterRestoreAutosaveAfterReload();
       if (user && cloudDirty) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
+    const onPageHide = () => {
+      markPosterRestoreAutosaveAfterReload();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('pagehide', onPageHide);
+    };
   }, [user, cloudDirty]);
 
   const [savingToCloud, setSavingToCloud] = useState(false);
@@ -585,7 +656,17 @@ export function PosterLayout() {
       )}
       <PosterAiWizardModal open={aiWizardOpen} onClose={() => setAiWizardOpen(false)} />
       <PosterAiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} />
-      {showCanvasSizeModal && (
+      {posterHydrating && (
+        <div
+          className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-4 bg-zinc-100/95 p-6 dark:bg-zinc-950/95"
+          aria-busy
+          aria-live="polite"
+        >
+          <div className="h-48 w-full max-w-lg animate-pulse rounded-xl bg-zinc-200 dark:bg-zinc-800 sm:h-64" />
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">Loading project…</p>
+        </div>
+      )}
+      {showCanvasSizeModal && !posterHydrating && (
         <CanvasSizeModal
           onSelect={handleCanvasSizeSelect}
           onClose={elements.length > 0 ? () => setShowCanvasSizeModal(false) : undefined}
