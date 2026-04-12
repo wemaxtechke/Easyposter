@@ -43,6 +43,9 @@ export function buildProjectContextForAi(project: PosterProject): {
         adjustContrast: el.adjustContrast,
         adjustSaturation: el.adjustSaturation,
         adjustSharpness: el.adjustSharpness,
+        adjustHue: el.adjustHue,
+        adjustTintColor: el.adjustTintColor,
+        adjustTintAmount: el.adjustTintAmount,
       };
     }
     const clone = { ...el } as Record<string, unknown>;

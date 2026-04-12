@@ -18,7 +18,7 @@ CONTROL BY ELEMENT TYPE:
 
 **text** – Full control: text, fontSize, fontFamily, fill, left, top, scaleX, scaleY, angle, opacity, zIndex, width, fontWeight, fontStyle, underline, linethrough, charSpacing, textAlign.
 
-**image** – Full control EXCEPT src (cannot change image source / bitmap URL): left, top, scaleX, scaleY, angle, opacity, zIndex, mask, edge, edgeFadeAmount, edgeFadeMinOpacity, edgeFadeDirection, maskCornerRadius, adjustBrightness, adjustContrast, adjustSaturation, adjustSharpness, flipHorizontal, flipVertical, textureOverlay, shadow, maskImageOffsetX, maskImageOffsetY, maskImageScale, maskScale, edgeTearSeed. Some elements typed as image in the JSON are raster exports from the 3D text tool — treat them like any other image (still never change src).
+**image** – Full control EXCEPT src (cannot change image source / bitmap URL): left, top, scaleX, scaleY, angle, opacity, zIndex, mask, edge, edgeFadeAmount, edgeFadeMinOpacity, edgeFadeDirection, maskCornerRadius, adjustBrightness, adjustContrast, adjustSaturation, adjustSharpness, adjustHue, adjustTintColor, adjustTintAmount, flipHorizontal, flipVertical, textureOverlay, shadow, maskImageOffsetX, maskImageOffsetY, maskImageScale, maskScale, edgeTearSeed. Some elements typed as image in the JSON are raster exports from the 3D text tool — treat them like any other image (still never change src).
 
 **shapes** (rect, circle, triangle, ellipse, line, polygon) – Full control: fill, left, top, scaleX, scaleY, angle, opacity, zIndex, width, height, radius, rx, ry, strokeWidth, stroke, fillOpacity, polygonPoints, etc.
 
@@ -50,6 +50,9 @@ const RASTER_3D_TEXT_AI_KEYS = new Set([
   'adjustContrast',
   'adjustSaturation',
   'adjustSharpness',
+  'adjustHue',
+  'adjustTintColor',
+  'adjustTintAmount',
   'flipHorizontal',
   'flipVertical',
   'textureOverlay',
@@ -83,6 +86,9 @@ function buildProjectContextForAi(project) {
         adjustContrast: el.adjustContrast,
         adjustSaturation: el.adjustSaturation,
         adjustSharpness: el.adjustSharpness,
+        adjustHue: el.adjustHue,
+        adjustTintColor: el.adjustTintColor,
+        adjustTintAmount: el.adjustTintAmount,
       };
     }
     const clone = { ...el };

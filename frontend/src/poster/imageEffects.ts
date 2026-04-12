@@ -453,6 +453,19 @@ const SHARPEN_KERNEL = [0, -1, 0, -1, 5, -1, 0, -1, 0];
  * Build a Fabric.js filter pipeline from ImageAdjustments and apply it to a FabricImage.
  * Calls `img.applyFilters()` so the cached element is re-rendered immediately.
  */
+function normalizeHexForTint(raw: string | undefined): string {
+  let h = (raw ?? '#ffffff').trim();
+  if (!h.startsWith('#')) h = `#${h}`;
+  const body = h.slice(1).replace(/[^0-9A-Fa-f]/g, '');
+  if (body.length === 3) {
+    return `#${body[0]}${body[0]}${body[1]}${body[1]}${body[2]}${body[2]}`.toLowerCase();
+  }
+  if (body.length >= 6) {
+    return `#${body.slice(0, 6)}`.toLowerCase();
+  }
+  return '#ffffff';
+}
+
 export function applyImageAdjustmentFilters(
   img: FabricImage,
   adj: ImageAdjustments
@@ -460,17 +473,23 @@ export function applyImageAdjustmentFilters(
   const pipeline: InstanceType<
     | typeof FabricFilters.Brightness
     | typeof FabricFilters.Contrast
+    | typeof FabricFilters.HueRotation
     | typeof FabricFilters.Saturation
     | typeof FabricFilters.Convolute
+    | typeof FabricFilters.BlendColor
   >[] = [];
 
   const b = (adj.adjustBrightness ?? 0) / 100;
   const c = (adj.adjustContrast ?? 0) / 100;
+  const hueDeg = adj.adjustHue ?? 0;
+  const hueRot = Math.max(-1, Math.min(1, hueDeg / 180));
   const s = (adj.adjustSaturation ?? 0) / 100;
   const sh = (adj.adjustSharpness ?? 0) / 100;
+  const tintAmt = Math.max(0, Math.min(100, adj.adjustTintAmount ?? 0));
 
   if (b !== 0) pipeline.push(new FabricFilters.Brightness({ brightness: b }));
   if (c !== 0) pipeline.push(new FabricFilters.Contrast({ contrast: c }));
+  if (hueRot !== 0) pipeline.push(new FabricFilters.HueRotation({ rotation: hueRot }));
   if (s !== 0) pipeline.push(new FabricFilters.Saturation({ saturation: s }));
   if (sh > 0) {
     const blended = SHARPEN_KERNEL.map((v) => {
@@ -478,6 +497,15 @@ export function applyImageAdjustmentFilters(
       return v * sh;
     });
     pipeline.push(new FabricFilters.Convolute({ matrix: blended }));
+  }
+  if (tintAmt > 0) {
+    pipeline.push(
+      new FabricFilters.BlendColor({
+        color: normalizeHexForTint(adj.adjustTintColor),
+        mode: 'tint',
+        alpha: tintAmt / 100,
+      })
+    );
   }
 
   img.filters = pipeline;

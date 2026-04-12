@@ -497,7 +497,16 @@ function ImageAdjustmentControls({
   const contrast = adj.adjustContrast ?? 0;
   const saturation = adj.adjustSaturation ?? 0;
   const sharpness = adj.adjustSharpness ?? 0;
-  const isDefault = brightness === 0 && contrast === 0 && saturation === 0 && sharpness === 0;
+  const hue = adj.adjustHue ?? 0;
+  const tintAmount = adj.adjustTintAmount ?? 0;
+  const tintColor = adj.adjustTintColor ?? '#ffffff';
+  const isDefault =
+    brightness === 0 &&
+    contrast === 0 &&
+    saturation === 0 &&
+    sharpness === 0 &&
+    hue === 0 &&
+    tintAmount === 0;
 
   return (
     <div className="flex flex-col gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
@@ -512,6 +521,9 @@ function ImageAdjustmentControls({
                 adjustContrast: 0,
                 adjustSaturation: 0,
                 adjustSharpness: 0,
+                adjustHue: 0,
+                adjustTintAmount: 0,
+                adjustTintColor: undefined,
               })
             }
             className="text-[10px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
@@ -554,6 +566,22 @@ function ImageAdjustmentControls({
       </div>
       <div className="flex flex-col gap-1">
         <label className="text-xs text-zinc-600 dark:text-zinc-400">
+          Hue ({hue}°)
+        </label>
+        <input
+          type="range"
+          min={-180}
+          max={180}
+          step={1}
+          value={hue}
+          onChange={(e) =>
+            updateElement(elementId, { adjustHue: parseInt(e.target.value, 10) })
+          }
+          className="w-full"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-xs text-zinc-600 dark:text-zinc-400">
           Saturation ({saturation})
         </label>
         <input
@@ -583,6 +611,33 @@ function ImageAdjustmentControls({
           }
           className="w-full"
         />
+      </div>
+      <div className="flex flex-col gap-2">
+        <span className="text-xs text-zinc-600 dark:text-zinc-400">Tint</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <ColorPickerPopover
+            color={tintColor}
+            onChange={(hex) => updateElement(elementId, { adjustTintColor: hex })}
+            aria-label="Tint color"
+          />
+          <span className="text-[10px] text-zinc-500 dark:text-zinc-400">Color</span>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-zinc-600 dark:text-zinc-400">
+            Tint amount ({tintAmount})
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={tintAmount}
+            onChange={(e) =>
+              updateElement(elementId, { adjustTintAmount: parseInt(e.target.value, 10) })
+            }
+            className="w-full"
+          />
+        </div>
       </div>
     </div>
   );

@@ -36,21 +36,31 @@ export interface PosterElementBase {
 
 /**
  * Color / lighting / sharpness adjustments applied via Fabric.js image filters.
- * All values default to 0 (no change). Ranges: brightness/contrast/saturation -100..100, sharpness 0..100.
+ * Ranges: brightness/contrast/saturation -100..100, sharpness 0..100, hue -180..180, tint amount 0..100.
  */
 export interface ImageAdjustments {
   adjustBrightness?: number;
   adjustContrast?: number;
   adjustSaturation?: number;
   adjustSharpness?: number;
+  /** Hue shift in degrees (-180..180). 0 = no change. */
+  adjustHue?: number;
+  /** Tint color `#RRGGBB`; meaningful when adjustTintAmount > 0. */
+  adjustTintColor?: string;
+  /** Tint strength 0..100 (Fabric BlendColor tint alpha). 0 = off. */
+  adjustTintAmount?: number;
 }
 
 export function getImageAdjustmentsKey(el: ImageAdjustments): string {
+  const tint = (el.adjustTintColor ?? '').toLowerCase().replace(/\s/g, '');
   return [
     el.adjustBrightness ?? 0,
     el.adjustContrast ?? 0,
     el.adjustSaturation ?? 0,
     el.adjustSharpness ?? 0,
+    el.adjustHue ?? 0,
+    tint,
+    el.adjustTintAmount ?? 0,
   ].join('|');
 }
 
@@ -59,7 +69,9 @@ export function hasNonDefaultAdjustments(el: ImageAdjustments): boolean {
     (el.adjustBrightness ?? 0) !== 0 ||
     (el.adjustContrast ?? 0) !== 0 ||
     (el.adjustSaturation ?? 0) !== 0 ||
-    (el.adjustSharpness ?? 0) !== 0
+    (el.adjustSharpness ?? 0) !== 0 ||
+    (el.adjustHue ?? 0) !== 0 ||
+    (el.adjustTintAmount ?? 0) !== 0
   );
 }
 
