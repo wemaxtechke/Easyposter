@@ -38,6 +38,42 @@ function appendRoundedRectContour(shape: THREE.Shape, w: number, h: number, radi
 }
 
 /**
+ * Rounded rectangle traced clockwise (for `Shape.holes` opposite the CCW outer from
+ * {@link appendRoundedRectContour}).
+ */
+function appendRoundedRectHoleCW(path: THREE.Path, w: number, h: number, radius: number): void {
+  const x0 = -w / 2;
+  const y0 = -h / 2;
+  const x1 = w / 2;
+  const y1 = h / 2;
+  const rMax = Math.min(w, h) / 2 - 1e-5;
+  const r = Math.min(Math.max(0, radius), rMax);
+  if (r < 1e-6) {
+    path.moveTo(x0, y0);
+    path.lineTo(x0, y1);
+    path.lineTo(x1, y1);
+    path.lineTo(x1, y0);
+    path.closePath();
+    return;
+  }
+  path.moveTo(x0 + r, y0);
+  path.absarc(x0 + r, y0 + r, r, (3 * Math.PI) / 2, Math.PI, true);
+  path.lineTo(x0, y1 - r);
+  path.absarc(x0 + r, y1 - r, r, Math.PI, Math.PI / 2, true);
+  path.lineTo(x1 - r, y1);
+  path.absarc(x1 - r, y1 - r, r, Math.PI / 2, 0, true);
+  path.lineTo(x1, y0 + r);
+  path.absarc(x1 - r, y0 + r, r, 0, -Math.PI / 2, true);
+  path.lineTo(x0 + r, y0);
+  path.closePath();
+}
+
+function clampShapeHoleRatio(spec: ShapeLayerSpec): number {
+  const raw = spec.ringHoleRatio ?? DEFAULT_RING_HOLE_RATIO;
+  return Math.max(0.06, Math.min(0.92, raw));
+}
+
+/**
  * Single closed contour (no `holes`): disk(O,R) \\ disk((d,0), r) — two arcs between intersections.
  * `EllipseCurve` always sweeps the shorter angle span unless `aClockwise` flips it; CCW on the inner
  * circle from lower tip → upper tip follows the +X “belly”, which is the boundary of O∩I (a lens).
@@ -89,6 +125,46 @@ function buildShape2D(spec: ShapeLayerSpec): THREE.Shape {
       appendRoundedRectContour(shape, w, h, cornerR);
       break;
     }
+    case 'hollowRect': {
+      const hr = clampShapeHoleRatio(spec);
+      const x0 = -w / 2;
+      const y0 = -h / 2;
+      shape.moveTo(x0, y0);
+      shape.lineTo(x0 + w, y0);
+      shape.lineTo(x0 + w, y0 + h);
+      shape.lineTo(x0, y0 + h);
+      shape.closePath();
+      const iw = w * hr;
+      const ih = h * hr;
+      const hole = new THREE.Path();
+      hole.moveTo(-iw / 2, -ih / 2);
+      hole.lineTo(-iw / 2, ih / 2);
+      hole.lineTo(iw / 2, ih / 2);
+      hole.lineTo(iw / 2, -ih / 2);
+      hole.closePath();
+      shape.holes.push(hole);
+      break;
+    }
+    case 'hollowRoundedRect': {
+      const hr = clampShapeHoleRatio(spec);
+      const outerCornerR = Math.min(w, h) * 0.14;
+      appendRoundedRectContour(shape, w, h, outerCornerR);
+      const iw = w * hr;
+      const ih = h * hr;
+      const innerCornerR = Math.min(outerCornerR * hr, Math.min(iw, ih) / 2 - 1e-4);
+      const hole = new THREE.Path();
+      if (innerCornerR < 1e-4) {
+        hole.moveTo(-iw / 2, -ih / 2);
+        hole.lineTo(-iw / 2, ih / 2);
+        hole.lineTo(iw / 2, ih / 2);
+        hole.lineTo(iw / 2, -ih / 2);
+        hole.closePath();
+      } else {
+        appendRoundedRectHoleCW(hole, iw, ih, innerCornerR);
+      }
+      shape.holes.push(hole);
+      break;
+    }
     case 'circle': {
       const r = Math.min(w, h) / 2;
       shape.absarc(0, 0, r, 0, Math.PI * 2, false);
@@ -97,8 +173,7 @@ function buildShape2D(spec: ShapeLayerSpec): THREE.Shape {
     case 'ring': {
       /** Annulus: outer disk with concentric circular hole (hole fully inside — safe for `ExtrudeGeometry`). */
       const R = (Math.min(w, h) / 2) * 0.92;
-      const raw = spec.ringHoleRatio ?? DEFAULT_RING_HOLE_RATIO;
-      const holeRatio = Math.max(0.06, Math.min(0.92, raw));
+      const holeRatio = clampShapeHoleRatio(spec);
       const rHole = R * holeRatio;
       shape.absarc(0, 0, R, 0, Math.PI * 2, false);
       const hole = new THREE.Path();
@@ -207,7 +282,9 @@ export async function buildThreeShapeMeshGroup(
     spec.kind === 'ring' ||
     spec.kind === 'ellipse' ||
     spec.kind === 'crescent' ||
-    spec.kind === 'roundedRect'
+    spec.kind === 'roundedRect' ||
+    spec.kind === 'hollowRect' ||
+    spec.kind === 'hollowRoundedRect'
       ? Math.min(
           192,
           Math.max(ext.curveSegments, 72, Math.round(36 + sizeRef * 20))

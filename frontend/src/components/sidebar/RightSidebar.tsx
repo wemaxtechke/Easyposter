@@ -740,6 +740,8 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                       >
                         <option value="rect">Rectangle</option>
                         <option value="roundedRect">Rounded rectangle</option>
+                        <option value="hollowRect">Hollow rectangle</option>
+                        <option value="hollowRoundedRect">Hollow rounded rectangle</option>
                         <option value="circle">Circle</option>
                         <option value="ring">Ring (hole in center)</option>
                         <option value="ellipse">Ellipse</option>
@@ -780,9 +782,15 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                         />
                       </label>
                     </div>
-                    {activeLayer.shape.kind === 'ring' && (
+                    {(activeLayer.shape.kind === 'ring' ||
+                      activeLayer.shape.kind === 'hollowRect' ||
+                      activeLayer.shape.kind === 'hollowRoundedRect') && (
                       <Slider
-                        label={`Hole size (${Math.round((activeLayer.shape.ringHoleRatio ?? DEFAULT_RING_HOLE_RATIO) * 100)}% of outer radius)`}
+                        label={
+                          activeLayer.shape.kind === 'ring'
+                            ? `Hole size (${Math.round((activeLayer.shape.ringHoleRatio ?? DEFAULT_RING_HOLE_RATIO) * 100)}% of outer radius)`
+                            : `Hole size (${Math.round((activeLayer.shape.ringHoleRatio ?? DEFAULT_RING_HOLE_RATIO) * 100)}% of width & height)`
+                        }
                         value={activeLayer.shape.ringHoleRatio ?? DEFAULT_RING_HOLE_RATIO}
                         min={0.06}
                         max={0.92}

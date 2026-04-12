@@ -167,6 +167,8 @@ export type EditorLayerStyleFields = Omit<EditorPerLayerFields, 'text' | 'select
 export type ShapeLayerKind =
   | 'rect'
   | 'roundedRect'
+  | 'hollowRect'
+  | 'hollowRoundedRect'
   | 'circle'
   | 'ring'
   | 'ellipse'
@@ -183,8 +185,9 @@ export interface ShapeLayerSpec {
   width: number;
   height: number;
   /**
-   * Ring only: inner hole radius ÷ outer radius (about 0.06–0.92).
-   * Larger = bigger hole, thinner ring band. Omitted → {@link DEFAULT_RING_HOLE_RATIO}.
+   * Ring / hollow rectangles: inner size ÷ outer (0.06–0.92).
+   * Ring: hole radius ÷ outer radius. Hollow rects: inner width÷w and inner height÷h.
+   * Omitted → {@link DEFAULT_RING_HOLE_RATIO}.
    */
   ringHoleRatio?: number;
 }
