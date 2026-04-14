@@ -8,6 +8,7 @@ import type { EditorSceneLayer, TextLayer3D } from '../types';
 import { isShapeLayer } from '../types';
 import {
   buildThreeTextMeshGroup,
+  computeFrontReflectivity,
   frontMaterialOpacityFields,
   loadEnvironmentMap,
   loadFont,
@@ -72,6 +73,27 @@ function applyInPlaceLayerTransform(group: THREE.Group, layer: EditorSceneLayer)
   group.scale.setScalar(Math.max(0.05, layer.scale));
 }
 
+function applyInPlaceFrontReflectivity(group: THREE.Group, layer: EditorSceneLayer): void {
+  const hasRoughnessMap = !!layer.customFrontTextureRoughnessUrl;
+  const useGlossyFront = layer.frontClearcoat != null && layer.frontClearcoat > 0;
+  const baseR = useGlossyFront ? (layer.frontRoughness ?? 0.2) : 0.35;
+  const refl = computeFrontReflectivity(layer.frontEnvMapIntensity, baseR, hasRoughnessMap);
+  group.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    if (mesh.userData?.meshRole === 'frontDecal') return;
+    if (mesh.userData?.meshRole !== 'front') return;
+    const m = mesh.material as THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
+    if (!m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial) return;
+    m.envMapIntensity = refl.envMapIntensity;
+    if (refl.roughness !== undefined) m.roughness = refl.roughness;
+    if (useGlossyFront && m.isMeshPhysicalMaterial) {
+      m.clearcoat = (layer.frontClearcoat ?? 1) * refl.glossT;
+    }
+    m.needsUpdate = true;
+  });
+}
+
 /** Matches `buildThreeTextMeshGroup` side `effectiveMetalness` / `effectiveRoughness` (non-glass). */
 function applyInPlaceSideExtrusionLook(group: THREE.Group, layer: EditorSceneLayer): void {
   const shine = Math.max(layer.filters.shine ?? 0, layer.extrusion.shine ?? 0);
@@ -100,6 +122,7 @@ function applyInPlaceSideExtrusionLook(group: THREE.Group, layer: EditorSceneLay
 
 function tagMeshRoles(group: THREE.Group): void {
   group.children.forEach((ch, idx) => {
+    if (ch.userData.meshRole === 'frontDecal') return;
     ch.userData.meshRole = idx === 1 ? 'extrusion' : 'front';
   });
 }
@@ -111,6 +134,7 @@ function applyInPlaceLayerColors(group: THREE.Group, layer: EditorSceneLayer): v
   const frontOp = frontMaterialOpacityFields(layer.frontOpacity ?? 1);
   for (let i = 0; i < group.children.length; i++) {
     const child = group.children[i]!;
+    if (child.userData.meshRole === 'frontDecal') continue;
     const mesh = child as THREE.Mesh;
     const mat = mesh.material;
     if (!mat) continue;
@@ -625,6 +649,17 @@ export const MultiLayerThreeCanvas = memo(function MultiLayerThreeCanvas({
       }))
     )
   );
+  const layerFrontReflectSig = useEditorStore((s) =>
+    JSON.stringify(
+      (s.textLayers ?? []).map((l) => ({
+        id: l.id,
+        fe: l.frontEnvMapIntensity ?? 2,
+        fr: l.frontRoughness ?? 0.2,
+        fc: l.frontClearcoat,
+        rmap: !!l.customFrontTextureRoughnessUrl,
+      }))
+    )
+  );
 
   useEffect(() => {
     const root = layersRootRef.current;
@@ -714,6 +749,21 @@ export const MultiLayerThreeCanvas = memo(function MultiLayerThreeCanvas({
       if (layer) applyInPlaceLayerTransform(g, layer);
     }
   }, [layerTransformSig, fontsReady]);
+
+  /** Front reflectiveness slider: update env / roughness / clearcoat without full mesh rebuild. */
+  useEffect(() => {
+    const root = layersRootRef.current;
+    if (!root || !fontsReady) return;
+    const tl = useEditorStore.getState().textLayers ?? [];
+    const byId = new Map(tl.map((l) => [l.id, l]));
+    for (const child of root.children) {
+      const g = child as THREE.Group;
+      const id = g.userData.layerId as string | undefined;
+      if (!id) continue;
+      const layer = byId.get(id);
+      if (layer) applyInPlaceFrontReflectivity(g, layer);
+    }
+  }, [layerFrontReflectSig, fontsReady]);
 
   /** Extrusion / Filters shine, metalness, roughness — side material only, no re-extrude. */
   useEffect(() => {

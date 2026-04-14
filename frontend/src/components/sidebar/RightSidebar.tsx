@@ -16,6 +16,7 @@ import {
   removeCustomFont,
 } from '../../core/font/customFontCache';
 import { FRONT_TEXTURE_PRESETS } from '../../core/textures/frontTextureCache';
+import { generateNormalMapPngBlob } from '../../core/textures/normalMapGenerator';
 import { apiUrl } from '../../lib/apiUrl';
 import { apiFetch } from '../../lib/api';
 import { useAuthStore } from '../../auth/authStore';
@@ -147,6 +148,8 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
   const customFontIds = useEditorStore((s) => s.customFontIds ?? EMPTY_FONT_IDS);
   const selectedCustomFontId = useEditorStore((s) => s.selectedCustomFontId);
   const inflate = useEditorStore((s) => s.inflate ?? 0);
+  /** Front face only: scales HDR environment reflections (MeshPhysicalMaterial envMapIntensity). */
+  const frontEnvMapIntensity = useEditorStore((s) => s.frontEnvMapIntensity ?? 2);
   const frontTextureEnabled = useEditorStore((s) => s.frontTextureEnabled ?? false);
   const frontTextureId = useEditorStore((s) => s.frontTextureId ?? '');
   const textureIntensity = useEditorStore((s) => s.textureIntensity ?? 0.5);
@@ -158,12 +161,33 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
   const customFrontTextureRoughnessUrl = useEditorStore((s) => s.customFrontTextureRoughnessUrl);
   const customFrontTextureNormalUrl = useEditorStore((s) => s.customFrontTextureNormalUrl);
   const customFrontTextureMetalnessUrl = useEditorStore((s) => s.customFrontTextureMetalnessUrl);
+  const frontDecalEnabled = useEditorStore((s) => s.frontDecalEnabled ?? false);
+  const frontDecalDiffuseUrl = useEditorStore((s) => s.frontDecalDiffuseUrl);
+  const frontDecalNormalUrl = useEditorStore((s) => s.frontDecalNormalUrl);
+  const frontDecalOffsetX = useEditorStore((s) => s.frontDecalOffsetX ?? 0);
+  const frontDecalOffsetY = useEditorStore((s) => s.frontDecalOffsetY ?? 0);
+  const frontDecalScale = useEditorStore((s) => s.frontDecalScale ?? 0.35);
+  const frontDecalRotationDeg = useEditorStore((s) => s.frontDecalRotationDeg ?? 0);
+  const frontDecalNormalStrength = useEditorStore((s) => s.frontDecalNormalStrength ?? 1);
+  const frontDecalTintEnabled = useEditorStore((s) => s.frontDecalTintEnabled ?? false);
+  const frontDecalTintColor = useEditorStore((s) => s.frontDecalTintColor ?? '#ffffff');
   const setState = useEditorStore((s) => s.setState);
   const textureFileRef = useRef<HTMLInputElement>(null);
   const roughnessFileRef = useRef<HTMLInputElement>(null);
   const normalFileRef = useRef<HTMLInputElement>(null);
   const metalnessFileRef = useRef<HTMLInputElement>(null);
-  const prevUrlsRef = useRef<{ map?: string | null; rough?: string | null; normal?: string | null; metal?: string | null }>({});
+  const [decalNmLoading, setDecalNmLoading] = useState(false);
+  const [decalNmError, setDecalNmError] = useState<string | null>(null);
+  const decalDiffuseFileRef = useRef<HTMLInputElement>(null);
+  const decalNormalFileRef = useRef<HTMLInputElement>(null);
+  const prevUrlsRef = useRef<{
+    map?: string | null;
+    rough?: string | null;
+    normal?: string | null;
+    metal?: string | null;
+    decalD?: string | null;
+    decalN?: string | null;
+  }>({});
   useEffect(() => {
     const prev = prevUrlsRef.current;
     const revoke = (url: string | null | undefined) => {
@@ -185,7 +209,22 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
       revoke(prev.metal);
       prev.metal = customFrontTextureMetalnessUrl ?? null;
     }
-  }, [customFrontTextureUrl, customFrontTextureRoughnessUrl, customFrontTextureNormalUrl, customFrontTextureMetalnessUrl]);
+    if (prev.decalD !== (frontDecalDiffuseUrl ?? null)) {
+      revoke(prev.decalD);
+      prev.decalD = frontDecalDiffuseUrl ?? null;
+    }
+    if (prev.decalN !== (frontDecalNormalUrl ?? null)) {
+      revoke(prev.decalN);
+      prev.decalN = frontDecalNormalUrl ?? null;
+    }
+  }, [
+    customFrontTextureUrl,
+    customFrontTextureRoughnessUrl,
+    customFrontTextureNormalUrl,
+    customFrontTextureMetalnessUrl,
+    frontDecalDiffuseUrl,
+    frontDecalNormalUrl,
+  ]);
 
   const [expanded, setExpanded] = useState<string | null>('text');
   const [fontError, setFontError] = useState<string | null>(null);
@@ -240,6 +279,27 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
     },
     [setState]
   );
+
+  const handleGenerateDecalNormal = useCallback(async () => {
+    const src = frontDecalDiffuseUrl;
+    if (!src) return;
+    setDecalNmLoading(true);
+    setDecalNmError(null);
+    try {
+      const blob = await generateNormalMapPngBlob(src, {
+        strength: 2,
+        invert: false,
+        filter: 'sobel',
+        blurRadius: 0,
+        maxSize: 2048,
+      });
+      setState({ frontDecalNormalUrl: URL.createObjectURL(blob) });
+    } catch (e) {
+      setDecalNmError(e instanceof Error ? e.message : 'Could not generate decal normal map');
+    } finally {
+      setDecalNmLoading(false);
+    }
+  }, [frontDecalDiffuseUrl, setState]);
 
   const deleteCloudTexture = async (id: string, mapUrl: string) => {
     setCloudMsg(null);
@@ -1084,6 +1144,22 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                   step={0.05}
                   onChange={(v) => setLighting({ ambient: v })}
                 />
+                {renderEngine === 'webgl' && (
+                  <>
+                    <Slider
+                      label="Front reflectiveness"
+                      value={frontEnvMapIntensity}
+                      min={0}
+                      max={4}
+                      step={0.05}
+                      onChange={(v) => setState({ frontEnvMapIntensity: v })}
+                    />
+                    <p className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
+                      Dials down environment reflections, surface gloss (roughness), and clearcoat on the front cap
+                      only — not the extrusion sides.
+                    </p>
+                  </>
+                )}
               </div>
             ),
           },
@@ -1412,6 +1488,196 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                     </div>
                   ),
                 },
+                {
+                  id: 'frontDecal',
+                  label: 'Front decal',
+                  children: (
+                    <div className="flex flex-col gap-3 py-3">
+                      <p className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
+                        Independent logo layer on the front face (own diffuse / normal). Uses a flat plane; best on flat
+                        shapes.
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-zinc-600 dark:text-zinc-400">Enable</span>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={frontDecalEnabled}
+                          onClick={() => setState({ frontDecalEnabled: !frontDecalEnabled })}
+                          className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border transition-colors ${
+                            frontDecalEnabled
+                              ? 'border-zinc-400 bg-zinc-600 dark:bg-zinc-500'
+                              : 'border-zinc-300 bg-zinc-200 dark:bg-zinc-700'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
+                              frontDecalEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                      {frontDecalEnabled && (
+                        <>
+                          <div>
+                            <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">Decal diffuse</label>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                ref={decalDiffuseFileRef}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  setState({ frontDecalDiffuseUrl: URL.createObjectURL(file) });
+                                  e.target.value = '';
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => decalDiffuseFileRef.current?.click()}
+                                className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                              >
+                                Choose…
+                              </button>
+                              {frontDecalDiffuseUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setState({ frontDecalDiffuseUrl: null })}
+                                  className="text-xs text-zinc-500 hover:underline"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="mb-1 text-xs text-zinc-600 dark:text-zinc-400">Decal normal (optional)</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                ref={decalNormalFileRef}
+                                type="file"
+                                accept="image/*,.exr"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  setState({ frontDecalNormalUrl: URL.createObjectURL(file) });
+                                  e.target.value = '';
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => decalNormalFileRef.current?.click()}
+                                className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                              >
+                                File…
+                              </button>
+                              {frontDecalNormalUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setState({ frontDecalNormalUrl: null })}
+                                  className="text-xs text-zinc-500 hover:underline"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                disabled={!frontDecalDiffuseUrl || decalNmLoading}
+                                onClick={() => void handleGenerateDecalNormal()}
+                                className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                              >
+                                {decalNmLoading ? '…' : 'Gen normal'}
+                              </button>
+                            </div>
+                            {decalNmError && (
+                              <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{decalNmError}</p>
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-2 rounded border border-zinc-100 p-2 dark:border-zinc-700">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs text-zinc-600 dark:text-zinc-400">Solid tint (ignore diffuse color)</span>
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={frontDecalTintEnabled}
+                                disabled={!frontDecalDiffuseUrl}
+                                onClick={() => setState({ frontDecalTintEnabled: !frontDecalTintEnabled })}
+                                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border transition-colors disabled:opacity-40 ${
+                                  frontDecalTintEnabled
+                                    ? 'border-zinc-400 bg-zinc-600 dark:bg-zinc-500'
+                                    : 'border-zinc-300 bg-zinc-200 dark:bg-zinc-700'
+                                }`}
+                              >
+                                <span
+                                  className={`inline-block h-4 w-4 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
+                                    frontDecalTintEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                                  }`}
+                                />
+                              </button>
+                            </div>
+                            <p className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
+                              Uses alpha from the diffuse; pick any color (e.g. white) while keeping the normal map.
+                            </p>
+                            {frontDecalTintEnabled && (
+                              <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                                Tint color
+                                <input
+                                  type="color"
+                                  value={hex6OrDefault(frontDecalTintColor, '#ffffff')}
+                                  onChange={(e) => setState({ frontDecalTintColor: e.target.value })}
+                                  className="h-8 w-14 cursor-pointer rounded border border-zinc-200 bg-transparent p-0 dark:border-zinc-600"
+                                />
+                              </label>
+                            )}
+                          </div>
+                          <Slider
+                            label="Scale"
+                            value={frontDecalScale}
+                            min={0.05}
+                            max={2}
+                            step={0.025}
+                            onChange={(v) => setState({ frontDecalScale: v })}
+                          />
+                          <Slider
+                            label="Offset X"
+                            value={frontDecalOffsetX}
+                            min={-1}
+                            max={1}
+                            step={0.05}
+                            onChange={(v) => setState({ frontDecalOffsetX: v })}
+                          />
+                          <Slider
+                            label="Offset Y"
+                            value={frontDecalOffsetY}
+                            min={-1}
+                            max={1}
+                            step={0.05}
+                            onChange={(v) => setState({ frontDecalOffsetY: v })}
+                          />
+                          <Slider
+                            label="Rotation °"
+                            value={frontDecalRotationDeg}
+                            min={-180}
+                            max={180}
+                            step={1}
+                            onChange={(v) => setState({ frontDecalRotationDeg: v })}
+                          />
+                          <Slider
+                            label="Decal normal strength"
+                            value={frontDecalNormalStrength}
+                            min={0}
+                            max={10}
+                            step={0.1}
+                            onChange={(v) => setState({ frontDecalNormalStrength: v })}
+                          />
+                        </>
+                      )}
+                    </div>
+                  ),
+                },
               ]
             : []),
           {
@@ -1503,8 +1769,8 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                   label="Edge Roundness"
                   value={filters.edgeRoundness ?? 0}
                   min={0}
-                  max={1}
-                  step={0.05}
+                  max={1.5}
+                  step={0.025}
                   onChange={(v) => setFilters({ edgeRoundness: v })}
                 />
                 {renderEngine === 'webgl' && (
@@ -1513,8 +1779,8 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                       label="Inflate (pillow)"
                       value={inflate}
                       min={0}
-                      max={1}
-                      step={0.05}
+                      max={1.5}
+                      step={0.025}
                       onChange={(v) => setState({ inflate: v })}
                     />
                   </>

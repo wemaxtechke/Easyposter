@@ -114,6 +114,16 @@ export function styleFieldsFromRoot(s: EditorState): EditorLayerStyleFields {
     textureRoughnessIntensity: s.textureRoughnessIntensity,
     extrusionGlass: s.extrusionGlass,
     inflate: s.inflate,
+    frontDecalEnabled: s.frontDecalEnabled,
+    frontDecalDiffuseUrl: s.frontDecalDiffuseUrl,
+    frontDecalNormalUrl: s.frontDecalNormalUrl,
+    frontDecalOffsetX: s.frontDecalOffsetX,
+    frontDecalOffsetY: s.frontDecalOffsetY,
+    frontDecalScale: s.frontDecalScale,
+    frontDecalRotationDeg: s.frontDecalRotationDeg,
+    frontDecalNormalStrength: s.frontDecalNormalStrength,
+    frontDecalTintEnabled: s.frontDecalTintEnabled,
+    frontDecalTintColor: s.frontDecalTintColor,
   };
 }
 
@@ -245,6 +255,16 @@ export function rootFieldsFromTextLayer(layer: TextLayer3D): Partial<EditorState
     extrusionGlass: layer.extrusionGlass,
     inflate: layer.inflate,
     selectedCustomFontId: layer.selectedCustomFontId,
+    frontDecalEnabled: layer.frontDecalEnabled,
+    frontDecalDiffuseUrl: layer.frontDecalDiffuseUrl,
+    frontDecalNormalUrl: layer.frontDecalNormalUrl,
+    frontDecalOffsetX: layer.frontDecalOffsetX,
+    frontDecalOffsetY: layer.frontDecalOffsetY,
+    frontDecalScale: layer.frontDecalScale,
+    frontDecalRotationDeg: layer.frontDecalRotationDeg,
+    frontDecalNormalStrength: layer.frontDecalNormalStrength,
+    frontDecalTintEnabled: layer.frontDecalTintEnabled,
+    frontDecalTintColor: layer.frontDecalTintColor,
   };
 }
 
@@ -291,6 +311,16 @@ export function rootFieldsFromShapeLayer(layer: ShapeLayer3D): Partial<EditorSta
     textureRoughnessIntensity: layer.textureRoughnessIntensity,
     extrusionGlass: layer.extrusionGlass,
     inflate: layer.inflate,
+    frontDecalEnabled: layer.frontDecalEnabled,
+    frontDecalDiffuseUrl: layer.frontDecalDiffuseUrl,
+    frontDecalNormalUrl: layer.frontDecalNormalUrl,
+    frontDecalOffsetX: layer.frontDecalOffsetX,
+    frontDecalOffsetY: layer.frontDecalOffsetY,
+    frontDecalScale: layer.frontDecalScale,
+    frontDecalRotationDeg: layer.frontDecalRotationDeg,
+    frontDecalNormalStrength: layer.frontDecalNormalStrength,
+    frontDecalTintEnabled: layer.frontDecalTintEnabled,
+    frontDecalTintColor: layer.frontDecalTintColor,
   };
 }
 

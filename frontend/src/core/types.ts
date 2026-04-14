@@ -33,7 +33,7 @@ export interface ExtrusionLightingSettings {
 export interface FilterSettings {
   shine: number;
   metallic: number;
-  /** Edge roundness on the front face where it meets the extrusion; 0 = sharp, 1 = smooth. */
+  /** Edge roundness on the front face where it meets the extrusion; 0 = sharp; UI allows up to ~1.5 for stronger bevel. */
   edgeRoundness: number;
 }
 
@@ -136,8 +136,25 @@ export interface EditorState {
   textureRoughnessIntensity?: number;
   /** WebGL preset: extrusion is colorless/translucent and reflects environment (glossy glass look). */
   extrusionGlass?: boolean;
-  /** Inflate/pillow effect 0–1. At 1, depth shrinks to near-zero and bevel dominates, creating a puffy dome. */
+  /** Inflate/pillow effect; UI 0–1.5. Depth squash saturates by 1; extra range adds more pillow/bevel without inverting depth. */
   inflate?: number;
+  /**
+   * Independent front decal (logo): separate plane mesh from base front texture.
+   * Offsets are in fractions of half the front-cap bbox extent (-1..1 moves from center to edge).
+   */
+  frontDecalEnabled?: boolean;
+  frontDecalDiffuseUrl?: string | null;
+  frontDecalNormalUrl?: string | null;
+  frontDecalOffsetX?: number;
+  frontDecalOffsetY?: number;
+  /** Logo size as a fraction of min(bbox.x, bbox.y); default ~0.35; renderer clamps to ~2×. */
+  frontDecalScale?: number;
+  frontDecalRotationDeg?: number;
+  frontDecalNormalStrength?: number;
+  /** When true, decal diffuse uses a solid tint color modulated by alpha (original colors ignored). */
+  frontDecalTintEnabled?: boolean;
+  /** Tint when `frontDecalTintEnabled` (e.g. `#ffffff` for a white logo). */
+  frontDecalTintColor?: string;
   /** Lighting for extrusion (sides) only. Azimuth, elevation, ambient. */
   extrusionLighting?: ExtrusionLightingSettings;
   /** IDs of user-uploaded fonts (for dropdown). */
@@ -257,6 +274,16 @@ export type EditorPerLayerFields = Pick<
   | 'extrusionGlass'
   | 'inflate'
   | 'selectedCustomFontId'
+  | 'frontDecalEnabled'
+  | 'frontDecalDiffuseUrl'
+  | 'frontDecalNormalUrl'
+  | 'frontDecalOffsetX'
+  | 'frontDecalOffsetY'
+  | 'frontDecalScale'
+  | 'frontDecalRotationDeg'
+  | 'frontDecalNormalStrength'
+  | 'frontDecalTintEnabled'
+  | 'frontDecalTintColor'
 >;
 
 export const DEFAULT_TEXT: TextSettings = {

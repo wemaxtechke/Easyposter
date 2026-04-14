@@ -24,6 +24,16 @@ export function serializeEditorState(): Partial<EditorState> {
     'customFontIds',
     'customFrontTextureUrl', 'customFrontTextureRoughnessUrl', 'customFrontTextureNormalUrl',
     'customFrontTextureMetalnessUrl', 'customFrontTextureDispUrl',
+    'frontDecalEnabled',
+    'frontDecalDiffuseUrl',
+    'frontDecalNormalUrl',
+    'frontDecalOffsetX',
+    'frontDecalOffsetY',
+    'frontDecalScale',
+    'frontDecalRotationDeg',
+    'frontDecalNormalStrength',
+    'frontDecalTintEnabled',
+    'frontDecalTintColor',
     'textLayers', 'activeTextLayerId',
   ];
   for (const k of keys) {

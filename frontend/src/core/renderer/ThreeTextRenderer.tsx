@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   type ThreeTextRendererProps,
   buildThreeTextMeshGroup,
+  computeFrontReflectivity,
   frontMaterialOpacityFields,
   loadEnvironmentMap,
   loadFont,
@@ -62,6 +63,16 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
   textureRepeatX = 2,
   textureRepeatY = 2,
   inflate = 0,
+  frontDecalEnabled = false,
+  frontDecalDiffuseUrl = null,
+  frontDecalNormalUrl = null,
+  frontDecalOffsetX = 0,
+  frontDecalOffsetY = 0,
+  frontDecalScale = 0.35,
+  frontDecalRotationDeg = 0,
+  frontDecalNormalStrength = 1,
+  frontDecalTintEnabled = false,
+  frontDecalTintColor = '#ffffff',
   customFont,
   onReady,
 }: ThreeTextRendererProps) {
@@ -88,14 +99,6 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
   } | null>(null);
   const [fontLoaded, setFontLoaded] = useState(false);
 
-  const size = Math.max(0.1, fontSize * 0.012);
-  const inf = Math.max(0, Math.min(1, inflate));
-  const rawDepth = extrusionDepth * 0.5;
-  const depth = inf > 0
-    ? Math.max(0.01, rawDepth * (1 - inf * 0.97))
-    : Math.max(0.01, rawDepth);
-  const maxBevelSize = 0.35 + inf * 0.25;
-  const effectiveBevelSize = Math.max(0.02, Math.min(maxBevelSize, bevelSize + edgeRoundness * 0.15 + inf * 0.1));
   const effectiveMetalness = Math.min(1, metalness * (0.3 + 0.7 * filtersMetallic));
   const effectiveRoughness = Math.max(0.05, Math.min(1, roughness * (1.2 - filtersShine * 0.5)));
 
@@ -267,6 +270,16 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
           textureRepeatY,
           inflate,
           customFont,
+          frontDecalEnabled,
+          frontDecalDiffuseUrl,
+          frontDecalNormalUrl,
+          frontDecalOffsetX,
+          frontDecalOffsetY,
+          frontDecalScale,
+          frontDecalRotationDeg,
+          frontDecalNormalStrength,
+          frontDecalTintEnabled,
+          frontDecalTintColor,
         },
         { signal: ac.signal }
       );
@@ -440,6 +453,16 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
     customFrontTextureMetalnessUrl,
     inflate,
     customFont,
+    frontDecalEnabled,
+    frontDecalDiffuseUrl,
+    frontDecalNormalUrl,
+    frontDecalOffsetX,
+    frontDecalOffsetY,
+    frontDecalScale,
+    frontDecalRotationDeg,
+    frontDecalNormalStrength,
+    frontDecalTintEnabled,
+    frontDecalTintColor,
     onReady,
     dispose,
     // Lighting, HDRI, shadow: updated via dedicated effects / scene.environment — not used inside buildThreeTextMeshGroup.
@@ -480,6 +503,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
     for (const idx of [0, 2] as const) {
       const mesh = group.children[idx] as THREE.Mesh | undefined;
       if (!mesh?.material) continue;
+      if (mesh.userData?.meshRole === 'frontDecal') continue;
       const m = mesh.material as THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
       if (!m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial) continue;
       m.transparent = op.transparent;
@@ -488,6 +512,30 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
       m.needsUpdate = true;
     }
   }, [frontOpacity]);
+
+  /** Keep front caps in sync when reflectiveness changes (IBL + roughness + clearcoat; avoids invisible env-only tweaks). */
+  useEffect(() => {
+    const group = meshGroupRef.current;
+    if (!group) return;
+    const loaded = loadedTexturesRef.current;
+    const hasRoughnessMap = !!loaded?.roughnessMap;
+    const useGlossyFront = frontClearcoat != null && frontClearcoat > 0;
+    const baseR = useGlossyFront ? (frontRoughness ?? 0.2) : 0.35;
+    const refl = computeFrontReflectivity(frontEnvMapIntensity, baseR, hasRoughnessMap);
+    for (const idx of [0, 2] as const) {
+      const mesh = group.children[idx] as THREE.Mesh | undefined;
+      if (!mesh?.material) continue;
+      if (mesh.userData?.meshRole === 'frontDecal') continue;
+      const m = mesh.material as THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
+      if (!m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial) continue;
+      m.envMapIntensity = refl.envMapIntensity;
+      if (refl.roughness !== undefined) m.roughness = refl.roughness;
+      if (useGlossyFront && m.isMeshPhysicalMaterial) {
+        m.clearcoat = (frontClearcoat ?? 1) * refl.glossT;
+      }
+      m.needsUpdate = true;
+    }
+  }, [frontEnvMapIntensity, frontRoughness, frontClearcoat, customFrontTextureRoughnessUrl]);
 
   // CPU-heavy params (intensity blending) â€” debounced to avoid lag while dragging sliders.
   const texIntensityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

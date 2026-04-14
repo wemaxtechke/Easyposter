@@ -297,13 +297,15 @@ export async function buildThreeShapeMeshGroup(
   const bevelMul = isCrescent ? 0.34 : 1;
   const bevelSegs = isCrescent ? Math.max(3, Math.round(ext.effectiveBS * 0.55)) : ext.effectiveBS;
 
+  const bevelSizeWorld = ext.effectiveBevelSize * bevelMul;
+  const bevelOn = bevelSizeWorld > 1e-8;
   const geometry = new THREE.ExtrudeGeometry(shape2d, {
     depth: ext.depth,
     curveSegments: curveSegmentsForExtrude,
-    bevelEnabled: true,
-    bevelThickness: ext.effectiveBT * bevelMul,
-    bevelSize: ext.effectiveBevelSize * bevelMul,
-    bevelSegments: bevelSegs,
+    bevelEnabled: bevelOn,
+    bevelThickness: bevelOn ? ext.effectiveBT * bevelMul : 0,
+    bevelSize: bevelSizeWorld,
+    bevelSegments: bevelOn ? bevelSegs : 1,
   });
   geometry.computeBoundingBox();
   const box = geometry.boundingBox!;

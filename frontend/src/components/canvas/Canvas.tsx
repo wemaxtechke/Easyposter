@@ -67,6 +67,16 @@ export const Canvas = memo(function Canvas({
       hdrPresets: s.hdrPresets,
       inflate: s.inflate,
       selectedCustomFontId: s.selectedCustomFontId,
+      frontDecalEnabled: s.frontDecalEnabled,
+      frontDecalDiffuseUrl: s.frontDecalDiffuseUrl,
+      frontDecalNormalUrl: s.frontDecalNormalUrl,
+      frontDecalOffsetX: s.frontDecalOffsetX,
+      frontDecalOffsetY: s.frontDecalOffsetY,
+      frontDecalScale: s.frontDecalScale,
+      frontDecalRotationDeg: s.frontDecalRotationDeg,
+      frontDecalNormalStrength: s.frontDecalNormalStrength,
+      frontDecalTintEnabled: s.frontDecalTintEnabled,
+      frontDecalTintColor: s.frontDecalTintColor,
     }))
   );
 
@@ -174,6 +184,16 @@ export const Canvas = memo(function Canvas({
             textureRoughnessIntensity={state.textureRoughnessIntensity ?? 1}
             textureRepeatX={state.textureRepeatX ?? 2}
             textureRepeatY={state.textureRepeatY ?? 2}
+            frontDecalEnabled={state.frontDecalEnabled ?? false}
+            frontDecalDiffuseUrl={state.frontDecalDiffuseUrl ?? null}
+            frontDecalNormalUrl={state.frontDecalNormalUrl ?? null}
+            frontDecalOffsetX={state.frontDecalOffsetX ?? 0}
+            frontDecalOffsetY={state.frontDecalOffsetY ?? 0}
+            frontDecalScale={state.frontDecalScale ?? 0.35}
+            frontDecalRotationDeg={state.frontDecalRotationDeg ?? 0}
+            frontDecalNormalStrength={state.frontDecalNormalStrength ?? 1}
+            frontDecalTintEnabled={state.frontDecalTintEnabled ?? false}
+            frontDecalTintColor={state.frontDecalTintColor ?? '#ffffff'}
             metalness={state.metalness ?? 1}
             roughness={state.roughness ?? 0.25}
             bevelSize={state.bevelSize ?? 0.15}

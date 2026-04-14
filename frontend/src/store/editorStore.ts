@@ -196,6 +196,16 @@ function toHistoryEntry(state: EditorState): EditorState {
       textureRoughnessIntensity: state.textureRoughnessIntensity,
       extrusionGlass: state.extrusionGlass,
       inflate: state.inflate,
+      frontDecalEnabled: state.frontDecalEnabled,
+      frontDecalDiffuseUrl: state.frontDecalDiffuseUrl,
+      frontDecalNormalUrl: state.frontDecalNormalUrl,
+      frontDecalOffsetX: state.frontDecalOffsetX,
+      frontDecalOffsetY: state.frontDecalOffsetY,
+      frontDecalScale: state.frontDecalScale,
+      frontDecalRotationDeg: state.frontDecalRotationDeg,
+      frontDecalNormalStrength: state.frontDecalNormalStrength,
+      frontDecalTintEnabled: state.frontDecalTintEnabled,
+      frontDecalTintColor: state.frontDecalTintColor,
       customFontIds: state.customFontIds,
       selectedCustomFontId: state.selectedCustomFontId,
       textLayers: state.textLayers,
@@ -352,6 +362,22 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           base.textureRoughnessIntensity !== undefined
             ? base.textureRoughnessIntensity
             : state.textureRoughnessIntensity,
+        frontDecalEnabled: base.frontDecalEnabled !== undefined ? base.frontDecalEnabled : state.frontDecalEnabled,
+        frontDecalDiffuseUrl:
+          base.frontDecalDiffuseUrl !== undefined ? base.frontDecalDiffuseUrl : state.frontDecalDiffuseUrl,
+        frontDecalNormalUrl:
+          base.frontDecalNormalUrl !== undefined ? base.frontDecalNormalUrl : state.frontDecalNormalUrl,
+        frontDecalOffsetX: base.frontDecalOffsetX !== undefined ? base.frontDecalOffsetX : state.frontDecalOffsetX,
+        frontDecalOffsetY: base.frontDecalOffsetY !== undefined ? base.frontDecalOffsetY : state.frontDecalOffsetY,
+        frontDecalScale: base.frontDecalScale !== undefined ? base.frontDecalScale : state.frontDecalScale,
+        frontDecalRotationDeg:
+          base.frontDecalRotationDeg !== undefined ? base.frontDecalRotationDeg : state.frontDecalRotationDeg,
+        frontDecalNormalStrength:
+          base.frontDecalNormalStrength !== undefined ? base.frontDecalNormalStrength : state.frontDecalNormalStrength,
+        frontDecalTintEnabled:
+          base.frontDecalTintEnabled !== undefined ? base.frontDecalTintEnabled : state.frontDecalTintEnabled,
+        frontDecalTintColor:
+          base.frontDecalTintColor !== undefined ? base.frontDecalTintColor : state.frontDecalTintColor,
         extrusionLighting: base.extrusionLighting
           ? { ...(state.extrusionLighting ?? DEFAULT_EXTRUSION_LIGHTING), ...base.extrusionLighting }
           : state.extrusionLighting,

@@ -12,6 +12,7 @@ import {
   blendMapWithIntensity,
   blendRoughnessMapWithIntensity,
 } from '../textures/frontTextureCache';
+import { attachFrontDecalToGroup } from './attachFrontDecal';
 
 
 const THREE_FONT_BASE =
@@ -85,6 +86,29 @@ export function frontMaterialOpacityFields(opacity: number): {
   return { transparent: trans, opacity: o, depthWrite: !trans };
 }
 
+/** Matches RightSidebar slider max (0 = matte, 4 = strongest). */
+export const FRONT_REFLECTIVENESS_MAX = 4;
+
+/**
+ * `envMapIntensity` only affects image-based light; directional specular stays bright unless we also
+ * blend roughness (and clearcoat). `glossT` is 0..1 with default store value 2 → 1 (preserves prior look).
+ */
+export function computeFrontReflectivity(
+  frontEnvMapIntensity: number | undefined,
+  baseRoughness: number,
+  hasRoughnessMap: boolean
+): { envMapIntensity: number; roughness?: number; glossT: number } {
+  const v = THREE.MathUtils.clamp(frontEnvMapIntensity ?? 2, 0, FRONT_REFLECTIVENESS_MAX);
+  const glossT = THREE.MathUtils.clamp((frontEnvMapIntensity ?? 2) / 2, 0, 1);
+  if (hasRoughnessMap) {
+    return { envMapIntensity: v, glossT };
+  }
+  const matteRough = 0.94;
+  const br = Math.max(0.04, baseRoughness);
+  const roughness = THREE.MathUtils.lerp(matteRough, br, glossT);
+  return { envMapIntensity: v, roughness, glossT };
+}
+
 export interface ThreeTextRendererProps {
   content: string;
   fontFamily: string;
@@ -156,6 +180,18 @@ export interface ThreeTextRendererProps {
   inflate?: number;
   /** User-uploaded font (TTF/OTF parsed). When set, used instead of typeface for 3D text. */
   customFont?: OpenTypeFont | null;
+  /** Independent front decal (see attachFrontDecal). */
+  frontDecalEnabled?: boolean;
+  frontDecalDiffuseUrl?: string | null;
+  frontDecalNormalUrl?: string | null;
+  frontDecalOffsetX?: number;
+  frontDecalOffsetY?: number;
+  frontDecalScale?: number;
+  frontDecalRotationDeg?: number;
+  frontDecalNormalStrength?: number;
+  /** Solid tint from diffuse alpha (drops baked-in decal colors). */
+  frontDecalTintEnabled?: boolean;
+  frontDecalTintColor?: string;
   onReady?: (api: { toDataURL: (scale?: number) => string }) => void;
 }
 
@@ -360,18 +396,47 @@ export function typefaceLikeExtrudeOptions(
   const bevelSegments = props.bevelSegments ?? 5;
   const bevelThickness = props.bevelThickness ?? 0.2;
   const curveSegments = props.curveSegments ?? 12;
-  const inf = Math.max(0, Math.min(1, inflate));
+  /** Matches sidebar max (1.5); depth squash uses `infForDepth` so values past 1 do not flip depth negative. */
+  const inf = Math.max(0, Math.min(1.5, inflate));
+  const infForDepth = Math.min(inf, 1);
+  const edgeRoundness = props.edgeRoundness ?? 0;
+  const bevelSize = props.bevelSize ?? 0;
   const rawDepth = props.extrusionDepth * 0.5;
-  const depth = inf > 0 ? Math.max(0.01, rawDepth * (1 - inf * 0.97)) : Math.max(0.01, rawDepth);
-  const maxBevelSize = 0.35 + inf * 0.25;
-  const effectiveBevelSize = Math.max(
-    0.02,
-    Math.min(maxBevelSize, props.bevelSize + props.edgeRoundness * 0.15 + inf * 0.1)
-  );
+  const depth =
+    inf > 0
+      ? Math.max(0.01, rawDepth * (1 - infForDepth * 0.97))
+      : Math.max(0.01, rawDepth);
+  /** Allow a bit more chamfer when edge roundness is pushed past 1 (slider max 1.5). */
+  const maxBevelSize = 0.35 + inf * 0.25 + Math.max(0, edgeRoundness - 1) * 0.12;
+  /** At edge roundness 0 and no inflate, skip chamfer so only the flat front cap reads (no metallic bevel ring). */
+  let effectiveBevelSize: number;
+  if (edgeRoundness <= 0 && inf <= 0) {
+    effectiveBevelSize = 0;
+  } else if (edgeRoundness <= 0 && inf > 0) {
+    /** Linear in inf (no 0.02 floor) so the first step above 0 is small, like edge roundness. */
+    effectiveBevelSize = Math.min(maxBevelSize, Math.max(0, inf * 0.1));
+  } else {
+    /**
+     * Scale the full chamfer by roundness so the effect grows ~linearly from 0. Using
+     * `bevelSize + edgeRoundness * 0.15` made the default bevel appear all at once above 0 (large jump vs 0.025).
+     * At edgeRoundness === 1 this matches the old combined strength: 1 * (bevelSize + 0.15).
+     */
+    const roundChamfer = edgeRoundness * (bevelSize + 0.15);
+    effectiveBevelSize = Math.min(maxBevelSize, Math.max(0, roundChamfer + inf * 0.1));
+  }
   const normalBT = Math.min(rawDepth > 0 ? rawDepth * 0.3 : 0.1, bevelThickness);
-  const effectiveBT = inf > 0 ? normalBT + inf * size * 0.35 : Math.min(depth * 0.6, bevelThickness);
-  const effectiveBS = Math.round(bevelSegments + inf * 20);
-  return { inf, rawDepth, depth, effectiveBevelSize, effectiveBT, effectiveBS, curveSegments };
+  /** Same idea as edge roundness: avoid a binary switch at inf > 0 (flat BT vs pillow BT), which caused a huge jump from 0 → 0.025. */
+  const btFlat = Math.min(rawDepth * 0.6, bevelThickness);
+  const pillowBt = normalBT + inf * size * 0.35;
+  const tInflateBlend = Math.min(Math.max(inf, 0), 1);
+  const effectiveBT = (1 - tInflateBlend) * btFlat + tInflateBlend * pillowBt;
+  /** More bevel subdivisions as roundness rises so the chamfer stays smooth (not faceted). */
+  const effectiveBS = Math.min(
+    48,
+    Math.round(bevelSegments + inf * 20 + Math.max(0, edgeRoundness) * 22)
+  );
+  const curveSegmentsEff = Math.min(32, Math.round(curveSegments + Math.max(0, edgeRoundness) * 3));
+  return { inf, rawDepth, depth, effectiveBevelSize, effectiveBT, effectiveBS, curveSegments: curveSegmentsEff };
 }
 
 export function applyExtrusionShearToGeometry(
@@ -517,6 +582,7 @@ export async function finalizeExtrudedMeshGroup(
       const baseRoughness = useGlossyFront ? (frontRoughness ?? 0.2) : 0.35;
       const effectiveFrontMetalness = loaded.metalnessMap ? 1 : baseMetalness;
       const effectiveFrontRoughness = roughnessMapForMat ? 1 : baseRoughness;
+      const refl = computeFrontReflectivity(frontEnvMapIntensity, baseRoughness, !!roughnessMapForMat);
 
       const normalStrength = Math.max(0, Math.min(10, frontNormalStrength ?? 1));
       const normalScaleVal = (loaded.normalMap ? 1 : FRONT_NORMAL_SCALE) * normalStrength;
@@ -524,7 +590,7 @@ export async function finalizeExtrudedMeshGroup(
       const basePhys: Record<string, unknown> = {
         color: frontColor,
         metalness: effectiveFrontMetalness,
-        roughness: effectiveFrontRoughness,
+        roughness: refl.roughness ?? effectiveFrontRoughness,
         map: blendedMap,
         normalScale: normalScaleVec,
         ...frontOpFields,
@@ -537,10 +603,10 @@ export async function finalizeExtrudedMeshGroup(
           : {}),
         ...(loaded.metalnessMap ? { metalnessMap: loaded.metalnessMap } : {}),
       };
+      basePhys.envMapIntensity = refl.envMapIntensity;
       if (useGlossyFront) {
-        basePhys.clearcoat = frontClearcoat ?? 1;
+        basePhys.clearcoat = (frontClearcoat ?? 1) * refl.glossT;
         basePhys.clearcoatRoughness = frontClearcoatRoughness ?? 0.1;
-        basePhys.envMapIntensity = frontEnvMapIntensity ?? 2;
         if (loaded.normalMap) {
           basePhys.clearcoatNormalMap = loaded.normalMap;
           basePhys.clearcoatNormalScale = normalScaleVec.clone();
@@ -549,39 +615,45 @@ export async function finalizeExtrudedMeshGroup(
       frontMaterial = new THREE.MeshPhysicalMaterial(basePhys as THREE.MeshPhysicalMaterialParameters);
     } else {
       loadedTexturesOut = null;
+      const glossyR = computeFrontReflectivity(frontEnvMapIntensity, frontRoughness ?? 0.2, false);
+      const flatR = computeFrontReflectivity(frontEnvMapIntensity, 0.35, false);
       frontMaterial = useGlossyFront
         ? new THREE.MeshPhysicalMaterial({
             color: frontColor,
             metalness: frontMetalness ?? 0.6,
-            roughness: frontRoughness ?? 0.2,
-            clearcoat: frontClearcoat ?? 1,
+            roughness: glossyR.roughness ?? (frontRoughness ?? 0.2),
+            clearcoat: (frontClearcoat ?? 1) * glossyR.glossT,
             clearcoatRoughness: frontClearcoatRoughness ?? 0.1,
-            envMapIntensity: frontEnvMapIntensity ?? 2,
+            envMapIntensity: glossyR.envMapIntensity,
             ...frontOpFields,
           })
         : new THREE.MeshStandardMaterial({
             color: frontColor,
             metalness: 0,
-            roughness: 0.35,
+            roughness: flatR.roughness ?? 0.35,
+            envMapIntensity: flatR.envMapIntensity,
             ...frontOpFields,
           });
     }
   } else {
     loadedTexturesOut = null;
+    const glossyR = computeFrontReflectivity(frontEnvMapIntensity, frontRoughness ?? 0.2, false);
+    const flatR = computeFrontReflectivity(frontEnvMapIntensity, 0.35, false);
     frontMaterial = useGlossyFront
       ? new THREE.MeshPhysicalMaterial({
           color: frontColor,
           metalness: frontMetalness ?? 0.6,
-          roughness: frontRoughness ?? 0.2,
-          clearcoat: frontClearcoat ?? 1,
+          roughness: glossyR.roughness ?? (frontRoughness ?? 0.2),
+          clearcoat: (frontClearcoat ?? 1) * glossyR.glossT,
           clearcoatRoughness: frontClearcoatRoughness ?? 0.1,
-          envMapIntensity: frontEnvMapIntensity ?? 2,
+          envMapIntensity: glossyR.envMapIntensity,
           ...frontOpFields,
         })
       : new THREE.MeshStandardMaterial({
           color: frontColor,
           metalness: 0,
-          roughness: 0.35,
+          roughness: flatR.roughness ?? 0.35,
+          envMapIntensity: flatR.envMapIntensity,
           ...frontOpFields,
         });
   }
@@ -611,6 +683,8 @@ export async function finalizeExtrudedMeshGroup(
     m.castShadow = true;
     m.receiveShadow = true;
   });
+
+  await attachFrontDecalToGroup(meshGroup, props, opts);
 
   return { group: meshGroup, loadedTextures: loadedTexturesOut };
 }
@@ -664,14 +738,17 @@ export async function buildThreeTextMeshGroup(
     const customDepth = depth * 0.35;
     const customBevelSize = effectiveBevelSize * 0.5;
     const customNormalBT = Math.min(customDepth * 0.5, bevelThickness * 0.25);
-    const customBevelThickness = inf > 0 ? customNormalBT + inf * size * 0.25 : customNormalBT;
+    const customPillowBt = customNormalBT + inf * size * 0.25;
+    const tInflateBlend = Math.min(Math.max(inf, 0), 1);
+    const customBevelThickness = (1 - tInflateBlend) * customNormalBT + tInflateBlend * customPillowBt;
     const customBevelSegments = Math.round(bevelSegments + inf * 20);
+    const bevelOn = customBevelSize > 1e-8;
     geometry = new THREE.ExtrudeGeometry(shapes, {
       depth: customDepth,
-      bevelEnabled: true,
-      bevelThickness: customBevelThickness,
+      bevelEnabled: bevelOn,
+      bevelThickness: bevelOn ? customBevelThickness : 0,
       bevelSize: customBevelSize,
-      bevelSegments: customBevelSegments,
+      bevelSegments: bevelOn ? customBevelSegments : 1,
       curveSegments: curveSeg,
     });
     geometry.computeBoundingBox();
@@ -687,15 +764,16 @@ export async function buildThreeTextMeshGroup(
       return null;
     }
     const { effectiveBT, effectiveBS } = ext;
+    const bevelOn = effectiveBevelSize > 1e-8;
     geometry = new TextGeometry(content, {
       font,
       size,
       depth,
       curveSegments: curveSeg,
-      bevelEnabled: true,
-      bevelThickness: effectiveBT,
+      bevelEnabled: bevelOn,
+      bevelThickness: bevelOn ? effectiveBT : 0,
       bevelSize: effectiveBevelSize,
-      bevelSegments: effectiveBS,
+      bevelSegments: bevelOn ? effectiveBS : 1,
     });
     geometry.computeBoundingBox();
     const box = geometry.boundingBox!;

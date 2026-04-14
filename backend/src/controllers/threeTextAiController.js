@@ -137,7 +137,7 @@ function buildResult(obj, isAdjust) {
     const filters = {};
     if (typeof f.shine === 'number') filters.shine = Math.max(0, Math.min(1, f.shine));
     if (typeof f.metallic === 'number') filters.metallic = Math.max(0, Math.min(1, f.metallic));
-    if (typeof f.edgeRoundness === 'number') filters.edgeRoundness = Math.max(0, Math.min(1, f.edgeRoundness));
+    if (typeof f.edgeRoundness === 'number') filters.edgeRoundness = Math.max(0, Math.min(1.5, f.edgeRoundness));
     if (Object.keys(filters).length > 0) result.filters = filters;
   }
 
