@@ -358,19 +358,31 @@ export function PosterLayout() {
           ? sessionStorage.getItem('poster_edit_my_project_updated_at')
           : null;
       if (editId) {
-        const base = baselineBeforeSave ? (JSON.parse(baselineBeforeSave) as typeof processed) : processed;
-        const patch = computePosterProjectPatch(base, processed);
-        if (!patchIsEmpty(patch)) {
-          const updated = await updateMyPosterProject({
+        let updated;
+        if (baselineBeforeSave) {
+          const base = JSON.parse(baselineBeforeSave) as typeof processed;
+          const patch = computePosterProjectPatch(base, processed);
+          if (!patchIsEmpty(patch)) {
+            updated = await updateMyPosterProject({
+              id: editId,
+              patch,
+              thumbnail: thumb,
+              ifUnmodifiedSince: editUpdatedAt || undefined,
+            });
+          }
+        } else {
+          // No baseline means we cannot build a trustworthy diff. Send full project so
+          // "My stuff" never misses changes (including flip state) on this save.
+          updated = await updateMyPosterProject({
             id: editId,
-            patch,
+            project: processed,
             thumbnail: thumb,
             ifUnmodifiedSince: editUpdatedAt || undefined,
           });
-          // Refresh conflict guard timestamp for next save
-          if (typeof sessionStorage !== 'undefined') {
-            sessionStorage.setItem('poster_edit_my_project_updated_at', updated.updatedAt ?? '');
-          }
+        }
+        // Refresh conflict guard timestamp for next save when we performed an update.
+        if (updated && typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem('poster_edit_my_project_updated_at', updated.updatedAt ?? '');
         }
       } else {
         const created = await savePosterProjectToMyCloud({

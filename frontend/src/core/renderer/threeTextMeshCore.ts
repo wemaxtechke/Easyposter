@@ -189,6 +189,7 @@ export interface ThreeTextRendererProps {
   frontDecalScale?: number;
   frontDecalRotationDeg?: number;
   frontDecalNormalStrength?: number;
+  frontDecalNormalInvert?: boolean;
   /** Solid tint from diffuse alpha (drops baked-in decal colors). */
   frontDecalTintEnabled?: boolean;
   frontDecalTintColor?: string;

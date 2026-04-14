@@ -75,6 +75,7 @@ export const Canvas = memo(function Canvas({
       frontDecalScale: s.frontDecalScale,
       frontDecalRotationDeg: s.frontDecalRotationDeg,
       frontDecalNormalStrength: s.frontDecalNormalStrength,
+      frontDecalNormalInvert: s.frontDecalNormalInvert,
       frontDecalTintEnabled: s.frontDecalTintEnabled,
       frontDecalTintColor: s.frontDecalTintColor,
     }))
@@ -192,6 +193,7 @@ export const Canvas = memo(function Canvas({
             frontDecalScale={state.frontDecalScale ?? 0.35}
             frontDecalRotationDeg={state.frontDecalRotationDeg ?? 0}
             frontDecalNormalStrength={state.frontDecalNormalStrength ?? 1}
+            frontDecalNormalInvert={state.frontDecalNormalInvert ?? false}
             frontDecalTintEnabled={state.frontDecalTintEnabled ?? false}
             frontDecalTintColor={state.frontDecalTintColor ?? '#ffffff'}
             metalness={state.metalness ?? 1}

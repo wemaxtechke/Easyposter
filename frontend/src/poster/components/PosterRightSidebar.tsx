@@ -762,7 +762,10 @@ function PosterImageAppearanceControls({
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => updateElement(raster.id, { flipHorizontal: !raster.flipHorizontal })}
+            title="Mirror left/right; click again to restore"
+            onClick={() =>
+              updateElement(raster.id, { flipHorizontal: !(raster.flipHorizontal ?? false) })
+            }
             className={`rounded border px-3 py-2 text-xs font-medium transition-colors ${
               raster.flipHorizontal
                 ? 'border-accent-600 bg-accent-600 text-white dark:border-gold-500 dark:bg-gold-500 dark:text-zinc-950'
@@ -773,7 +776,10 @@ function PosterImageAppearanceControls({
           </button>
           <button
             type="button"
-            onClick={() => updateElement(raster.id, { flipVertical: !raster.flipVertical })}
+            title="Mirror top/bottom; click again to restore"
+            onClick={() =>
+              updateElement(raster.id, { flipVertical: !(raster.flipVertical ?? false) })
+            }
             className={`rounded border px-3 py-2 text-xs font-medium transition-colors ${
               raster.flipVertical
                 ? 'border-accent-600 bg-accent-600 text-white dark:border-gold-500 dark:bg-gold-500 dark:text-zinc-950'

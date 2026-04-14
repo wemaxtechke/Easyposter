@@ -122,6 +122,7 @@ export function styleFieldsFromRoot(s: EditorState): EditorLayerStyleFields {
     frontDecalScale: s.frontDecalScale,
     frontDecalRotationDeg: s.frontDecalRotationDeg,
     frontDecalNormalStrength: s.frontDecalNormalStrength,
+    frontDecalNormalInvert: s.frontDecalNormalInvert,
     frontDecalTintEnabled: s.frontDecalTintEnabled,
     frontDecalTintColor: s.frontDecalTintColor,
   };
@@ -263,6 +264,7 @@ export function rootFieldsFromTextLayer(layer: TextLayer3D): Partial<EditorState
     frontDecalScale: layer.frontDecalScale,
     frontDecalRotationDeg: layer.frontDecalRotationDeg,
     frontDecalNormalStrength: layer.frontDecalNormalStrength,
+    frontDecalNormalInvert: layer.frontDecalNormalInvert,
     frontDecalTintEnabled: layer.frontDecalTintEnabled,
     frontDecalTintColor: layer.frontDecalTintColor,
   };
@@ -319,6 +321,7 @@ export function rootFieldsFromShapeLayer(layer: ShapeLayer3D): Partial<EditorSta
     frontDecalScale: layer.frontDecalScale,
     frontDecalRotationDeg: layer.frontDecalRotationDeg,
     frontDecalNormalStrength: layer.frontDecalNormalStrength,
+    frontDecalNormalInvert: layer.frontDecalNormalInvert,
     frontDecalTintEnabled: layer.frontDecalTintEnabled,
     frontDecalTintColor: layer.frontDecalTintColor,
   };

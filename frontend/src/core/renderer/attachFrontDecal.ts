@@ -59,6 +59,8 @@ export type FrontDecalFields = {
   frontDecalScale?: number;
   frontDecalRotationDeg?: number;
   frontDecalNormalStrength?: number;
+  /** Negate tangent-space normal (flip bump lighting). */
+  frontDecalNormalInvert?: boolean;
   /** Replace diffuse chroma with tint color × alpha (keeps silhouette; normal map unchanged). */
   frontDecalTintEnabled?: boolean;
   /** Hex color when tint is enabled (default white). */
@@ -240,7 +242,8 @@ export async function attachFrontDecalToGroup(
   posLocal.applyMatrix4(frontMesh.matrix);
 
   const nStr = Math.max(0, Math.min(10, props.frontDecalNormalStrength ?? 1));
-  const normalScale = new THREE.Vector2(nStr, nStr);
+  const nSign = props.frontDecalNormalInvert ? -1 : 1;
+  const normalScale = new THREE.Vector2(nStr * nSign, nStr * nSign);
 
   const mat = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,

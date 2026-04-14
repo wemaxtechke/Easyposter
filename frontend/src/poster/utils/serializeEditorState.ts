@@ -32,6 +32,7 @@ export function serializeEditorState(): Partial<EditorState> {
     'frontDecalScale',
     'frontDecalRotationDeg',
     'frontDecalNormalStrength',
+    'frontDecalNormalInvert',
     'frontDecalTintEnabled',
     'frontDecalTintColor',
     'textLayers', 'activeTextLayerId',

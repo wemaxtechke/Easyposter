@@ -169,6 +169,7 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
   const frontDecalScale = useEditorStore((s) => s.frontDecalScale ?? 0.35);
   const frontDecalRotationDeg = useEditorStore((s) => s.frontDecalRotationDeg ?? 0);
   const frontDecalNormalStrength = useEditorStore((s) => s.frontDecalNormalStrength ?? 1);
+  const frontDecalNormalInvert = useEditorStore((s) => s.frontDecalNormalInvert ?? false);
   const frontDecalTintEnabled = useEditorStore((s) => s.frontDecalTintEnabled ?? false);
   const frontDecalTintColor = useEditorStore((s) => s.frontDecalTintColor ?? '#ffffff');
   const setState = useEditorStore((s) => s.setState);
@@ -1016,7 +1017,7 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                 <Slider
                   label="Size"
                   value={text.fontSize}
-                  min={24}
+                  min={is3dRoute && renderEngine === 'webgl' ? 5 : 24}
                   max={120}
                   onChange={(v) => setText({ fontSize: v })}
                 />
@@ -1673,6 +1674,27 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                             step={0.1}
                             onChange={(v) => setState({ frontDecalNormalStrength: v })}
                           />
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-zinc-600 dark:text-zinc-400">Invert normal</span>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={frontDecalNormalInvert}
+                              disabled={!frontDecalNormalUrl}
+                              onClick={() => setState({ frontDecalNormalInvert: !frontDecalNormalInvert })}
+                              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border transition-colors disabled:opacity-40 ${
+                                frontDecalNormalInvert
+                                  ? 'border-zinc-400 bg-zinc-600 dark:bg-zinc-500'
+                                  : 'border-zinc-300 bg-zinc-200 dark:bg-zinc-700'
+                              }`}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
+                                  frontDecalNormalInvert ? 'translate-x-4' : 'translate-x-0.5'
+                                }`}
+                              />
+                            </button>
+                          </div>
                         </>
                       )}
                     </div>

@@ -47,6 +47,12 @@ import {
 import { usePosterZoom, SBUF } from '../hooks/usePosterZoom';
 import { loadFontsForPosterElements } from '../loadPosterFonts';
 import { PosterImageCropOverlay } from './PosterImageCropOverlay';
+import { applyImageFlip, getMaskedImageScale } from '../posterImageFabricLayout';
+import {
+  enterFabricReflectSuppress,
+  exitFabricReflectSuppress,
+  isFabricReflectSuppressed,
+} from '../posterFabricReflectGuard';
 
 /** Stable signature of text font stacks for poster font preload + Fabric sync gating. */
 function posterFontSignature(elements: PosterElement[]): string {
@@ -107,35 +113,6 @@ function syncFabricSelectionFromStore(
 function toFabricShadow(s?: PosterShadow): Shadow | null {
   if (!s) return null;
   return new Shadow({ color: s.color, blur: s.blur, offsetX: s.offsetX, offsetY: s.offsetY });
-}
-
-/** For circle mask, use square scale so the element bounds match the circle (no rect-with-circle look). */
-function getMaskedImageScale(
-  el: PosterImageElement | Poster3DTextElement,
-  imgWidth: number,
-  imgHeight: number
-): { scaleX: number; scaleY: number } {
-  const mask = el.mask ?? 'none';
-  if (mask === 'circle' && imgWidth > 0 && imgHeight > 0) {
-    const displayedW = imgWidth * el.scaleX;
-    const displayedH = imgHeight * el.scaleY;
-    const targetSize = Math.min(displayedW, displayedH);
-    return {
-      scaleX: targetSize / imgWidth,
-      scaleY: targetSize / imgHeight,
-    };
-  }
-  return { scaleX: el.scaleX, scaleY: el.scaleY };
-}
-
-function applyImageFlip(
-  scale: { scaleX: number; scaleY: number },
-  el: PosterImageElement | Poster3DTextElement
-): { scaleX: number; scaleY: number } {
-  let { scaleX, scaleY } = scale;
-  if (el.flipHorizontal) scaleX *= -1;
-  if (el.flipVertical) scaleY *= -1;
-  return { scaleX, scaleY };
 }
 
 /** Poster id is removed from canvas while `createFabricObject` runs — don't clear Zustand selection. */
@@ -220,6 +197,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       setSelected([]);
     });
     canvas.on('object:modified', (opt) => {
+      if (isFabricReflectSuppressed()) return;
       const target = opt.target;
       if (target instanceof ActiveSelection) {
         const store = usePosterStore.getState();
@@ -544,11 +522,16 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           img.setCoords();
           void applyPosterImageEffectsInPlace(img, rasterEl)
             .then(() => {
-              applyImageAdjustmentFilters(img, rasterEl);
-              (img as { data?: Record<string, unknown> }).data = {
-                ...(img as { data?: Record<string, unknown> }).data,
-                adjustmentsKey: newAdjKey,
-              };
+              enterFabricReflectSuppress();
+              try {
+                applyImageAdjustmentFilters(img, rasterEl);
+                (img as { data?: Record<string, unknown> }).data = {
+                  ...(img as { data?: Record<string, unknown> }).data,
+                  adjustmentsKey: newAdjKey,
+                };
+              } finally {
+                setTimeout(() => exitFabricReflectSuppress(), 0);
+              }
               canvasRef.current?.requestRenderAll();
             })
             .catch(() => {
@@ -588,11 +571,16 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             el.id,
             setTimeout(() => {
               adjTimersRef.current.delete(el.id);
-              applyImageAdjustmentFilters(img, capturedAdj);
-              (img as { data?: Record<string, unknown> }).data = {
-                ...(img as { data?: Record<string, unknown> }).data,
-                adjustmentsKey: capturedKey,
-              };
+              enterFabricReflectSuppress();
+              try {
+                applyImageAdjustmentFilters(img, capturedAdj);
+                (img as { data?: Record<string, unknown> }).data = {
+                  ...(img as { data?: Record<string, unknown> }).data,
+                  adjustmentsKey: capturedKey,
+                };
+              } finally {
+                setTimeout(() => exitFabricReflectSuppress(), 0);
+              }
               canvasRef.current?.requestRenderAll();
             }, 80),
           );
@@ -650,16 +638,16 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             el.type === 'image' || el.type === '3d-text' ? (el as PosterImageElement | Poster3DTextElement) : null;
           const w = existing.width ?? 1;
           const h = existing.height ?? 1;
-          let scale =
+          const scale =
             rasterEl && (rasterEl.mask ?? 'none') !== 'none'
               ? getMaskedImageScale(rasterEl, w, h)
               : { scaleX: el.scaleX, scaleY: el.scaleY };
-          if (rasterEl) scale = applyImageFlip(scale, rasterEl);
+          const rasterScale = rasterEl ? applyImageFlip(scale, rasterEl) : scale;
           const updates: Record<string, unknown> = {
             left: el.left,
             top: el.top,
-            scaleX: scale.scaleX,
-            scaleY: scale.scaleY,
+            scaleX: rasterScale.scaleX,
+            scaleY: rasterScale.scaleY,
             angle: el.angle,
             opacity: el.opacity,
             originX: 'left',
@@ -844,14 +832,14 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                   );
                 }
                 obj.on('modified', () => {
+                  if (isFabricReflectSuppressed()) return;
+                  if (syncingSelectionFromStoreRef.current) return;
+                  const live = usePosterStore.getState().elements.find((e) => e.id === el.id);
+                  if (!live) return;
                   let scaleX = obj.scaleX ?? 1;
                   let scaleY = obj.scaleY ?? 1;
-                  let flipHorizontal: boolean | undefined;
-                  let flipVertical: boolean | undefined;
-                  if (el.type === 'image' || el.type === '3d-text') {
-                    const imgEl = el as PosterImageElement | Poster3DTextElement;
-                    flipHorizontal = scaleX < 0;
-                    flipVertical = scaleY < 0;
+                  if (live.type === 'image' || live.type === '3d-text') {
+                    const imgEl = live as PosterImageElement | Poster3DTextElement;
                     scaleX = Math.abs(scaleX);
                     scaleY = Math.abs(scaleY);
                     if ((imgEl.mask ?? 'none') === 'circle') {
@@ -867,9 +855,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                     scaleY,
                     angle: obj.angle ?? 0,
                   };
-                  if (flipHorizontal !== undefined) updates.flipHorizontal = flipHorizontal;
-                  if (flipVertical !== undefined) updates.flipVertical = flipVertical;
-                  if (el.type === 'text') {
+                  if (live.type === 'text') {
                     const tb = obj as Textbox;
                     if (typeof tb.text === 'string') updates.text = tb.text;
                     if (typeof tb.width === 'number' && tb.width > 0) updates.width = tb.width;
@@ -882,7 +868,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                     updates.lineHeight = tb.lineHeight ?? 1.16;
                     updates.textAlign = tb.textAlign ?? 'left';
                   }
-                  if (el.type === 'line' && obj.type === 'line') {
+                  if (live.type === 'line' && obj.type === 'line') {
                     const ln = obj as Line;
                     updates.x1 = ln.x1;
                     updates.y1 = ln.y1;
@@ -890,23 +876,23 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                     updates.y2 = ln.y2;
                     updates.strokeWidth = ln.strokeWidth ?? 4;
                   }
-                  if (el.type === 'triangle') {
+                  if (live.type === 'triangle') {
                     const tr = obj as Triangle;
                     if (typeof tr.width === 'number') updates.width = tr.width;
                     if (typeof tr.height === 'number') updates.height = tr.height;
                   }
-                  if (el.type === 'ellipse') {
+                  if (live.type === 'ellipse') {
                     const ov = obj as Ellipse;
                     updates.rx = ov.rx;
                     updates.ry = ov.ry;
                   }
-                  if (el.type === 'polygon') {
+                  if (live.type === 'polygon') {
                     const poly = obj as Polygon;
                     if (poly.points?.length) {
                       updates.polygonPoints = poly.points.map((p) => ({ x: p.x, y: p.y }));
                     }
                   }
-                  updateElement(el.id, updates as Partial<PosterElement>);
+                  updateElement(live.id, updates as Partial<PosterElement>);
                 });
                 canvasRef.current.add(obj);
                 obj.setCoords();

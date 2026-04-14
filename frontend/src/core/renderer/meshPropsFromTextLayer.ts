@@ -81,6 +81,7 @@ export function meshPropsFromTextLayer(
     frontDecalScale: layer.frontDecalScale ?? 0.35,
     frontDecalRotationDeg: layer.frontDecalRotationDeg ?? 0,
     frontDecalNormalStrength: layer.frontDecalNormalStrength ?? 1,
+    frontDecalNormalInvert: layer.frontDecalNormalInvert ?? false,
     frontDecalTintEnabled: layer.frontDecalTintEnabled ?? false,
     frontDecalTintColor: layer.frontDecalTintColor ?? '#ffffff',
   };
@@ -154,6 +155,7 @@ export function meshPropsFromShapeLayer(
     frontDecalScale: layer.frontDecalScale ?? 0.35,
     frontDecalRotationDeg: layer.frontDecalRotationDeg ?? 0,
     frontDecalNormalStrength: layer.frontDecalNormalStrength ?? 1,
+    frontDecalNormalInvert: layer.frontDecalNormalInvert ?? false,
     frontDecalTintEnabled: layer.frontDecalTintEnabled ?? false,
     frontDecalTintColor: layer.frontDecalTintColor ?? '#ffffff',
   };

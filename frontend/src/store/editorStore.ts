@@ -204,6 +204,7 @@ function toHistoryEntry(state: EditorState): EditorState {
       frontDecalScale: state.frontDecalScale,
       frontDecalRotationDeg: state.frontDecalRotationDeg,
       frontDecalNormalStrength: state.frontDecalNormalStrength,
+      frontDecalNormalInvert: state.frontDecalNormalInvert,
       frontDecalTintEnabled: state.frontDecalTintEnabled,
       frontDecalTintColor: state.frontDecalTintColor,
       customFontIds: state.customFontIds,
@@ -374,6 +375,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           base.frontDecalRotationDeg !== undefined ? base.frontDecalRotationDeg : state.frontDecalRotationDeg,
         frontDecalNormalStrength:
           base.frontDecalNormalStrength !== undefined ? base.frontDecalNormalStrength : state.frontDecalNormalStrength,
+        frontDecalNormalInvert:
+          base.frontDecalNormalInvert !== undefined ? base.frontDecalNormalInvert : state.frontDecalNormalInvert,
         frontDecalTintEnabled:
           base.frontDecalTintEnabled !== undefined ? base.frontDecalTintEnabled : state.frontDecalTintEnabled,
         frontDecalTintColor:

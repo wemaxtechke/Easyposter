@@ -11,6 +11,8 @@ import {
 } from 'fabric';
 import type { PosterImageElement, ImageAdjustments } from './types';
 import { posterRasterSrc, type PosterRasterElement } from './posterRaster';
+import { setFabricRasterLayoutFromElement } from './posterImageFabricLayout';
+import { enterFabricReflectSuppress, exitFabricReflectSuppress } from './posterFabricReflectGuard';
 import { getTextureById } from './posterTextures';
 
 /**
@@ -433,18 +435,26 @@ export async function applyPosterImageEffectsInPlace(
   img: FabricImage,
   el: PosterRasterElement
 ): Promise<void> {
-  const url = await resolvePosterImageFabricSrc(el);
-  const co = crossOriginForImageSrc(url);
-  await img.setSrc(url, co ? { crossOrigin: co } : {});
-  applyPosterImageClipPath(img, el);
-  const prev = (img as { data?: PosterFabricImageData }).data ?? {};
-  (img as { data?: PosterFabricImageData }).data = {
-    ...prev,
-    posterId: el.id,
-    imageSrc: posterRasterSrc(el),
-    imageEffectsKey: getPosterImageEffectsKey(el),
-  };
-  img.set({ dirty: true });
+  enterFabricReflectSuppress();
+  try {
+    const url = await resolvePosterImageFabricSrc(el);
+    const co = crossOriginForImageSrc(url);
+    await img.setSrc(url, co ? { crossOrigin: co } : {});
+    applyPosterImageClipPath(img, el);
+    setFabricRasterLayoutFromElement(img, el);
+    const prev = (img as { data?: PosterFabricImageData }).data ?? {};
+    (img as { data?: PosterFabricImageData }).data = {
+      ...prev,
+      posterId: el.id,
+      imageSrc: posterRasterSrc(el),
+      imageEffectsKey: getPosterImageEffectsKey(el),
+    };
+    img.set({ dirty: true });
+  } finally {
+    // Fabric may emit `object:modified` on a later microtask/frame after setSrc/layout;
+    // defer exit so those handlers still see suppression.
+    setTimeout(() => exitFabricReflectSuppress(), 0);
+  }
 }
 
 const SHARPEN_KERNEL = [0, -1, 0, -1, 5, -1, 0, -1, 0];

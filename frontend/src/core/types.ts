@@ -151,6 +151,8 @@ export interface EditorState {
   frontDecalScale?: number;
   frontDecalRotationDeg?: number;
   frontDecalNormalStrength?: number;
+  /** When true, tangent-space normal XY are negated (flip bump direction). */
+  frontDecalNormalInvert?: boolean;
   /** When true, decal diffuse uses a solid tint color modulated by alpha (original colors ignored). */
   frontDecalTintEnabled?: boolean;
   /** Tint when `frontDecalTintEnabled` (e.g. `#ffffff` for a white logo). */
@@ -282,6 +284,7 @@ export type EditorPerLayerFields = Pick<
   | 'frontDecalScale'
   | 'frontDecalRotationDeg'
   | 'frontDecalNormalStrength'
+  | 'frontDecalNormalInvert'
   | 'frontDecalTintEnabled'
   | 'frontDecalTintColor'
 >;
