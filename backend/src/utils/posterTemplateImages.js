@@ -22,6 +22,36 @@ const uploadImageFns = {
 };
 
 /**
+ * @throws {Error & { statusCode?: number }} if any raster layer still uses a browser-local blob: URL
+ * (not portable across devices or server-side).
+ */
+export function assertNoBlobImageRefsInProject(project) {
+  if (!project || typeof project !== 'object' || !Array.isArray(project.elements)) return;
+  const problems = [];
+  for (const el of project.elements) {
+    if (!el || typeof el !== 'object') continue;
+    const id = typeof el.id === 'string' ? el.id : '?';
+    if (el.type === 'image') {
+      if (typeof el.src === 'string' && el.src.startsWith('blob:')) problems.push(`image ${id} (src)`);
+      if (typeof el.originalSrc === 'string' && el.originalSrc.startsWith('blob:')) {
+        problems.push(`image ${id} (originalSrc)`);
+      }
+    }
+    if (el.type === '3d-text' && typeof el.image === 'string' && el.image.startsWith('blob:')) {
+      problems.push(`3d-text ${id}`);
+    }
+  }
+  if (problems.length === 0) return;
+  const err = new Error(
+    `Project contains browser-only image URLs (blob:), which cannot be synced or opened on other devices. ` +
+      `On the device where you edited this poster, open it and click Save (with image hosting configured), or re-add the missing images. ` +
+      `Affected: ${problems.slice(0, 6).join(', ')}${problems.length > 6 ? '…' : ''}`
+  );
+  err.statusCode = 400;
+  throw err;
+}
+
+/**
  * Upload data: image URLs inside poster project to Cloudinary; replace with secure_url.
  * @param {object} project - Poster project with elements
  * @param {'template'|'project'} [target='template'] - Use 'template' for templates, 'project' for user projects
@@ -62,6 +92,8 @@ export async function uploadDataUrlsInPosterProject(project, target = 'template'
       }
     }
   }
+
+  assertNoBlobImageRefsInProject(projectClone);
 
   return { project: projectClone, publicIds };
 }

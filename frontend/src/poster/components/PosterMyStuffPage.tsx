@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { usePosterStore } from '../store/posterStore';
 import { savePosterProjectToStorage } from '../posterProjectStorage';
 import { deleteMyPosterProject, listMyPosterProjects, renameMyPosterProject, type SavedPosterProjectItem } from '../services/posterProjectsApi';
+import { warnIfPosterHasBlobRefs } from '../userTemplatesStorage';
 import { TemplateThumbnail } from './TemplateThumbnail';
 
 function fmtTime(ms: number): string {
@@ -56,6 +57,7 @@ export function PosterMyStuffPage() {
       sessionStorage.setItem('poster_skip_restore', Date.now().toString());
       sessionStorage.setItem('poster_edit_my_project_id', item.id);
       sessionStorage.setItem('poster_edit_my_project_updated_at', item.updatedAt ?? item.createdAt ?? '');
+      warnIfPosterHasBlobRefs(item.project);
       navigate('/poster');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to open project.');

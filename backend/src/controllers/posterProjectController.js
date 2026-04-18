@@ -1,6 +1,6 @@
 import PosterProject from '../models/PosterProject.js';
 import { isMongoReady } from '../config/db.js';
-import { uploadDataUrlsInPosterProject } from '../utils/posterTemplateImages.js';
+import { uploadDataUrlsInPosterProject, assertNoBlobImageRefsInProject } from '../utils/posterTemplateImages.js';
 import { destroyCloudinaryAssets, diffRemovedIds } from '../utils/cloudinaryCleanup.js';
 
 function hasCloudinaryConfig() {
@@ -54,9 +54,19 @@ export async function savePosterProject(req, res) {
         processedProject = result.project;
         publicIds = result.publicIds;
       } catch (e) {
-        return res.status(500).json({
-          error: `Image upload failed: ${e?.message || e}. Ensure Cloudinary is configured.`,
+        const status = e?.statusCode === 400 ? 400 : 500;
+        return res.status(status).json({
+          error:
+            status === 400
+              ? String(e?.message || e)
+              : `Image upload failed: ${e?.message || e}. Ensure Cloudinary is configured.`,
         });
+      }
+    } else {
+      try {
+        assertNoBlobImageRefsInProject(project);
+      } catch (e) {
+        return res.status(e?.statusCode || 400).json({ error: String(e?.message || e) });
       }
     }
 
@@ -76,6 +86,7 @@ export async function savePosterProject(req, res) {
 
     res.json({ ok: true, updatedAt: doc.updatedAt, project: processedProject });
   } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) });
+    const status = e?.statusCode === 400 ? 400 : 500;
+    res.status(status).json({ error: String(e?.message || e) });
   }
 }

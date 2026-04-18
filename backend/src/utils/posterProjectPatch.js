@@ -1,4 +1,4 @@
-import { uploadDataUrlsInPosterProject } from './posterTemplateImages.js';
+import { uploadDataUrlsInPosterProject, assertNoBlobImageRefsInProject } from './posterTemplateImages.js';
 
 /**
  * Apply a patch onto a poster project. This is a "replace per element id" merge:
@@ -41,9 +41,11 @@ export async function applyPosterProjectPatch(baseProject, patch) {
     const { project: processedMini, publicIds } = await uploadDataUrlsInPosterProject(mini, 'project');
     const processedById = new Map((processedMini.elements || []).map((e) => [e.id, e]));
     next.elements = next.elements.map((e) => processedById.get(e.id) ?? e);
+    assertNoBlobImageRefsInProject(next);
     return { project: next, publicIds };
   }
 
+  assertNoBlobImageRefsInProject(next);
   return { project: next, publicIds: [] };
 }
 

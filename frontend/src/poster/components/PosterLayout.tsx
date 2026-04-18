@@ -18,7 +18,7 @@ import { getFabricCanvasRef } from '../canvasRef';
 import { loadPosterProjectFromStorage, savePosterProjectToStorage } from '../posterProjectStorage';
 import { loadPosterProjectFromCloud, savePosterProjectToCloud, savePosterProjectToMyCloud, updateMyPosterProject } from '../services/posterProjectsApi';
 import { resolveBlobUrlsInProject, applyProcessedProjectUrlsToStore } from '../utils/resolveBlobUrlsInProject';
-import { projectHasBlobImageUrls } from '../userTemplatesStorage';
+import { projectHasBlobImageUrls, warnIfPosterHasBlobRefs } from '../userTemplatesStorage';
 import { computePosterProjectPatch, patchIsEmpty } from '../utils/projectPatch';
 import type { PosterTemplateCategory, PosterTemplateFieldBinding } from '../templateTypes';
 import type { PosterElement, PosterImageElement, PosterTextElement } from '../types';
@@ -190,6 +190,7 @@ export function PosterLayout() {
             const cloudProject = await loadPosterProjectFromCloud();
             if (!cancelled && cloudProject) {
               loadProject(cloudProject);
+              warnIfPosterHasBlobRefs(cloudProject);
               lastCloudSaveRef.current = JSON.stringify(cloudProject);
               coldAutosaveBaselineRef.current = null;
               return;
@@ -203,6 +204,7 @@ export function PosterLayout() {
           const saved = loadPosterProjectFromStorage();
           if (saved && saved.elements.length > 0) {
             loadProject(saved);
+            warnIfPosterHasBlobRefs(saved);
           }
           coldAutosaveBaselineRef.current = null;
         }
@@ -363,12 +365,24 @@ export function PosterLayout() {
           const base = JSON.parse(baselineBeforeSave) as typeof processed;
           const patch = computePosterProjectPatch(base, processed);
           if (!patchIsEmpty(patch)) {
-            updated = await updateMyPosterProject({
-              id: editId,
-              patch,
-              thumbnail: thumb,
-              ifUnmodifiedSince: editUpdatedAt || undefined,
-            });
+            try {
+              updated = await updateMyPosterProject({
+                id: editId,
+                patch,
+                thumbnail: thumb,
+                ifUnmodifiedSince: editUpdatedAt || undefined,
+              });
+            } catch (patchErr) {
+              const msg = patchErr instanceof Error ? patchErr.message : String(patchErr ?? '');
+              const blobStale = msg.includes('blob:') || msg.includes('browser-only');
+              if (!blobStale) throw patchErr;
+              updated = await updateMyPosterProject({
+                id: editId,
+                project: processed,
+                thumbnail: thumb,
+                ifUnmodifiedSince: editUpdatedAt || undefined,
+              });
+            }
           }
         } else {
           // No baseline means we cannot build a trustworthy diff. Send full project so
@@ -581,35 +595,46 @@ export function PosterLayout() {
     (f) => f.sourceElementId === labelTargetId
   );
 
+  /** Mobile: fixed top stack (read-only strip + toolbar). Spacer + drawer top match this height. */
+  const mobileTopStackSpacer = readOnly
+    ? 'h-[calc(env(safe-area-inset-top,0px)+3.5rem+3rem)]'
+    : 'h-[calc(env(safe-area-inset-top,0px)+3rem)]';
+  const mobileDrawerTopMaxLg = readOnly
+    ? 'max-lg:top-[calc(env(safe-area-inset-top,0px)+3.5rem+3rem)]'
+    : 'max-lg:top-[calc(env(safe-area-inset-top,0px)+3rem)]';
+
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden overscroll-none bg-zinc-100 dark:bg-zinc-950">
-      {readOnly && (
-        <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
-          <span className="hidden sm:inline">Explore the poster editor. Login to edit, download, and use AI features.</span>
-          <span className="sm:hidden">Login to edit and use AI features.</span>
-          <Link
-            to="/login"
-            className="rounded bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-500"
-          >
-            Login
-          </Link>
-        </div>
-      )}
-      <PosterTopBar
-        readOnly={readOnly}
-        onOpenCanvasSize={() => setShowCanvasSizeModal(true)}
-        onOpenAiWizard={() => setAiWizardOpen(true)}
-        onOpenAiChat={() => setAiChatOpen(true)}
-        onBeginTemplateAuthoring={beginTemplateAuthoring}
-        templateAuthoringActive={!!templateAuthoring}
-        onSaveToCloud={user ? handleSaveToCloud : undefined}
-        cloudDirty={cloudDirty}
-        savingToCloud={savingToCloud}
-        leftSidebarOpen={leftOpen}
-        rightSidebarOpen={rightOpen}
-        onToggleLeftSidebar={() => setLeftOpen((v) => !v)}
-        onToggleRightSidebar={() => setRightOpen((v) => !v)}
-      />
+      <div className="fixed inset-x-0 top-0 z-50 flex flex-col pt-[env(safe-area-inset-top,0px)] lg:static lg:z-auto lg:shrink-0 lg:pt-0">
+        {readOnly && (
+          <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+            <span className="hidden sm:inline">Explore the poster editor. Login to edit, download, and use AI features.</span>
+            <span className="sm:hidden">Login to edit and use AI features.</span>
+            <Link
+              to="/login"
+              className="rounded bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-500"
+            >
+              Login
+            </Link>
+          </div>
+        )}
+        <PosterTopBar
+          readOnly={readOnly}
+          onOpenCanvasSize={() => setShowCanvasSizeModal(true)}
+          onOpenAiWizard={() => setAiWizardOpen(true)}
+          onOpenAiChat={() => setAiChatOpen(true)}
+          onBeginTemplateAuthoring={beginTemplateAuthoring}
+          templateAuthoringActive={!!templateAuthoring}
+          onSaveToCloud={user ? handleSaveToCloud : undefined}
+          cloudDirty={cloudDirty}
+          savingToCloud={savingToCloud}
+          leftSidebarOpen={leftOpen}
+          rightSidebarOpen={rightOpen}
+          onToggleLeftSidebar={() => setLeftOpen((v) => !v)}
+          onToggleRightSidebar={() => setRightOpen((v) => !v)}
+        />
+      </div>
+      <div className={`shrink-0 lg:hidden ${mobileTopStackSpacer}`} aria-hidden />
       {templateAuthoring && (
         <TemplateAuthoringBanner
           fieldCount={templateAuthoring.fields.length}
@@ -700,8 +725,9 @@ export function PosterLayout() {
         <aside
           className={[
             'flex flex-col overflow-y-auto overscroll-y-contain border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900',
-            'fixed inset-y-0 left-0 z-40 w-64 pt-0 transition-transform duration-300 ease-in-out',
-            'lg:relative lg:inset-y-auto lg:left-auto lg:z-auto lg:w-56 lg:shrink-0 lg:translate-x-0 lg:transform-none lg:transition-none',
+            'fixed bottom-0 left-0 z-40 w-64 max-lg:bottom-0 pt-0 transition-transform duration-300 ease-in-out',
+            mobileDrawerTopMaxLg,
+            'lg:relative lg:top-auto lg:bottom-auto lg:left-auto lg:z-auto lg:h-auto lg:min-h-0 lg:w-56 lg:shrink-0 lg:translate-x-0 lg:transform-none lg:transition-none',
             leftOpen ? 'translate-x-0' : '-translate-x-full',
           ].join(' ')}
         >

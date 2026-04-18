@@ -64,11 +64,31 @@ export function deleteUserPosterTemplate(id: string): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 }
 
-/** True if any image uses a non-persistent blob/data URL. */
-export function projectHasBlobImageUrls(project: { elements: { type: string; src?: string; image?: string }[] }): boolean {
+/** True if any raster layer uses a browser-local blob: URL (not portable across devices or tabs). */
+export function projectHasBlobImageUrls(project: {
+  elements: { type: string; src?: string; image?: string; originalSrc?: string }[];
+}): boolean {
   for (const el of project.elements) {
-    if (el.type === 'image' && typeof el.src === 'string' && el.src.startsWith('blob:')) return true;
+    if (el.type === 'image') {
+      if (typeof el.src === 'string' && el.src.startsWith('blob:')) return true;
+      if (typeof el.originalSrc === 'string' && el.originalSrc.startsWith('blob:')) return true;
+    }
     if (el.type === '3d-text' && typeof el.image === 'string' && el.image.startsWith('blob:')) return true;
   }
   return false;
+}
+
+const BLOB_REFS_WARNING =
+  'This design still uses temporary image links (blob:) that only work in the browser where they were created. ' +
+  'Some layers may look empty here or in exports. On the device where you edited this poster, open it and click Save ' +
+  '(with Cloudinary/hosting enabled), or re-add the missing images and 3D text.';
+
+/** Non-blocking alert when a loaded project contains blob: raster URLs. */
+export function warnIfPosterHasBlobRefs(
+  project: { elements?: { type: string; src?: string; image?: string; originalSrc?: string }[] } | null | undefined
+): void {
+  if (!project?.elements) return;
+  if (!projectHasBlobImageUrls(project)) return;
+  if (typeof window === 'undefined') return;
+  window.setTimeout(() => window.alert(BLOB_REFS_WARNING), 0);
 }
