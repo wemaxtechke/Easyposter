@@ -582,7 +582,7 @@ export function PosterLayout() {
   );
 
   return (
-    <div className="flex h-dvh w-full flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950">
+    <div className="flex h-dvh w-full flex-col overflow-hidden overscroll-none bg-zinc-100 dark:bg-zinc-950">
       {readOnly && (
         <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
           <span className="hidden sm:inline">Explore the poster editor. Login to edit, download, and use AI features.</span>
@@ -699,7 +699,7 @@ export function PosterLayout() {
         {/* Left sidebar — fixed drawer on mobile/tablet, inline on desktop */}
         <aside
           className={[
-            'flex flex-col overflow-y-auto border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900',
+            'flex flex-col overflow-y-auto overscroll-y-contain border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900',
             'fixed inset-y-0 left-0 z-40 w-64 pt-0 transition-transform duration-300 ease-in-out',
             'lg:relative lg:inset-y-auto lg:left-auto lg:z-auto lg:w-56 lg:shrink-0 lg:translate-x-0 lg:transform-none lg:transition-none',
             leftOpen ? 'translate-x-0' : '-translate-x-full',
@@ -713,7 +713,7 @@ export function PosterLayout() {
         </main>
 
         {/* Right sidebar — hidden on mobile, inline on desktop */}
-        <aside className="hidden overflow-y-auto border-l border-zinc-200 bg-white lg:flex lg:w-64 lg:shrink-0 lg:flex-col dark:border-zinc-800 dark:bg-zinc-900">
+        <aside className="hidden overflow-y-auto overscroll-y-contain border-l border-zinc-200 bg-white lg:flex lg:w-64 lg:shrink-0 lg:flex-col dark:border-zinc-800 dark:bg-zinc-900">
           <PosterRightSidebar readOnly={readOnly} onOpenEdit3D={(id) => setThreeTextModal({ editId: id })} />
         </aside>
       </div>

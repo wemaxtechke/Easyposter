@@ -122,7 +122,7 @@ export function ThreeTextModal({
   }, [undo, redo]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-zinc-900">
+    <div className="fixed inset-0 z-50 flex flex-col overscroll-none bg-white dark:bg-zinc-900">
       {/* Header */}
       <header className="flex h-11 shrink-0 items-center gap-1.5 border-b border-zinc-200 px-2 dark:border-zinc-800 sm:px-4">
         {/* Left sidebar toggle — mobile only */}
@@ -184,7 +184,7 @@ export function ThreeTextModal({
         {/* Left sidebar — drawer on mobile, inline on desktop */}
         <aside
           className={[
-            'flex flex-col overflow-y-auto border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900',
+            'flex flex-col overflow-y-auto overscroll-y-contain border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900',
             'fixed inset-y-0 left-0 z-40 w-64 transition-transform duration-300 ease-in-out',
             'lg:relative lg:inset-y-auto lg:left-auto lg:z-auto lg:w-56 lg:shrink-0 lg:translate-x-0 lg:transform-none lg:transition-none',
             leftOpen ? 'translate-x-0' : '-translate-x-full',
@@ -201,7 +201,7 @@ export function ThreeTextModal({
         </main>
 
         {/* Right sidebar — hidden on mobile, inline on desktop */}
-        <aside className="hidden overflow-y-auto border-l border-zinc-200 bg-white lg:flex lg:w-60 lg:shrink-0 lg:flex-col dark:border-zinc-800 dark:bg-zinc-900">
+        <aside className="hidden overflow-y-auto overscroll-y-contain border-l border-zinc-200 bg-white lg:flex lg:w-60 lg:shrink-0 lg:flex-col dark:border-zinc-800 dark:bg-zinc-900">
           <RightSidebar force3dLayerUI />
         </aside>
       </div>
@@ -224,7 +224,7 @@ export function ThreeTextModal({
         </button>
 
         {mobilePropsExpanded && (
-          <div className="max-h-[50vh] overflow-y-auto border-t border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="max-h-[50vh] overflow-y-auto overscroll-y-contain border-t border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
             <RightSidebar force3dLayerUI />
           </div>
         )}

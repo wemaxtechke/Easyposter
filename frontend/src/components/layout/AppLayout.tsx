@@ -56,7 +56,7 @@ export function AppLayout() {
   }, [undo, redo]);
 
   return (
-    <div className="flex h-dvh w-full flex-col overflow-hidden bg-zinc-50 dark:bg-zinc-950">
+    <div className="flex h-dvh w-full flex-col overflow-hidden overscroll-none bg-zinc-50 dark:bg-zinc-950">
       {/* Top bar — always visible */}
       <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-zinc-200 bg-white px-2 dark:border-zinc-800 dark:bg-zinc-900">
         {/* Left sidebar toggle — mobile only */}
@@ -167,7 +167,7 @@ export function AppLayout() {
         </button>
 
         {mobilePropsExpanded && (
-          <div className="max-h-[30vh] overflow-y-auto border-t border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="max-h-[30vh] overflow-y-auto overscroll-y-contain border-t border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
             <RightSidebar />
           </div>
         )}

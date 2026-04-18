@@ -161,7 +161,7 @@ export function PosterAiChatPanel({ open, onClose }: PosterAiChatPanelProps) {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-3">
         {messages.length === 0 && (
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
             Ask me to edit your poster. For example: &quot;Make the title larger&quot;, &quot;Change the headline to blue&quot;. I can move, resize, and style text, images, and shapes. For 3D text I can only adjust position and size.

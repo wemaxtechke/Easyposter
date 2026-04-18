@@ -38,7 +38,7 @@ export function MobilePropertyBar({ readOnly = false, onOpenEdit3D }: MobileProp
       {/* Expandable panel with the full right sidebar content */}
       {expanded && (
         <div
-          className="max-h-[45vh] overflow-y-auto border-t border-zinc-700 bg-white dark:bg-zinc-900"
+          className="max-h-[45vh] overflow-y-auto overscroll-y-contain border-t border-zinc-700 bg-white dark:bg-zinc-900"
         >
           <PosterRightSidebar readOnly={readOnly} onOpenEdit3D={onOpenEdit3D} />
         </div>
