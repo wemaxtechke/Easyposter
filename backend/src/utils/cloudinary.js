@@ -1,16 +1,32 @@
 import path from 'path';
 import {
   cloudinary,
+  CLOUDINARY_UPLOAD_TIMEOUT_MS,
   TEXTURE_FOLDER,
   FONT_FOLDER,
   POSTER_TEMPLATE_FOLDER,
   CUSTOM_ELEMENTS_FOLDER,
   POSTER_PROJECT_FOLDER,
+  USER_POSTER_IMAGE_FOLDER,
 } from '../config/cloudinary.js';
+
+const uploadOpts = { timeout: CLOUDINARY_UPLOAD_TIMEOUT_MS };
+
+/** Stream raw bytes to Cloudinary (avoids huge data: URIs that slow uploads and trigger 499 timeouts). */
+function uploadBufferAsStream(buffer, options) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream({ ...uploadOpts, ...options }, (err, result) => {
+      if (err) reject(err);
+      else resolve(result);
+    });
+    stream.end(buffer);
+  });
+}
 
 export async function uploadToCloudinary(buffer, mimetype) {
   const dataUri = `data:${mimetype || 'application/octet-stream'};base64,${buffer.toString('base64')}`;
   return cloudinary.uploader.upload(dataUri, {
+    ...uploadOpts,
     folder: TEXTURE_FOLDER,
     resource_type: 'auto',
     use_filename: true,
@@ -22,6 +38,7 @@ export async function uploadToCloudinary(buffer, mimetype) {
 export async function uploadPosterTemplateImage(buffer, mimetype) {
   const dataUri = `data:${mimetype || 'image/png'};base64,${buffer.toString('base64')}`;
   return cloudinary.uploader.upload(dataUri, {
+    ...uploadOpts,
     folder: POSTER_TEMPLATE_FOLDER,
     resource_type: 'image',
     use_filename: false,
@@ -33,7 +50,19 @@ export async function uploadPosterTemplateImage(buffer, mimetype) {
 export async function uploadPosterProjectImage(buffer, mimetype) {
   const dataUri = `data:${mimetype || 'image/png'};base64,${buffer.toString('base64')}`;
   return cloudinary.uploader.upload(dataUri, {
+    ...uploadOpts,
     folder: POSTER_PROJECT_FOLDER,
+    resource_type: 'image',
+    use_filename: false,
+    unique_filename: true,
+  });
+}
+
+/** Logged-in user's reusable poster image library (multipart uploads → HTTPS). */
+export async function uploadUserPosterLibraryImage(buffer, mimetype, userId) {
+  const safeId = String(userId || 'unknown').replace(/[^a-f0-9]/gi, '');
+  return uploadBufferAsStream(buffer, {
+    folder: `${USER_POSTER_IMAGE_FOLDER}/${safeId || 'user'}`,
     resource_type: 'image',
     use_filename: false,
     unique_filename: true,
@@ -44,6 +73,7 @@ export async function uploadPosterProjectImage(buffer, mimetype) {
 export async function uploadCustomElement(buffer, mimetype) {
   const dataUri = `data:${mimetype || 'image/png'};base64,${buffer.toString('base64')}`;
   return cloudinary.uploader.upload(dataUri, {
+    ...uploadOpts,
     folder: CUSTOM_ELEMENTS_FOLDER,
     resource_type: 'image',
     use_filename: true,
@@ -57,6 +87,7 @@ export async function uploadFontToCloudinary(buffer, originalname) {
   const mime = safeExt === '.otf' ? 'font/otf' : 'font/ttf';
   const dataUri = `data:${mime};base64,${buffer.toString('base64')}`;
   return cloudinary.uploader.upload(dataUri, {
+    ...uploadOpts,
     folder: FONT_FOLDER,
     resource_type: 'raw',
     use_filename: true,

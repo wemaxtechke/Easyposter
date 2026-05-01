@@ -26,6 +26,11 @@ import customElementRoutes from './customElementRoutes.js';
 import { magicLayersFromPoster } from '../controllers/magicLayersController.js';
 import { removeBg } from '../controllers/removeBgController.js';
 import { recreateDesign } from '../controllers/recreateDesignController.js';
+import {
+  listUserPosterImages,
+  uploadUserPosterImageHandler,
+  deleteUserPosterImage,
+} from '../controllers/userPosterImageController.js';
 import { upload } from '../utils/upload.js';
 
 const router = Router();
@@ -49,6 +54,9 @@ router.get('/my-poster-projects', authenticateToken, listMySavedPosterProjects);
 router.post('/my-poster-projects', authenticateToken, createMySavedPosterProject);
 router.delete('/my-poster-projects/:id', authenticateToken, deleteMySavedPosterProject);
 router.patch('/my-poster-projects/:id', authenticateToken, updateMySavedPosterProject);
+router.get('/user-poster-images', authenticateToken, listUserPosterImages);
+router.post('/user-poster-images', authenticateToken, ...uploadUserPosterImageHandler);
+router.delete('/user-poster-images/:id', authenticateToken, deleteUserPosterImage);
 router.get('/textures', getTextures);
 router.post('/textures/upload', authenticateToken, requireAdmin, ...uploadTextures);
 router.delete('/textures/:id', authenticateToken, requireAdmin, deleteTexture);

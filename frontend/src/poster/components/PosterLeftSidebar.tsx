@@ -5,10 +5,10 @@ import { usePosterStore } from '../store/posterStore';
 import { useAuthStore } from '../../auth/authStore';
 import { getFabricCanvasRef } from '../canvasRef';
 import { posterShapePresetToElement } from '../posterShapePresets';
-import { removeBackgroundFromFilePreservingDisplay } from '../services/removeBackgroundApi';
 import { recreateDesignFromImage } from '../services/recreateDesignApi';
 import { PosterShapesModal } from './PosterShapesModal';
 import { CustomElementsModal } from './CustomElementsModal';
+import { PosterImageLibraryModal } from './PosterImageLibraryModal';
 import type { PosterElement, PosterImageElement, PosterTextElement, PosterShapeElement } from '../types';
 
 /** Payload for `addElement` when creating an image layer (union `Omit<PosterElement,…>` rejects `src` in literals). */
@@ -88,12 +88,10 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
   const reorderLayersFrontToBack = usePosterStore((s) => s.reorderLayersFrontToBack);
   const updateElement = usePosterStore((s) => s.updateElement);
   const isAdmin = useAuthStore((s) => s.isAdmin());
-  const imageInputRef = useRef<HTMLInputElement>(null);
   const [shapesModalOpen, setShapesModalOpen] = useState(false);
   const [customElementsModalOpen, setCustomElementsModalOpen] = useState(false);
+  const [imageLibraryOpen, setImageLibraryOpen] = useState(false);
   const [removeBgOnUpload, setRemoveBgOnUpload] = useState(false);
-  const [imageUploadBusy, setImageUploadBusy] = useState(false);
-  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const recreateInputRef = useRef<HTMLInputElement>(null);
   const [recreateStatus, setRecreateStatus] = useState<string | null>(null);
   const [layerDragFromIndex, setLayerDragFromIndex] = useState<number | null>(null);
@@ -192,50 +190,6 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
     opacity: 1,
   });
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const input = e.target;
-    setImageUploadError(null);
-
-    if (removeBgOnUpload) {
-      setImageUploadBusy(true);
-      try {
-        const { src, scaleX, scaleY } = await removeBackgroundFromFilePreservingDisplay(file);
-        addElement({
-          ...newImageDefaults(),
-          src,
-          scaleX,
-          scaleY,
-        } as NewPosterImagePayload);
-      } catch (err) {
-        setImageUploadError(err instanceof Error ? err.message : 'Background removal failed.');
-      } finally {
-        setImageUploadBusy(false);
-        input.value = '';
-      }
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result;
-      if (typeof dataUrl !== 'string') return;
-      addElement({
-        ...newImageDefaults(),
-        src: dataUrl,
-        scaleX: 1,
-        scaleY: 1,
-      } as NewPosterImagePayload);
-    };
-    reader.onerror = () => {
-      console.error('Failed to read image file');
-      setImageUploadError('Could not read image file.');
-    };
-    reader.readAsDataURL(file);
-    input.value = '';
-  };
-
   return (
     <div className="flex flex-col gap-4 p-4">
       <div>
@@ -323,6 +277,20 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
         open={shapesModalOpen}
         onClose={() => setShapesModalOpen(false)}
         onPick={(id) => addElement(posterShapePresetToElement(id) as Omit<PosterShapeElement, 'id' | 'zIndex'>)}
+      />
+
+      <PosterImageLibraryModal
+        open={imageLibraryOpen}
+        onClose={() => setImageLibraryOpen(false)}
+        removeBgOnPick={removeBgOnUpload}
+        onPick={({ src, scaleX, scaleY }) => {
+          addElement({
+            ...newImageDefaults(),
+            src,
+            scaleX,
+            scaleY,
+          } as NewPosterImagePayload);
+        }}
       />
 
       <div>
@@ -462,34 +430,24 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
           <input
             type="checkbox"
             checked={removeBgOnUpload}
-            onChange={(e) => {
-              setRemoveBgOnUpload(e.target.checked);
-              setImageUploadError(null);
-            }}
-            disabled={readOnly || imageUploadBusy}
+            onChange={(e) => setRemoveBgOnUpload(e.target.checked)}
+            disabled={readOnly}
             className="h-4 w-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-800"
           />
-          <span className="text-xs text-zinc-700 dark:text-zinc-300">Remove background after upload</span>
+          <span className="text-xs text-zinc-700 dark:text-zinc-300">
+            Remove background when adding from library
+          </span>
         </label>
-        <input
-          ref={imageInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          disabled={imageUploadBusy}
-          onChange={handleImageUpload}
-        />
         <button
           type="button"
-          onClick={guard(() => imageInputRef.current?.click())}
-          disabled={imageUploadBusy}
-          className="w-full rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-3 py-4 text-sm text-zinc-600 hover:border-zinc-400 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
+          onClick={guard(() => setImageLibraryOpen(true))}
+          className="w-full rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-3 py-4 text-sm text-zinc-600 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
         >
-          {imageUploadBusy ? 'Removing background…' : 'Upload Image'}
+          Upload Image
         </button>
-        {imageUploadError && (
-          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{imageUploadError}</p>
-        )}
+        <p className="mt-2 text-[11px] text-zinc-400 dark:text-zinc-500">
+          Opens your cloud library: upload new images or reuse past uploads on any poster.
+        </p>
       </div>
 
       {onOpen3DModal && (
