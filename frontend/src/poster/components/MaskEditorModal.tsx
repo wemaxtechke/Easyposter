@@ -27,6 +27,10 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
     offsetX: number;
     offsetY: number;
   } | null>(null);
+  const [viewport, setViewport] = useState<{ w: number; h: number }>({
+    w: typeof window !== 'undefined' ? window.innerWidth : 1200,
+    h: typeof window !== 'undefined' ? window.innerHeight : 900,
+  });
 
   const previewSrc = target.originalSrc ?? posterRasterSrc(target);
 
@@ -54,41 +58,51 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
     target.maskScale,
   ]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [open]);
+
+  const stageW = Math.max(220, Math.min(STAGE_W, viewport.w - 40));
+  const stageH = Math.max(180, Math.min(STAGE_H, Math.floor(viewport.h * 0.42)));
+
   const shape = mask === 'none' ? 'circle' : mask;
   const hasMask = mask !== 'none';
-  const short = Math.min(STAGE_W, STAGE_H);
+  const short = Math.min(stageW, stageH);
   const baseMask = useMemo(() => {
     if (shape === 'circle') return { w: short * 0.7, h: short * 0.7 };
-    if (shape === 'ellipse') return { w: STAGE_W * 0.72, h: STAGE_H * 0.58 };
-    return { w: STAGE_W * 0.72, h: STAGE_H * 0.72 };
-  }, [shape, short]);
+    if (shape === 'ellipse') return { w: stageW * 0.72, h: stageH * 0.58 };
+    return { w: stageW * 0.72, h: stageH * 0.72 };
+  }, [shape, short, stageW, stageH]);
 
-  const maskW = Math.max(36, Math.min(STAGE_W * 0.95, baseMask.w * maskScale));
-  const maskH = Math.max(36, Math.min(STAGE_H * 0.95, baseMask.h * maskScale));
+  const maskW = Math.max(36, Math.min(stageW * 0.95, baseMask.w * maskScale));
+  const maskH = Math.max(36, Math.min(stageH * 0.95, baseMask.h * maskScale));
 
   const imgDisplaySize = useMemo(() => {
     if (!imgNaturalSize || imgNaturalSize.w < 1 || imgNaturalSize.h < 1)
-      return { w: STAGE_W * zoom, h: STAGE_H * zoom };
+      return { w: stageW * zoom, h: stageH * zoom };
     const { w: nw, h: nh } = imgNaturalSize;
-    const fitScale = Math.min(STAGE_W / nw, STAGE_H / nh);
+    const fitScale = Math.min(stageW / nw, stageH / nh);
     return {
       w: nw * fitScale * zoom,
       h: nh * fitScale * zoom,
     };
-  }, [imgNaturalSize, zoom]);
+  }, [imgNaturalSize, zoom, stageW, stageH]);
 
   // Map offset (0-1 = position within source image) to stage coords.
   // Image is centered in stage; offset 0 = left of image, 1 = right.
-  const imgLeft = STAGE_W / 2 - imgDisplaySize.w / 2;
-  const imgTop = STAGE_H / 2 - imgDisplaySize.h / 2;
+  const imgLeft = stageW / 2 - imgDisplaySize.w / 2;
+  const imgTop = stageH / 2 - imgDisplaySize.h / 2;
   const cx = imgLeft + offsetX * imgDisplaySize.w;
   const cy = imgTop + offsetY * imgDisplaySize.h;
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-xl dark:bg-zinc-900">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4">
+      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-zinc-900">
         <div className="border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
           <h2 className="text-lg font-semibold">Mask editor</h2>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
@@ -96,11 +110,11 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
           </p>
         </div>
 
-        <div className="grid gap-4 p-6 md:grid-cols-[1fr,220px]">
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-3 sm:p-6 md:grid-cols-[1fr,220px]">
           <div
             className="relative overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800"
-            style={{ width: STAGE_W, height: STAGE_H, maxWidth: '100%' }}
-            onMouseMove={(e) => {
+            style={{ width: stageW, height: stageH, maxWidth: '100%' }}
+            onPointerMove={(e) => {
               if (!dragStart) return;
               const dx = e.clientX - dragStart.x;
               const dy = e.clientY - dragStart.y;
@@ -111,8 +125,9 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
               setOffsetX(nextX);
               setOffsetY(nextY);
             }}
-            onMouseUp={() => setDragStart(null)}
-            onMouseLeave={() => setDragStart(null)}
+            onPointerUp={() => setDragStart(null)}
+            onPointerCancel={() => setDragStart(null)}
+            onPointerLeave={() => setDragStart(null)}
           >
             <img
               src={previewSrc}
@@ -148,7 +163,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                         : `${Math.round(cornerRadius * 100)}%`,
                   cursor: dragStart ? 'grabbing' : 'grab',
                 }}
-                onMouseDown={(e) => {
+                onPointerDown={(e) => {
                   e.preventDefault();
                   setDragStart({
                     x: e.clientX,
@@ -161,7 +176,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
             )}
           </div>
 
-          <div className="flex min-w-0 flex-col gap-3 overflow-hidden pr-4">
+          <div className="flex min-w-0 flex-col gap-3 overflow-hidden pr-0 md:pr-4">
             <div className="flex flex-col gap-1">
               <label className="text-xs text-zinc-600 dark:text-zinc-400">Shape</label>
               <select
@@ -229,7 +244,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-zinc-200 px-6 py-4 dark:border-zinc-700">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-200 px-4 py-3 sm:px-6 sm:py-4 dark:border-zinc-700">
           <button
             onClick={onClose}
             className="rounded-lg border border-zinc-200 px-4 py-2 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
