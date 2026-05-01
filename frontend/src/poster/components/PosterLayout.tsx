@@ -750,11 +750,12 @@ export function PosterLayout() {
         <ThreeTextModal
           mode={threeTextModal}
           onClose={() => setThreeTextModal(null)}
-          onSendToPoster={(image, config) => {
+          onSendToPoster={(image, config, userPosterImageId) => {
             addElement({
               type: '3d-text',
               image,
               config,
+              ...(userPosterImageId ? { userPosterImageId } : {}),
               left: 100,
               top: 100,
               scaleX: 1,

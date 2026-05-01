@@ -192,8 +192,10 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
     toDupe.forEach((el, i) => {
       const id = generateId();
       newIds.push(id);
+      const copy = JSON.parse(JSON.stringify(el)) as PosterElement;
+      if (copy.type === '3d-text') delete (copy as { userPosterImageId?: string }).userPosterImageId;
       newEls.push({
-        ...JSON.parse(JSON.stringify(el)),
+        ...copy,
         id,
         left: el.left + 20,
         top: el.top + 20,

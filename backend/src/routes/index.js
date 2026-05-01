@@ -29,6 +29,7 @@ import { recreateDesign } from '../controllers/recreateDesignController.js';
 import {
   listUserPosterImages,
   uploadUserPosterImageHandler,
+  replaceUserPosterImageHandler,
   deleteUserPosterImage,
 } from '../controllers/userPosterImageController.js';
 import { upload } from '../utils/upload.js';
@@ -56,6 +57,7 @@ router.delete('/my-poster-projects/:id', authenticateToken, deleteMySavedPosterP
 router.patch('/my-poster-projects/:id', authenticateToken, updateMySavedPosterProject);
 router.get('/user-poster-images', authenticateToken, listUserPosterImages);
 router.post('/user-poster-images', authenticateToken, ...uploadUserPosterImageHandler);
+router.patch('/user-poster-images/:id', authenticateToken, ...replaceUserPosterImageHandler);
 router.delete('/user-poster-images/:id', authenticateToken, deleteUserPosterImage);
 router.get('/textures', getTextures);
 router.post('/textures/upload', authenticateToken, requireAdmin, ...uploadTextures);

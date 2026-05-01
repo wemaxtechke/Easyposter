@@ -6,11 +6,22 @@ import {
   type UserPosterImage,
 } from '../services/userPosterImagesApi';
 import { removeBackgroundFromFilePreservingDisplay } from '../services/removeBackgroundApi';
+import type { Poster3DTextElement } from '../types';
 
-export interface PosterImagePickResult {
-  src: string;
-  scaleX: number;
-  scaleY: number;
+export type PosterLibraryPick =
+  | { kind: 'image'; src: string; scaleX: number; scaleY: number }
+  | {
+      kind: '3d-text';
+      src: string;
+      config: Poster3DTextElement['config'];
+      scaleX: number;
+      scaleY: number;
+      userPosterImageId: string;
+    };
+
+function isLibrary3dItem(item: UserPosterImage): boolean {
+  const c = item.poster3dConfig;
+  return c != null && typeof c === 'object' && !Array.isArray(c);
 }
 
 interface PosterImageLibraryModalProps {
@@ -18,7 +29,7 @@ interface PosterImageLibraryModalProps {
   onClose: () => void;
   /** When true, runs remove-bg on the chosen image before calling onPick. */
   removeBgOnPick: boolean;
-  onPick: (result: PosterImagePickResult) => void;
+  onPick: (result: PosterLibraryPick) => void;
 }
 
 export function PosterImageLibraryModal({
@@ -72,19 +83,42 @@ export function PosterImageLibraryModal({
     }
   };
 
-  const applyPick = async (url: string) => {
+  const applyPick = async (item: UserPosterImage) => {
     setPickBusy(true);
     setError(null);
     try {
+      const is3d = isLibrary3dItem(item);
+      const config = is3d ? (item.poster3dConfig as Poster3DTextElement['config']) : undefined;
+
       if (removeBgOnPick) {
-        const res = await fetch(url);
+        const res = await fetch(item.url);
         if (!res.ok) throw new Error('Could not load image for background removal');
         const blob = await res.blob();
         const file = new File([blob], 'library.png', { type: blob.type || 'image/png' });
         const { src, scaleX, scaleY } = await removeBackgroundFromFilePreservingDisplay(file);
-        onPick({ src, scaleX, scaleY });
+        if (is3d && config) {
+          onPick({
+            kind: '3d-text',
+            src,
+            config,
+            scaleX,
+            scaleY,
+            userPosterImageId: item.id,
+          });
+        } else {
+          onPick({ kind: 'image', src, scaleX, scaleY });
+        }
+      } else if (is3d && config) {
+        onPick({
+          kind: '3d-text',
+          src: item.url,
+          config,
+          scaleX: 1,
+          scaleY: 1,
+          userPosterImageId: item.id,
+        });
       } else {
-        onPick({ src: url, scaleX: 1, scaleY: 1 });
+        onPick({ kind: 'image', src: item.url, scaleX: 1, scaleY: 1 });
       }
       onClose();
     } catch (e) {
@@ -130,7 +164,8 @@ export function PosterImageLibraryModal({
           </h2>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             Uploads are saved to your account. Click a thumbnail to add it to the poster
-            {removeBgOnPick ? ' (background will be removed).' : '.'}
+            {removeBgOnPick ? ' (background will be removed).' : '.'} Items from 3D text open in the 3D editor when
+            edited.
           </p>
 
           <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
@@ -175,39 +210,47 @@ export function PosterImageLibraryModal({
             </p>
           ) : (
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  className="group relative flex flex-col items-center rounded-lg border border-zinc-200 bg-zinc-50 p-2 transition hover:border-amber-400 hover:bg-amber-50/50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-amber-500 dark:hover:bg-amber-950/20"
-                >
-                  <button
-                    type="button"
-                    disabled={pickBusy}
-                    onClick={() => void applyPick(item.url)}
-                    className="flex w-full flex-col items-center disabled:opacity-50"
+              {items.map((item) => {
+                const is3d = isLibrary3dItem(item);
+                return (
+                  <div
+                    key={item.id}
+                    className="group relative flex flex-col items-center rounded-lg border border-zinc-200 bg-zinc-50 p-2 transition hover:border-amber-400 hover:bg-amber-50/50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-amber-500 dark:hover:bg-amber-950/20"
                   >
-                    <div className="flex h-20 w-full max-w-[5rem] items-center justify-center overflow-hidden rounded border border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-900">
-                      <img
-                        src={item.url}
-                        alt={item.originalName || 'Uploaded image'}
-                        className="max-h-full max-w-full object-contain"
-                      />
-                    </div>
-                    <span className="mt-1.5 w-full truncate text-center text-[10px] font-medium text-zinc-700 dark:text-zinc-300">
-                      {item.originalName || 'Image'}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => void handleDelete(item.id, e)}
-                    disabled={pickBusy}
-                    className="absolute right-1 top-1 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 opacity-0 transition group-hover:opacity-100 hover:bg-red-200 disabled:opacity-30 dark:bg-red-950/50 dark:text-red-300 dark:hover:bg-red-900/50"
-                    aria-label="Remove from library"
-                  >
-                    Delete
-                  </button>
-                </div>
-              ))}
+                    <button
+                      type="button"
+                      disabled={pickBusy}
+                      onClick={() => void applyPick(item)}
+                      className="flex w-full flex-col items-center disabled:opacity-50"
+                    >
+                      <div className="relative flex h-20 w-full max-w-[5rem] items-center justify-center overflow-hidden rounded border border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-900">
+                        <img
+                          src={item.url}
+                          alt={item.originalName || 'Uploaded image'}
+                          className="max-h-full max-w-full object-contain"
+                        />
+                        {is3d && (
+                          <span className="absolute bottom-0.5 left-0.5 rounded bg-amber-600/90 px-1 py-0.5 text-[9px] font-semibold uppercase text-white">
+                            3D
+                          </span>
+                        )}
+                      </div>
+                      <span className="mt-1.5 w-full truncate text-center text-[10px] font-medium text-zinc-700 dark:text-zinc-300">
+                        {item.originalName || 'Image'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => void handleDelete(item.id, e)}
+                      disabled={pickBusy}
+                      className="absolute right-1 top-1 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 opacity-0 transition group-hover:opacity-100 hover:bg-red-200 disabled:opacity-30 dark:bg-red-950/50 dark:text-red-300 dark:hover:bg-red-900/50"
+                      aria-label="Remove from library"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

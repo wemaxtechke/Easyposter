@@ -9,10 +9,17 @@ import { recreateDesignFromImage } from '../services/recreateDesignApi';
 import { PosterShapesModal } from './PosterShapesModal';
 import { CustomElementsModal } from './CustomElementsModal';
 import { PosterImageLibraryModal } from './PosterImageLibraryModal';
-import type { PosterElement, PosterImageElement, PosterTextElement, PosterShapeElement } from '../types';
+import type {
+  PosterElement,
+  PosterImageElement,
+  PosterTextElement,
+  PosterShapeElement,
+  Poster3DTextElement,
+} from '../types';
 
 /** Payload for `addElement` when creating an image layer (union `Omit<PosterElement,…>` rejects `src` in literals). */
 type NewPosterImagePayload = Omit<PosterImageElement, 'id' | 'zIndex'>;
+type NewPoster3DTextPayload = Omit<Poster3DTextElement, 'id' | 'zIndex'>;
 
 function reorderIndexMove<T>(arr: T[], fromIndex: number, toIndex: number): T[] {
   if (fromIndex === toIndex) return [...arr];
@@ -283,13 +290,28 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
         open={imageLibraryOpen}
         onClose={() => setImageLibraryOpen(false)}
         removeBgOnPick={removeBgOnUpload}
-        onPick={({ src, scaleX, scaleY }) => {
-          addElement({
-            ...newImageDefaults(),
-            src,
-            scaleX,
-            scaleY,
-          } as NewPosterImagePayload);
+        onPick={(pick) => {
+          if (pick.kind === '3d-text') {
+            addElement({
+              type: '3d-text',
+              image: pick.src,
+              config: pick.config,
+              userPosterImageId: pick.userPosterImageId,
+              left: 100,
+              top: 100,
+              scaleX: pick.scaleX,
+              scaleY: pick.scaleY,
+              angle: 0,
+              opacity: 1,
+            } as NewPoster3DTextPayload);
+          } else {
+            addElement({
+              ...newImageDefaults(),
+              src: pick.src,
+              scaleX: pick.scaleX,
+              scaleY: pick.scaleY,
+            } as NewPosterImagePayload);
+          }
         }}
       />
 

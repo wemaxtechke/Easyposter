@@ -4,7 +4,12 @@ import { usePosterStore } from '../store/posterStore';
 import { Canvas } from '../../components/canvas/Canvas';
 import { RightSidebar } from '../../components/sidebar/RightSidebar';
 import { LeftSidebar } from '../../components/sidebar/LeftSidebar';
+import { getToken } from '../../lib/api';
 import { serializeEditorState } from '../utils/serializeEditorState';
+import {
+  replaceUserPosterImageFromDataUrl,
+  uploadRasterToUserLibrary,
+} from '../services/userPosterImagesApi';
 import type { Poster3DTextElement } from '../types';
 
 interface ThreeTextModalProps {
@@ -79,11 +84,47 @@ export function ThreeTextModal({
         return;
       }
       const config = serializeEditorState();
+      const filename = `3d-text-${Date.now()}.png`;
+
       if (mode === 'add') {
-        onSendToPoster(dataUrl, config);
+        const r = await uploadRasterToUserLibrary(dataUrl, filename, config);
+        onSendToPoster(r.url, config, r.userPosterImageId);
       } else {
-        updateElement(mode.editId, { image: dataUrl, config });
-        onEditComplete(dataUrl, config);
+        const editId = mode.editId;
+        const el = usePosterStore.getState().elements.find((e) => e.id === editId);
+        const existingLibId =
+          el && el.type === '3d-text' ? el.userPosterImageId : undefined;
+
+        if (!getToken()) {
+          updateElement(editId, { image: dataUrl, config });
+          onEditComplete(dataUrl, config);
+          return;
+        }
+
+        let image: string;
+        let libId: string | undefined;
+
+        if (existingLibId) {
+          try {
+            image = await replaceUserPosterImageFromDataUrl(existingLibId, dataUrl, filename, config);
+            libId = existingLibId;
+          } catch {
+            const r = await uploadRasterToUserLibrary(dataUrl, filename, config);
+            image = r.url;
+            libId = r.userPosterImageId;
+          }
+        } else {
+          const r = await uploadRasterToUserLibrary(dataUrl, filename, config);
+          image = r.url;
+          libId = r.userPosterImageId;
+        }
+
+        const updates: Partial<Poster3DTextElement> = { image, config };
+        if (libId) updates.userPosterImageId = libId;
+        else updates.userPosterImageId = undefined;
+
+        updateElement(editId, updates);
+        onEditComplete(image, config);
       }
     } catch {
       setSendError('Failed to send 3D text to poster. Please try again.');

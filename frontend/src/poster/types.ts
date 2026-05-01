@@ -212,8 +212,11 @@ export interface PosterTextElement extends PosterElementBase {
 
 export interface Poster3DTextElement extends PosterElementBase, ImageAdjustments, PosterRasterStyleFields {
   type: '3d-text';
-  image: string; // data URL or blob URL
+  /** Raster shown on poster: HTTPS (library / cloud), data URL, or blob URL. */
+  image: string;
   config: Partial<EditorState>; // Full 3D editor config for re-editing
+  /** When set, re-exports PATCH this row in `/api/user-poster-images` instead of creating a duplicate. */
+  userPosterImageId?: string;
 }
 
 export interface GradientStop {
