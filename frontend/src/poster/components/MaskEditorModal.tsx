@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PosterElement, PosterImageElement, Poster3DTextElement, PosterImageMask } from '../types';
 import { posterRasterSrc } from '../posterRaster';
 import { bakeMaskedImage } from '../utils/bakeMaskedImage';
@@ -21,12 +21,11 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
   const [zoom, setZoom] = useState(target.maskImageScale ?? 1);
   const [maskScale, setMaskScale] = useState(target.maskScale ?? 1);
   const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number } | null>(null);
-  const [dragStart, setDragStart] = useState<{
-    x: number;
-    y: number;
-    offsetX: number;
-    offsetY: number;
-  } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ pointerId: number; grabDx: number; grabDy: number } | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const pendingOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const [viewport, setViewport] = useState<{ w: number; h: number }>({
     w: typeof window !== 'undefined' ? window.innerWidth : 1200,
     h: typeof window !== 'undefined' ? window.innerHeight : 900,
@@ -43,7 +42,13 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
     setZoom(target.maskImageScale ?? 1);
     setMaskScale(target.maskScale ?? 1);
     setImgNaturalSize(null);
-    setDragStart(null);
+    setIsDragging(false);
+    dragRef.current = null;
+    pendingOffsetRef.current = null;
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
   }, [
     open,
     target.id,
@@ -57,6 +62,12 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
     target.maskImageScale,
     target.maskScale,
   ]);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -115,19 +126,45 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
             className="relative overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800"
             style={{ width: stageW, height: stageH, maxWidth: '100%' }}
             onPointerMove={(e) => {
-              if (!dragStart) return;
-              const dx = e.clientX - dragStart.x;
-              const dy = e.clientY - dragStart.y;
-              const pxToOffsetX = imgDisplaySize.w > 0 ? 1 / imgDisplaySize.w : 0;
-              const pxToOffsetY = imgDisplaySize.h > 0 ? 1 / imgDisplaySize.h : 0;
-              const nextX = Math.max(0, Math.min(1, dragStart.offsetX + dx * pxToOffsetX));
-              const nextY = Math.max(0, Math.min(1, dragStart.offsetY + dy * pxToOffsetY));
-              setOffsetX(nextX);
-              setOffsetY(nextY);
+              const drag = dragRef.current;
+              const stageEl = stageRef.current;
+              if (!drag || !stageEl || e.pointerId !== drag.pointerId) return;
+              const rect = stageEl.getBoundingClientRect();
+              const centerX = e.clientX - rect.left - drag.grabDx;
+              const centerY = e.clientY - rect.top - drag.grabDy;
+              const nextX =
+                imgDisplaySize.w > 0 ? Math.max(0, Math.min(1, (centerX - imgLeft) / imgDisplaySize.w)) : 0.5;
+              const nextY =
+                imgDisplaySize.h > 0 ? Math.max(0, Math.min(1, (centerY - imgTop) / imgDisplaySize.h)) : 0.5;
+              pendingOffsetRef.current = { x: nextX, y: nextY };
+              if (rafRef.current !== null) return;
+              rafRef.current = requestAnimationFrame(() => {
+                rafRef.current = null;
+                const pending = pendingOffsetRef.current;
+                if (!pending) return;
+                setOffsetX(pending.x);
+                setOffsetY(pending.y);
+              });
             }}
-            onPointerUp={() => setDragStart(null)}
-            onPointerCancel={() => setDragStart(null)}
-            onPointerLeave={() => setDragStart(null)}
+            onPointerUp={(e) => {
+              const drag = dragRef.current;
+              if (!drag || e.pointerId !== drag.pointerId) return;
+              if (stageRef.current?.hasPointerCapture(e.pointerId)) {
+                stageRef.current.releasePointerCapture(e.pointerId);
+              }
+              dragRef.current = null;
+              setIsDragging(false);
+            }}
+            onPointerCancel={(e) => {
+              const drag = dragRef.current;
+              if (!drag || e.pointerId !== drag.pointerId) return;
+              if (stageRef.current?.hasPointerCapture(e.pointerId)) {
+                stageRef.current.releasePointerCapture(e.pointerId);
+              }
+              dragRef.current = null;
+              setIsDragging(false);
+            }}
+            ref={stageRef}
           >
             <img
               src={previewSrc}
@@ -161,16 +198,23 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                       : shape === 'ellipse'
                         ? '50%'
                         : `${Math.round(cornerRadius * 100)}%`,
-                  cursor: dragStart ? 'grabbing' : 'grab',
+                  cursor: isDragging ? 'grabbing' : 'grab',
+                  touchAction: 'none',
                 }}
                 onPointerDown={(e) => {
                   e.preventDefault();
-                  setDragStart({
-                    x: e.clientX,
-                    y: e.clientY,
-                    offsetX,
-                    offsetY,
-                  });
+                  const stageEl = stageRef.current;
+                  if (!stageEl) return;
+                  const rect = stageEl.getBoundingClientRect();
+                  const centerX = cx;
+                  const centerY = cy;
+                  dragRef.current = {
+                    pointerId: e.pointerId,
+                    grabDx: e.clientX - rect.left - centerX,
+                    grabDy: e.clientY - rect.top - centerY,
+                  };
+                  stageEl.setPointerCapture(e.pointerId);
+                  setIsDragging(true);
                 }}
               />
             )}
@@ -262,6 +306,8 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                   zoom,
                   maskScale,
                   maskCornerRadius: cornerRadius,
+                  stageW,
+                  stageH,
                 });
                 const baseUrl = posterRasterSrc(target);
                 const updates: Partial<PosterElement> =

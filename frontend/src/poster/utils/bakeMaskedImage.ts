@@ -10,6 +10,12 @@ export interface BakeMaskParams {
   maskCornerRadius?: number;
   /** Output scale factor (e.g. 2 for retina). */
   resolutionScale?: number;
+  /**
+   * Preview stage size in px — must match `MaskEditorModal` (`stageW` / `stageH`) or crop drifts on small screens.
+   * Defaults match the desktop modal stage.
+   */
+  stageW?: number;
+  stageH?: number;
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -37,7 +43,12 @@ export async function bakeMaskedImage(params: BakeMaskParams): Promise<string> {
     maskScale,
     maskCornerRadius = 0.18,
     resolutionScale = 2,
+    stageW: stageWIn = 540,
+    stageH: stageHIn = 340,
   } = params;
+
+  const stageW = Math.max(1, stageWIn);
+  const stageH = Math.max(1, stageHIn);
 
   if (mask === 'none') {
     return src;
@@ -47,25 +58,23 @@ export async function bakeMaskedImage(params: BakeMaskParams): Promise<string> {
   const nw = img.naturalWidth || img.width || 1;
   const nh = img.naturalHeight || img.height || 1;
 
-  const STAGE_W = 540;
-  const STAGE_H = 340;
-  const fitScale = Math.min(STAGE_W / nw, STAGE_H / nh);
+  const fitScale = Math.min(stageW / nw, stageH / nh);
   const imgDisplayW = nw * fitScale * zoom;
   const imgDisplayH = nh * fitScale * zoom;
 
-  const short = Math.min(STAGE_W, STAGE_H);
+  const short = Math.min(stageW, stageH);
   let baseMaskW: number;
   let baseMaskH: number;
   if (mask === 'circle') {
     baseMaskW = baseMaskH = short * 0.7;
   } else if (mask === 'ellipse') {
-    baseMaskW = STAGE_W * 0.72;
-    baseMaskH = STAGE_H * 0.58;
+    baseMaskW = stageW * 0.72;
+    baseMaskH = stageH * 0.58;
   } else {
-    baseMaskW = baseMaskH = STAGE_W * 0.72;
+    baseMaskW = baseMaskH = stageW * 0.72;
   }
-  const maskW = Math.max(36, Math.min(STAGE_W * 0.95, baseMaskW * maskScale));
-  const maskH = Math.max(36, Math.min(STAGE_H * 0.95, baseMaskH * maskScale));
+  const maskW = Math.max(36, Math.min(stageW * 0.95, baseMaskW * maskScale));
+  const maskH = Math.max(36, Math.min(stageH * 0.95, baseMaskH * maskScale));
 
   const cropW = nw * (maskW / imgDisplayW);
   const cropH = nh * (maskH / imgDisplayH);
