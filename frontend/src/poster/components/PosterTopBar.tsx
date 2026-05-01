@@ -139,6 +139,10 @@ export function PosterTopBar({
       reader.onload = () => {
         try {
           const project = JSON.parse(reader.result as string);
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.removeItem('poster_edit_my_project_id');
+            sessionStorage.removeItem('poster_edit_my_project_updated_at');
+          }
           loadProject(project);
         } catch (err) {
           console.error('Failed to load project', err);

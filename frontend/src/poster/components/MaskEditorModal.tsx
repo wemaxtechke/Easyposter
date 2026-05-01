@@ -18,6 +18,15 @@ function preserveUserPosterImageLink(
 
 const STAGE_W = 540;
 const STAGE_H = 340;
+/** Match Tailwind `max-w-5xl` so stage + sidebar + padding math stays in sync */
+const MODAL_MAX_INNER_W = 1024;
+const MASK_SIDEBAR_COL_PX = 220;
+/** Matches Tailwind `gap-2` between preview and controls */
+const MASK_GRID_GAP_PX = 8;
+/** `p-3 sm:p-6` horizontal padding on the grid row */
+const MASK_GRID_PAD_X = 48;
+/** Tailwind `md` — two-column grid only at this width and up */
+const MASK_MD_MIN_W = 768;
 
 export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorModalProps) {
   const [mask, setMask] = useState<PosterImageMask>(target.mask ?? 'circle');
@@ -82,7 +91,17 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
     return () => window.removeEventListener('resize', onResize);
   }, [open]);
 
-  const stageW = Math.max(220, Math.min(STAGE_W, viewport.w - 40));
+  const modalApproxW = Math.min(MODAL_MAX_INNER_W, viewport.w - 16);
+  const gridContentW = Math.max(280, modalApproxW - MASK_GRID_PAD_X);
+  const maxStageForTwoCol = Math.max(220, gridContentW - MASK_SIDEBAR_COL_PX - MASK_GRID_GAP_PX);
+  const stageW = Math.max(
+    220,
+    Math.min(
+      STAGE_W,
+      viewport.w - 40,
+      viewport.w >= MASK_MD_MIN_W ? maxStageForTwoCol : Number.POSITIVE_INFINITY
+    )
+  );
   const stageH = Math.max(180, Math.min(STAGE_H, Math.floor(viewport.h * 0.42)));
 
   const shape = mask === 'none' ? 'circle' : mask;
@@ -119,7 +138,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4">
-      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-zinc-900">
+      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-zinc-900">
         <div className="border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
           <h2 className="text-lg font-semibold">Mask editor</h2>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
@@ -127,9 +146,9 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
           </p>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-3 sm:p-6 md:grid-cols-[1fr,220px]">
+        <div className="grid min-h-0 min-w-0 flex-1 gap-2 overflow-y-auto overflow-x-hidden p-3 sm:p-6 md:grid-cols-[auto,220px] md:justify-items-start md:justify-center">
           <div
-            className="relative overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800"
+            className="relative shrink-0 justify-self-start overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800"
             style={{ width: stageW, height: stageH, maxWidth: '100%' }}
             onPointerMove={(e) => {
               const drag = dragRef.current;
@@ -226,7 +245,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
             )}
           </div>
 
-          <div className="flex min-w-0 flex-col gap-3 overflow-hidden pr-0 md:pr-4">
+          <div className="flex min-w-0 flex-col gap-3 overflow-hidden md:min-w-[220px] md:max-w-[220px] md:shrink-0">
             <div className="flex flex-col gap-1">
               <label className="text-xs text-zinc-600 dark:text-zinc-400">Shape</label>
               <select

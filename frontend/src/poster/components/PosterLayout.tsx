@@ -9,6 +9,7 @@ import { CanvasSizeModal } from './CanvasSizeModal';
 import { PosterAiWizardModal } from './PosterAiWizardModal';
 import { PosterAiChatPanel } from './PosterAiChatPanel';
 import { MobilePropertyBar } from './MobilePropertyBar';
+import { PosterMobileScaleFader } from './PosterMobileScaleFader';
 import { TemplateAuthoringBanner } from './TemplateAuthoringBanner';
 import { TemplateElementLabelModal } from './TemplateElementLabelModal';
 import { SavePosterTemplateModal } from './SavePosterTemplateModal';
@@ -146,32 +147,26 @@ export function PosterLayout() {
     }
 
     // Skip restore when coming from template fill — project already loaded in store.
-    // Use timestamp + delayed clear so both React Strict Mode effect runs skip (double-mount in dev).
+    // Short-lived flag so Strict Mode double-mount still skips cloud/local restore; do not tie this to a
+    // time window — that dropped poster_edit_my_project_id after a few seconds and broke My Stuff updates.
     const skipRaw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('poster_skip_restore') : null;
     if (skipRaw) {
-      const t = parseInt(skipRaw, 10);
-      if (!isNaN(t) && Date.now() - t < 5000) {
-        // Opening from a preloaded flow (e.g. My stuff): avoid immediate false-dirty.
-        const editId =
-          typeof sessionStorage !== 'undefined'
-            ? sessionStorage.getItem('poster_edit_my_project_id')
-            : null;
-        if (editId) {
-          lastCloudSaveRef.current = JSON.stringify(usePosterStore.getState().getProject());
-          setCloudDirty(false);
-        }
-        setTimeout(() => sessionStorage.removeItem('poster_skip_restore'), 500);
-        setPosterHydrating(false);
-        return;
+      // Opening from a preloaded flow (e.g. My stuff): avoid immediate false-dirty.
+      const editId =
+        typeof sessionStorage !== 'undefined'
+          ? sessionStorage.getItem('poster_edit_my_project_id')
+          : null;
+      if (editId) {
+        lastCloudSaveRef.current = JSON.stringify(usePosterStore.getState().getProject());
+        setCloudDirty(false);
       }
-      sessionStorage.removeItem('poster_skip_restore');
+      setTimeout(() => sessionStorage.removeItem('poster_skip_restore'), 500);
+      setPosterHydrating(false);
+      return;
     }
 
-    // Not opening from "My stuff" preloaded flow: clear stale edit target id.
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.removeItem('poster_edit_my_project_id');
-      sessionStorage.removeItem('poster_edit_my_project_updated_at');
-    }
+    // Keep poster_edit_my_project_id across PosterLayout remounts (e.g. /poster ↔ /poster/my) so Save
+    // still PATCHes the same My Stuff row. Cleared only on New project, load file, or template gallery edit.
 
     const shouldRestoreAutosave =
       typeof sessionStorage !== 'undefined' &&
@@ -231,6 +226,10 @@ export function PosterLayout() {
     const edit = (location.state as { editTemplate?: { id: string; name: string; category: PosterTemplateCategory; description?: string; fields?: PosterTemplateFieldBinding[]; project: unknown } })?.editTemplate;
     if (!edit) return;
     lastCloudSaveRef.current = null; // Editing template, not user's cloud project
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem('poster_edit_my_project_id');
+      sessionStorage.removeItem('poster_edit_my_project_updated_at');
+    }
     loadProject(edit.project, { fieldBindings: edit.fields ?? [] });
     const isCloudEdit =
       edit.id.startsWith('cloud_') || /^[a-f0-9]{24}$/i.test(edit.id);
@@ -362,7 +361,7 @@ export function PosterLayout() {
           ? sessionStorage.getItem('poster_edit_my_project_updated_at')
           : null;
       if (editId) {
-        let updated;
+        let updated: Awaited<ReturnType<typeof updateMyPosterProject>> | undefined;
         if (baselineBeforeSave) {
           const base = JSON.parse(baselineBeforeSave) as typeof processed;
           const patch = computePosterProjectPatch(base, processed);
@@ -385,6 +384,14 @@ export function PosterLayout() {
                 ifUnmodifiedSince: editUpdatedAt || undefined,
               });
             }
+          } else {
+            // Patch diff empty (e.g. rare stringify edge) but user still saved — refresh snapshot + thumbnail.
+            updated = await updateMyPosterProject({
+              id: editId,
+              project: processed,
+              thumbnail: thumb,
+              ifUnmodifiedSince: editUpdatedAt || undefined,
+            });
           }
         } else {
           // No baseline means we cannot build a trustworthy diff. Send full project so
@@ -746,6 +753,7 @@ export function PosterLayout() {
         </aside>
       </div>
 
+      <PosterMobileScaleFader readOnly={readOnly} />
       {/* Mobile bottom property bar — full right sidebar in a bottom sheet */}
       <MobilePropertyBar readOnly={readOnly} onOpenEdit3D={(id) => setThreeTextModal({ editId: id })} />
       {threeTextModal && (
