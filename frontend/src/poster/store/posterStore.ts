@@ -193,7 +193,9 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
       const id = generateId();
       newIds.push(id);
       const copy = JSON.parse(JSON.stringify(el)) as PosterElement;
-      if (copy.type === '3d-text') delete (copy as { userPosterImageId?: string }).userPosterImageId;
+      if (copy.type === '3d-text' || copy.type === 'image') {
+        delete (copy as { userPosterImageId?: string }).userPosterImageId;
+      }
       newEls.push({
         ...copy,
         id,

@@ -17,6 +17,7 @@ import { useAuthStore } from '../../auth/authStore';
 import { getFabricCanvasRef } from '../canvasRef';
 import { loadPosterProjectFromStorage, savePosterProjectToStorage } from '../posterProjectStorage';
 import { loadPosterProjectFromCloud, savePosterProjectToCloud, savePosterProjectToMyCloud, updateMyPosterProject } from '../services/posterProjectsApi';
+import { syncLinkedUserPosterImagesAfterCloudSave } from '../services/userPosterImagesApi';
 import { resolveBlobUrlsInProject, applyProcessedProjectUrlsToStore } from '../utils/resolveBlobUrlsInProject';
 import { projectHasBlobImageUrls, warnIfPosterHasBlobRefs } from '../userTemplatesStorage';
 import { computePosterProjectPatch, patchIsEmpty } from '../utils/projectPatch';
@@ -346,6 +347,7 @@ export function PosterLayout() {
         : project;
       const processed = await savePosterProjectToCloud(toSave);
       applyProcessedProjectUrlsToStore(processed);
+      void syncLinkedUserPosterImagesAfterCloudSave(processed).catch(() => {});
       setCloudDirty(false);
 
       // Also save a private snapshot to "My stuff" (per-user library)

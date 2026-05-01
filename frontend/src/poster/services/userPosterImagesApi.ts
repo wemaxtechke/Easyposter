@@ -1,5 +1,6 @@
 import { apiFetch, getToken } from '../../lib/api';
 import type { EditorState } from '../../core/types';
+import type { PosterProject } from '../types';
 
 export type Poster3dLibraryConfig = Partial<EditorState>;
 
@@ -133,4 +134,41 @@ export async function preferCloudUrlForPosterRaster(
 ): Promise<string> {
   const r = await uploadRasterToUserLibrary(dataUrl, filename);
   return r.url;
+}
+
+/**
+ * After a successful cloud poster save, update linked `/api/user-poster-images` rows so
+ * "Your images" shows the same pixels as the poster (masked/edited layers).
+ */
+export async function syncLinkedUserPosterImagesAfterCloudSave(project: PosterProject): Promise<void> {
+  if (!getToken()) return;
+
+  const seen = new Set<string>();
+  for (const el of project.elements) {
+    if (el.type === 'image') {
+      const id = el.userPosterImageId;
+      if (!id || seen.has(id)) continue;
+      const src = el.src;
+      if (typeof src !== 'string' || src.startsWith('blob:')) continue;
+      seen.add(id);
+      try {
+        const file = await dataUrlToFile(src, 'poster-sync.png');
+        await replaceUserPosterImage(id, file);
+      } catch {
+        /* best-effort */
+      }
+    } else if (el.type === '3d-text') {
+      const id = el.userPosterImageId;
+      if (!id || seen.has(id)) continue;
+      const src = el.image;
+      if (typeof src !== 'string' || src.startsWith('blob:')) continue;
+      seen.add(id);
+      try {
+        const file = await dataUrlToFile(src, 'poster-sync-3d.png');
+        await replaceUserPosterImage(id, file, { poster3dConfig: el.config });
+      } catch {
+        /* best-effort */
+      }
+    }
+  }
 }

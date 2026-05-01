@@ -310,6 +310,7 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
               src: pick.src,
               scaleX: pick.scaleX,
               scaleY: pick.scaleY,
+              userPosterImageId: pick.userPosterImageId,
             } as NewPosterImagePayload);
           }
         }}

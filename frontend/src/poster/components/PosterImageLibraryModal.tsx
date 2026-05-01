@@ -9,7 +9,7 @@ import { removeBackgroundFromFilePreservingDisplay } from '../services/removeBac
 import type { Poster3DTextElement } from '../types';
 
 export type PosterLibraryPick =
-  | { kind: 'image'; src: string; scaleX: number; scaleY: number }
+  | { kind: 'image'; src: string; scaleX: number; scaleY: number; userPosterImageId: string }
   | {
       kind: '3d-text';
       src: string;
@@ -106,7 +106,7 @@ export function PosterImageLibraryModal({
             userPosterImageId: item.id,
           });
         } else {
-          onPick({ kind: 'image', src, scaleX, scaleY });
+          onPick({ kind: 'image', src, scaleX, scaleY, userPosterImageId: item.id });
         }
       } else if (is3d && config) {
         onPick({
@@ -118,7 +118,7 @@ export function PosterImageLibraryModal({
           userPosterImageId: item.id,
         });
       } else {
-        onPick({ kind: 'image', src: item.url, scaleX: 1, scaleY: 1 });
+        onPick({ kind: 'image', src: item.url, scaleX: 1, scaleY: 1, userPosterImageId: item.id });
       }
       onClose();
     } catch (e) {

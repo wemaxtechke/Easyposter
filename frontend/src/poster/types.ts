@@ -90,6 +90,8 @@ export type PosterImageFadeDirection = 'radial' | 'bottom';
 export interface PosterImageElement extends PosterElementBase, ImageAdjustments {
   type: 'image';
   src: string;
+  /** When set, tied to `/api/user-poster-images/:id` (e.g. library pick); updated on cloud save after edits. */
+  userPosterImageId?: string;
   /** Original source before baking a mask; used for re-editing in mask editor. */
   originalSrc?: string;
   /** Optional texture overlay (e.g. paper, noise). */

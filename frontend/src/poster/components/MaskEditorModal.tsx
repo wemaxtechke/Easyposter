@@ -10,6 +10,12 @@ interface MaskEditorModalProps {
   onApply: (updates: Partial<PosterElement>) => void;
 }
 
+function preserveUserPosterImageLink(
+  target: PosterImageElement | Poster3DTextElement
+): { userPosterImageId?: string } {
+  return target.userPosterImageId ? { userPosterImageId: target.userPosterImageId } : {};
+}
+
 const STAGE_W = 540;
 const STAGE_H = 340;
 
@@ -310,6 +316,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                   stageH,
                 });
                 const baseUrl = posterRasterSrc(target);
+                const link = preserveUserPosterImageLink(target);
                 const updates: Partial<PosterElement> =
                   target.type === '3d-text'
                     ? {
@@ -321,6 +328,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                         maskImageOffsetY: undefined,
                         maskImageScale: undefined,
                         maskScale: undefined,
+                        ...link,
                       }
                     : {
                         src: baked,
@@ -331,12 +339,14 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                         maskImageOffsetY: undefined,
                         maskImageScale: undefined,
                         maskScale: undefined,
+                        ...link,
                       };
                 if (target.edge === 'paper-tear' || target.edge === 'fade-paper-tear') {
                   updates.edge = target.edge === 'fade-paper-tear' ? 'fade' : 'none';
                 }
                 onApply(updates);
               } else if (target.originalSrc) {
+                const link = preserveUserPosterImageLink(target);
                 onApply(
                   target.type === '3d-text'
                     ? {
@@ -348,6 +358,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                         maskImageOffsetY: undefined,
                         maskImageScale: undefined,
                         maskScale: undefined,
+                        ...link,
                       }
                     : {
                         src: target.originalSrc,
@@ -358,6 +369,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                         maskImageOffsetY: undefined,
                         maskImageScale: undefined,
                         maskScale: undefined,
+                        ...link,
                       }
                 );
               } else {
@@ -368,6 +380,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                   maskImageOffsetY: offsetY,
                   maskImageScale: zoom,
                   maskScale,
+                  ...preserveUserPosterImageLink(target),
                 });
               }
               onClose();
