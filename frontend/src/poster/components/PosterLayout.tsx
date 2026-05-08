@@ -21,9 +21,9 @@ import { loadPosterProjectFromCloud, savePosterProjectToCloud, savePosterProject
 import { syncLinkedUserPosterImagesAfterCloudSave } from '../services/userPosterImagesApi';
 import { resolveBlobUrlsInProject, applyProcessedProjectUrlsToStore } from '../utils/resolveBlobUrlsInProject';
 import { projectHasBlobImageUrls, warnIfPosterHasBlobRefs } from '../userTemplatesStorage';
-import { computePosterProjectPatch, patchIsEmpty } from '../utils/projectPatch';
+import { removePathAnchorAt } from '../path/penToolMath';
 import type { PosterTemplateCategory, PosterTemplateFieldBinding } from '../templateTypes';
-import type { PosterElement, PosterImageElement, PosterTextElement } from '../types';
+import type { PosterElement, PosterImageElement, PosterTextElement, PosterPathElement } from '../types';
 
 /** Set on full unload from `#/poster`; same tab refresh keeps sessionStorage → restore cloud/local autosave. New tab has no flag → cold start. */
 const POSTER_RESTORE_AUTOSAVE_AFTER_RELOAD_KEY = 'poster_restore_autosave_after_reload';
@@ -532,6 +532,22 @@ export function PosterLayout() {
 
       if (inInput) return;
 
+      if (!ctrl && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        usePosterStore.getState().setPathToolMode(e.shiftKey ? 'pen-curve' : 'pen-straight');
+        return;
+      }
+      if (!ctrl && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        usePosterStore.getState().setPathToolMode('direct');
+        return;
+      }
+      if (!ctrl && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        usePosterStore.getState().setPathToolMode('convert');
+        return;
+      }
+
       // Cut
       if (ctrl && e.key === 'x') {
         if (selectedIds.length === 0) return;
@@ -586,6 +602,32 @@ export function PosterLayout() {
 
       // Delete
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        const store = usePosterStore.getState();
+        const { pathEditTargetId, selectedPathNode, selectedIds, elements } = store;
+        if (
+          pathEditTargetId &&
+          selectedPathNode &&
+          selectedPathNode.elementId === pathEditTargetId &&
+          selectedIds.length === 1 &&
+          selectedIds[0] === pathEditTargetId
+        ) {
+          const el = elements.find((x) => x.id === pathEditTargetId);
+          if (el?.type === 'path') {
+            const pe = el as PosterPathElement;
+            const next = removePathAnchorAt(
+              pe.pathPoints,
+              selectedPathNode.nodeIndex,
+              pe.closed ?? false,
+            );
+            if (next.length < pe.pathPoints.length) {
+              e.preventDefault();
+              store.pushHistory();
+              store.updateElement(pathEditTargetId, { pathPoints: next });
+              store.setSelectedPathNode(null);
+              return;
+            }
+          }
+        }
         if (selectedIds.length === 0) return;
         e.preventDefault();
         removeElements(selectedIds);
@@ -743,8 +785,9 @@ export function PosterLayout() {
           <PosterLeftSidebar readOnly={readOnly} onOpen3DModal={(m) => setThreeTextModal(m)} />
         </aside>
 
-        <main ref={mainRef} className="flex min-w-0 flex-1 overflow-hidden p-1 pb-9 sm:p-3 sm:pb-9 lg:overflow-auto lg:p-6 lg:pb-6">
+        <main ref={mainRef} className="relative flex min-w-0 flex-1 overflow-hidden p-1 pb-9 sm:p-3 sm:pb-9 lg:overflow-auto lg:p-6 lg:pb-6">
           <PosterCanvas readOnly={readOnly} viewportWidth={viewportSize.width} viewportHeight={viewportSize.height} />
+          <PosterMobileScaleFader readOnly={readOnly} />
         </main>
 
         {/* Right sidebar — hidden on mobile, inline on desktop */}
@@ -753,7 +796,6 @@ export function PosterLayout() {
         </aside>
       </div>
 
-      <PosterMobileScaleFader readOnly={readOnly} />
       {/* Mobile bottom property bar — full right sidebar in a bottom sheet */}
       <MobilePropertyBar readOnly={readOnly} onOpenEdit3D={(id) => setThreeTextModal({ editId: id })} />
       {threeTextModal && (

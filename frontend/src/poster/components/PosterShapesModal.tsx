@@ -22,6 +22,7 @@ const SHAPES: { id: PosterShapePresetId; label: string; description: string }[] 
   { id: 'pentagon', label: 'Pentagon', description: '5 sides' },
   { id: 'hexagon', label: 'Hexagon', description: '6 sides' },
   { id: 'diamond', label: 'Diamond', description: 'Rhombus' },
+  { id: 'bezier-path', label: 'Bezier Path', description: 'Editable anchors + handles' },
 ];
 
 export function PosterShapesModal({ open, onClose, onPick }: PosterShapesModalProps) {

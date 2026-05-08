@@ -9,7 +9,8 @@ export type PosterElementType =
   | 'triangle'
   | 'ellipse'
   | 'line'
-  | 'polygon';
+  | 'polygon'
+  | 'path';
 
 /** Shadow applied to any poster element via Fabric.js Shadow. */
 export interface PosterShadow {
@@ -22,6 +23,8 @@ export interface PosterShadow {
 export interface PosterElementBase {
   id: string;
   type: PosterElementType;
+  /** Optional custom layer name shown in the Layers panel. */
+  layerName?: string;
   left: number;
   top: number;
   scaleX: number;
@@ -275,11 +278,36 @@ export interface PosterShapeElement extends PosterElementBase {
   polygonPoints?: { x: number; y: number }[];
 }
 
+export interface PosterPathPoint {
+  x: number;
+  y: number;
+  /** Optional incoming bezier handle (local coordinates). */
+  inX?: number;
+  inY?: number;
+  /** Optional outgoing bezier handle (local coordinates). */
+  outX?: number;
+  outY?: number;
+}
+
+export interface PosterPathElement extends PosterElementBase {
+  type: 'path';
+  fill: string | PosterShapeFill;
+  /** Optional outline color. When unset or strokeWidth=0, outline is hidden. */
+  stroke?: string;
+  strokeWidth?: number;
+  fillOpacity?: number;
+  /** Anchor points in local shape coordinates. */
+  pathPoints: PosterPathPoint[];
+  /** Closed path when true. */
+  closed?: boolean;
+}
+
 export type PosterElement =
   | PosterImageElement
   | PosterTextElement
   | Poster3DTextElement
-  | PosterShapeElement;
+  | PosterShapeElement
+  | PosterPathElement;
 
 export type CanvasBackground =
   | { type: 'solid'; color: string }

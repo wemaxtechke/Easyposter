@@ -17,11 +17,14 @@ import type {
   ImageAdjustments,
   CanvasBackground,
   GradientStop,
+  PosterPathElement,
+  PosterPathPoint,
 } from '../types';
 import { isSolidBackground, DEFAULT_GRADIENT_STOPS } from '../types';
 import { normalizePosterShapeFill } from '../shapeFillFabric';
 import { getPosterShapeLocalSize, shapeFillFallbackForType } from '../posterShapeGeometry';
 import { rectHasPerCornerRadii } from '../roundedRectPath';
+import { pathPointsToSvgPathElement } from '../path/penToolMath';
 import { POSTER_FONT_OPTIONS } from '../posterFonts';
 import { usePosterFontOptions } from '../usePosterFontOptions';
 import { MaskEditorModal } from './MaskEditorModal';
@@ -154,6 +157,272 @@ function LineCurveControls({
           Add curve
         </button>
       )}
+    </div>
+  );
+}
+
+function PathEditingControls({
+  element,
+  pathEditActive,
+  setPathEditActive,
+  updateElement,
+}: {
+  element: PosterShapeElement | PosterPathElement;
+  pathEditActive: boolean;
+  setPathEditActive: (active: boolean) => void;
+  updateElement: (id: string, updates: Partial<PosterElement>) => void;
+}) {
+  const [selectedNode, setSelectedNode] = useState(0);
+  const isPath = element.type === 'path';
+  const points: PosterPathPoint[] = isPath
+    ? (element as PosterPathElement).pathPoints
+    : element.type === 'polygon'
+      ? (element.polygonPoints ?? []).map((p) => ({ x: p.x, y: p.y }))
+      : element.type === 'line'
+        ? [
+            { x: element.x1 ?? 0, y: element.y1 ?? 0 },
+            {
+              x: element.x2 ?? 120,
+              y: element.y2 ?? 80,
+            },
+          ]
+        : [];
+
+  const canEdit = element.type === 'polygon' || element.type === 'line' || element.type === 'path';
+
+  useEffect(() => {
+    setSelectedNode((prev) => Math.max(0, Math.min(prev, Math.max(0, points.length - 1))));
+  }, [points.length]);
+
+  if (!canEdit) return null;
+
+  const current = points[selectedNode];
+
+  const setPathPoints = (next: PosterPathPoint[]) => {
+    if (element.type === 'path') {
+      updateElement(element.id, { pathPoints: next });
+    } else if (element.type === 'polygon') {
+      updateElement(element.id, { polygonPoints: next.map((p) => ({ x: p.x, y: p.y })) });
+    } else if (element.type === 'line') {
+      const start = next[0] ?? { x: element.x1 ?? 0, y: element.y1 ?? 0 };
+      const end = next[1] ?? { x: element.x2 ?? 120, y: element.y2 ?? 80 };
+      updateElement(element.id, { x1: start.x, y1: start.y, x2: end.x, y2: end.y });
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Path edit</p>
+        <button
+          type="button"
+          onClick={() => setPathEditActive(!pathEditActive)}
+          className={`${toggleBtn} ${pathEditActive ? toggleBtnOn : toggleBtnOff}`}
+        >
+          {pathEditActive ? 'On' : 'Off'}
+        </button>
+      </div>
+      {pathEditActive && (
+        <>
+          <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+            Drag anchors/handles on canvas. Direct (A): click a segment to add a point. Press Esc to exit.
+          </p>
+          {points.length > 0 && (
+            <>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-zinc-600 dark:text-zinc-400">Node</label>
+                <select
+                  value={selectedNode}
+                  onChange={(e) => setSelectedNode(parseInt(e.target.value, 10) || 0)}
+                  className="rounded border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
+                >
+                  {points.map((_, idx) => (
+                    <option key={idx} value={idx}>
+                      {`Node ${idx + 1}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {current && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-zinc-500">X</label>
+                    <input
+                      type="number"
+                      value={Math.round(current.x)}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value) || 0;
+                        const next = [...points];
+                        next[selectedNode] = { ...next[selectedNode], x: v };
+                        setPathPoints(next);
+                      }}
+                      className="w-full rounded border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-zinc-500">Y</label>
+                    <input
+                      type="number"
+                      value={Math.round(current.y)}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value) || 0;
+                        const next = [...points];
+                        next[selectedNode] = { ...next[selectedNode], y: v };
+                        setPathPoints(next);
+                      }}
+                      className="w-full rounded border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
+                    />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          {element.type === 'path' && (
+            <>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const p = points[selectedNode] ?? { x: 50, y: 50 };
+                    const next = [...points];
+                    next.splice(selectedNode + 1, 0, { x: p.x + 20, y: p.y + 20 });
+                    updateElement(element.id, { pathPoints: next });
+                    setSelectedNode((selectedNode + 1) % next.length);
+                  }}
+                  className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-700"
+                >
+                  Insert node
+                </button>
+                <button
+                  type="button"
+                  disabled={points.length <= 2}
+                  onClick={() => {
+                    if (points.length <= 2) return;
+                    const next = points.filter((_, idx) => idx !== selectedNode);
+                    updateElement(element.id, { pathPoints: next });
+                    setSelectedNode((prev) => Math.max(0, Math.min(prev, next.length - 1)));
+                  }}
+                  className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-700"
+                >
+                  Delete node
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateElement(element.id, { closed: !(element as PosterPathElement).closed })
+                  }
+                  className={`${toggleBtn} ${((element as PosterPathElement).closed ?? false) ? toggleBtnOn : toggleBtnOff}`}
+                >
+                  {(element as PosterPathElement).closed ? 'Closed' : 'Open'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const p = points[selectedNode];
+                    if (!p) return;
+                    const hasHandle = p.inX != null || p.outX != null;
+                    const next = [...points];
+                    next[selectedNode] = hasHandle
+                      ? { x: p.x, y: p.y }
+                      : {
+                          ...p,
+                          inX: p.x - 20,
+                          inY: p.y,
+                          outX: p.x + 20,
+                          outY: p.y,
+                        };
+                    updateElement(element.id, { pathPoints: next });
+                  }}
+                  className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-700"
+                >
+                  Toggle handles
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function PathStyleControls({
+  path,
+  updateElement,
+}: {
+  path: PosterPathElement;
+  updateElement: (id: string, updates: Partial<PosterElement>) => void;
+}) {
+  const fillNorm = normalizePosterShapeFill(path.fill, '#14b8a6');
+  const fillColor = fillNorm.type === 'solid' ? fillNorm.color : '#14b8a6';
+  return (
+    <div className="flex flex-col gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+      <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Path style</p>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-zinc-500">Fill</span>
+        <ColorPickerPopover
+          color={/^#[0-9A-Fa-f]{6}$/i.test(fillColor) ? fillColor : '#14b8a6'}
+          onChange={(c) => updateElement(path.id, { fill: { type: 'solid', color: c } })}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-zinc-500">Stroke</span>
+        <ColorPickerPopover
+          color={/^#[0-9A-Fa-f]{6}$/i.test(path.stroke ?? '') ? (path.stroke as string) : '#0f172a'}
+          onChange={(c) => updateElement(path.id, { stroke: c, strokeWidth: path.strokeWidth ?? 2 })}
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-xs text-zinc-600 dark:text-zinc-400">Stroke width ({path.strokeWidth ?? 0}px)</label>
+        <input
+          type="range"
+          min={0}
+          max={24}
+          step={1}
+          value={path.strokeWidth ?? 0}
+          onChange={(e) => updateElement(path.id, { strokeWidth: parseInt(e.target.value, 10) || 0 })}
+          className="w-full"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-xs text-zinc-600 dark:text-zinc-400">Fill opacity ({Math.round((path.fillOpacity ?? 1) * 100)}%)</label>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={Math.round((path.fillOpacity ?? 1) * 100)}
+          onChange={(e) =>
+            updateElement(path.id, {
+              fillOpacity: Math.max(0, Math.min(1, (parseInt(e.target.value, 10) || 0) / 100)),
+            })
+          }
+          className="w-full"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <button
+          type="button"
+          onClick={() => {
+            const stroke =
+              path.stroke && (path.strokeWidth ?? 0) > 0 ? (path.stroke as string) : 'none';
+            const svg = pathPointsToSvgPathElement(path.pathPoints, path.closed ?? false, {
+              fill: fillColor,
+              stroke,
+              strokeWidth: path.strokeWidth ?? 0,
+            });
+            void navigator.clipboard?.writeText(svg);
+          }}
+          className="w-fit rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-700"
+        >
+          Copy SVG snippet
+        </button>
+        <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
+          For the 3D app: paste into an SVG-friendly tool or use as a decal bitmap source.
+        </p>
+      </div>
     </div>
   );
 }
@@ -1626,9 +1895,23 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
   const bringForward = usePosterStore((s) => s.bringForward);
   const sendBackward = usePosterStore((s) => s.sendBackward);
   const pushHistory = usePosterStore((s) => s.pushHistory);
+  const pathEditTargetId = usePosterStore((s) => s.pathEditTargetId);
+  const setPathEditTargetId = usePosterStore((s) => s.setPathEditTargetId);
+  const pathToolMode = usePosterStore((s) => s.pathToolMode);
+  const setPathToolMode = usePosterStore((s) => s.setPathToolMode);
 
   const selected = elements.filter((e) => selectedIds.includes(e.id));
   const single = selected.length === 1 ? selected[0] : null;
+
+  useEffect(() => {
+    if (!single) {
+      setPathEditTargetId(null);
+      return;
+    }
+    if (pathEditTargetId && pathEditTargetId !== single.id) {
+      setPathEditTargetId(null);
+    }
+  }, [single, pathEditTargetId, setPathEditTargetId]);
 
   const updateGradientStops = (stops: GradientStop[]) => {
     if (!isSolidBackground(canvasBackground)) {
@@ -1804,6 +2087,30 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
       <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
         Properties
       </h3>
+      <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-700">
+        <p className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">Path tools</p>
+        <div className="flex gap-1">
+          {([
+            ['pen-straight', 'Pen Straight'],
+            ['pen-curve', 'Pen Curve'],
+            ['direct', 'Direct'],
+            ['convert', 'Convert'],
+          ] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setPathToolMode(mode)}
+              className={`rounded px-2 py-1 text-xs ${
+                pathToolMode === mode
+                  ? 'bg-amber-500 text-white'
+                  : 'border border-zinc-200 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {single && (
         <>
@@ -1934,6 +2241,22 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
             single.type === 'polygon') && (
             <ShapeFillAndRoundnessControls
               shape={single as PosterShapeElement}
+              updateElement={updateElement}
+            />
+          )}
+
+          {(single.type === 'line' || single.type === 'polygon' || single.type === 'path') && (
+            <PathEditingControls
+              element={single as PosterShapeElement | PosterPathElement}
+              pathEditActive={pathEditTargetId === single.id}
+              setPathEditActive={(active) => setPathEditTargetId(active ? single.id : null)}
+              updateElement={updateElement}
+            />
+          )}
+
+          {single.type === 'path' && (
+            <PathStyleControls
+              path={single as PosterPathElement}
               updateElement={updateElement}
             />
           )}

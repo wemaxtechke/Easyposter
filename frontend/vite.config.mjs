@@ -32,6 +32,8 @@ export default defineConfig(({ mode }) => {
       environment: 'jsdom',
       include: ['src/**/*.test.{ts,tsx}'],
       setupFiles: ['src/test/setup.ts'],
+      /** `forks` pool often times out on Windows paths with spaces (see Vitest #5563). */
+      pool: 'threads',
     },
   };
 });

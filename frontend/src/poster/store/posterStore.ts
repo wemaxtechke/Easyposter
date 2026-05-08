@@ -34,6 +34,9 @@ function normalizeBackground(bg: CanvasBackground | string | undefined): CanvasB
 }
 
 export type CanvasPan = { x: number; y: number };
+export type PathToolMode = 'pen' | 'pen-straight' | 'pen-curve' | 'direct' | 'convert';
+export type PathNodeSelection = { elementId: string; nodeIndex: number };
+export type PathHandleSelection = PathNodeSelection & { kind: 'in' | 'out' };
 
 interface PosterStore {
   elements: PosterElement[];
@@ -49,6 +52,17 @@ interface PosterStore {
   imageCropTargetId: string | null;
   setImageCropTargetId: (id: string | null) => void;
   selectedIds: string[];
+  /** Active path-edit target; null disables point/handle editing overlays. */
+  pathEditTargetId: string | null;
+  setPathEditTargetId: (id: string | null) => void;
+  pathToolMode: PathToolMode;
+  setPathToolMode: (mode: PathToolMode) => void;
+  activePathId: string | null;
+  setActivePathId: (id: string | null) => void;
+  selectedPathNode: PathNodeSelection | null;
+  setSelectedPathNode: (sel: PathNodeSelection | null) => void;
+  selectedPathHandle: PathHandleSelection | null;
+  setSelectedPathHandle: (sel: PathHandleSelection | null) => void;
   history: HistoryEntry[];
   historyIndex: number;
   /** Field bindings from template (key/label/sourceElementId). Null when loading from file or no template. */
@@ -101,6 +115,16 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
   imageCropTargetId: null,
   setImageCropTargetId: (id) => set({ imageCropTargetId: id }),
   selectedIds: [],
+  pathEditTargetId: null,
+  setPathEditTargetId: (id) => set({ pathEditTargetId: id }),
+  pathToolMode: 'direct',
+  setPathToolMode: (mode) => set({ pathToolMode: mode }),
+  activePathId: null,
+  setActivePathId: (id) => set({ activePathId: id }),
+  selectedPathNode: null,
+  setSelectedPathNode: (sel) => set({ selectedPathNode: sel }),
+  selectedPathHandle: null,
+  setSelectedPathHandle: (sel) => set({ selectedPathHandle: sel }),
   history: [[]],
   historyIndex: 0,
   fieldBindings: null,
@@ -359,6 +383,10 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
       fitCenterNonce: s.fitCenterNonce + 1,
       fieldBindings: options?.fieldBindings ?? null,
       imageCropTargetId: null,
+      pathEditTargetId: null,
+      activePathId: null,
+      selectedPathNode: null,
+      selectedPathHandle: null,
     }));
   },
 

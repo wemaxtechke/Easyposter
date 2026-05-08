@@ -1,4 +1,4 @@
-import type { PosterShapeElement } from './types';
+import type { PosterElement } from './types';
 
 export type PosterShapePresetId =
   | 'rect'
@@ -11,7 +11,8 @@ export type PosterShapePresetId =
   | 'star'
   | 'pentagon'
   | 'hexagon'
-  | 'diamond';
+  | 'diamond'
+  | 'bezier-path';
 
 function normalizePolygonPoints(pts: { x: number; y: number }[]): { x: number; y: number }[] {
   const minX = Math.min(...pts.map((p) => p.x));
@@ -56,7 +57,7 @@ const BASE = {
  */
 export function posterShapePresetToElement(
   id: PosterShapePresetId
-): Omit<PosterShapeElement, 'id' | 'zIndex'> {
+): Omit<PosterElement, 'id' | 'zIndex'> {
   switch (id) {
     case 'rect':
       return { ...BASE, type: 'rect', width: 120, height: 80, fill: '#3b82f6', rx: 0 };
@@ -127,6 +128,22 @@ export function posterShapePresetToElement(
           { x: 100, y: 50 },
           { x: 50, y: 100 },
           { x: 0, y: 50 },
+        ],
+      };
+    case 'bezier-path':
+      return {
+        ...BASE,
+        type: 'path',
+        fill: { type: 'solid', color: '#14b8a6' },
+        stroke: '#0f172a',
+        strokeWidth: 3,
+        closed: true,
+        pathPoints: [
+          { x: 0, y: 70, outX: 35, outY: 10 },
+          { x: 85, y: 0, inX: 45, inY: 0, outX: 130, outY: 0 },
+          { x: 170, y: 70, inX: 130, inY: 10, outX: 170, outY: 130 },
+          { x: 85, y: 155, inX: 125, inY: 155, outX: 45, outY: 155 },
+          { x: 0, y: 70, inX: 0, inY: 130 },
         ],
       };
     default:

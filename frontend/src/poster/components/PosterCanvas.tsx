@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo, type RefObject } from 'react';
 import {
   Canvas,
   Rect,
@@ -23,6 +23,8 @@ import type {
   PosterShapeElement,
   PosterImageElement,
   PosterShadow,
+  PosterPathElement,
+  PosterPathPoint,
 } from '../types';
 import { getImageAdjustmentsKey } from '../types';
 import { normalizePosterShapeFill, posterShapeFillToFabric, posterPatternFillToFabric, applyColorOpacity } from '../shapeFillFabric';
@@ -44,6 +46,13 @@ import {
   roundedRectPathD,
   perCornerRadiiFromShape,
 } from '../roundedRectPath';
+import {
+  appendCornerAnchor,
+  appendSmoothAnchor,
+  hitTestPathSegments,
+  insertPathAnchorOnSegment,
+  pathPointsToPathD,
+} from '../path/penToolMath';
 import { usePosterZoom, SBUF } from '../hooks/usePosterZoom';
 import { loadFontsForPosterElements } from '../loadPosterFonts';
 import { PosterImageCropOverlay } from './PosterImageCropOverlay';
@@ -149,8 +158,17 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const imageCropTargetId = usePosterStore((s) => s.imageCropTargetId);
   const setImageCropTargetId = usePosterStore((s) => s.setImageCropTargetId);
   const setSelected = usePosterStore((s) => s.setSelected);
+  const addElement = usePosterStore((s) => s.addElement);
   const updateElement = usePosterStore((s) => s.updateElement);
   const pushHistory = usePosterStore((s) => s.pushHistory);
+  const pathEditTargetId = usePosterStore((s) => s.pathEditTargetId);
+  const setPathEditTargetId = usePosterStore((s) => s.setPathEditTargetId);
+  const pathToolMode = usePosterStore((s) => s.pathToolMode);
+  const setPathToolMode = usePosterStore((s) => s.setPathToolMode);
+  const activePathId = usePosterStore((s) => s.activePathId);
+  const setActivePathId = usePosterStore((s) => s.setActivePathId);
+  const setSelectedPathNode = usePosterStore((s) => s.setSelectedPathNode);
+  const setSelectedPathHandle = usePosterStore((s) => s.setSelectedPathHandle);
   const initCanvas = useCallback(() => {
     const host = containerRef.current;
     if (!host) return;
@@ -288,7 +306,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       const id = (obj as { data?: { posterId?: string } }).data?.posterId;
       const el = id ? els.find((e) => e.id === id) : null;
       const locked = !!el?.locked;
-      const lockAll = locked || readOnly;
+      const lockAll = locked || readOnly || (id != null && id === pathEditTargetId);
       const updates: Record<string, unknown> = {
         selectable: true,
         evented: true,
@@ -304,7 +322,55 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       obj.set(updates);
     }
     canvas.requestRenderAll();
-  }, [readOnly, elements]);
+  }, [readOnly, elements, pathEditTargetId]);
+
+  useEffect(() => {
+    if (!pathEditTargetId) return;
+    const target = elements.find((e) => e.id === pathEditTargetId);
+    if (!target || (target.type !== 'line' && target.type !== 'polygon' && target.type !== 'path')) {
+      setPathEditTargetId(null);
+    }
+  }, [pathEditTargetId, elements, setPathEditTargetId]);
+
+  const isPenToolMode = pathToolMode === 'pen' || pathToolMode === 'pen-straight' || pathToolMode === 'pen-curve';
+
+  /** Pen tool: continue the selected path without toggling path-edit UI (sidebar). */
+  useEffect(() => {
+    if (!isPenToolMode) return;
+    if (selectedIds.length !== 1) {
+      setActivePathId(null);
+      return;
+    }
+    const el = elements.find((e) => e.id === selectedIds[0]);
+    if (el?.type === 'path') setActivePathId(el.id);
+    else setActivePathId(null);
+  }, [isPenToolMode, selectedIds, elements, setActivePathId]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      if (inInput) return;
+      const key = e.key.toLowerCase();
+      if (key === 'p') {
+        e.preventDefault();
+        setPathToolMode(e.shiftKey ? 'pen-curve' : 'pen-straight');
+      } else if (key === 'a') {
+        e.preventDefault();
+        setPathToolMode('direct');
+      } else if (key === 'c') {
+        e.preventDefault();
+        setPathToolMode('convert');
+      } else if (e.key === 'Escape') {
+        setPathEditTargetId(null);
+        setActivePathId(null);
+        setSelectedPathNode(null);
+        setSelectedPathHandle(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [setPathToolMode, setPathEditTargetId, setActivePathId, setSelectedPathNode, setSelectedPathHandle]);
 
   useEffect(() => {
     if (!imageCropTargetId) return;
@@ -345,7 +411,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
         const id = (obj as { data?: { posterId?: string } }).data?.posterId;
         const el = id ? els.find((e) => e.id === id) : null;
         const locked = !!el?.locked;
-        const lockAll = locked || readOnly;
+        const lockAll = locked || readOnly || (id != null && id === pathEditTargetId);
         obj.set({
           selectable: true,
           evented: true,
@@ -362,7 +428,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       c.selection = true;
       c.requestRenderAll();
     };
-  }, [imageCropTargetId, readOnly]);
+  }, [imageCropTargetId, readOnly, pathEditTargetId]);
 
   const creatingRef = useRef<Set<string>>(new Set());
   /**
@@ -467,12 +533,17 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           const shape = el as PosterShapeElement;
           const wantsPath = !!shape.curveControl;
           const fabricIsPath = existing instanceof Path;
-          const fabricIsLine = existing instanceof Line;
           if ((wantsPath && !fabricIsPath) || (!wantsPath && fabricIsPath)) {
             canvas.remove(existing);
             creatingRef.current.delete(el.id);
             existing = undefined;
           }
+        }
+
+        if (el.type === 'path' && existing && !(existing instanceof Path)) {
+          canvas.remove(existing);
+          creatingRef.current.delete(el.id);
+          existing = undefined;
         }
 
         const data = (existing as { data?: { posterId?: string; imageSrc?: string; imageEffectsKey?: string; adjustmentsKey?: string } })?.data;
@@ -617,6 +688,87 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             existing.setCoords();
             continue;
           }
+        }
+
+        if (el.type === 'path' && existing && existing instanceof Path) {
+          const p = el as PosterPathElement;
+          const d = pathPointsToPathD(p.pathPoints, p.closed ?? false);
+          const geomKey = `${p.closed ?? false}\0${d}`;
+          const prevGeomKey = (existing as { data?: { pathGeomKey?: string } }).data?.pathGeomKey;
+          const geomChanged = prevGeomKey !== geomKey;
+          const refLocal = p.pathPoints[0] ? { x: p.pathPoints[0].x, y: p.pathPoints[0].y } : null;
+          const oldMatrix = existing.calcTransformMatrix() as [number, number, number, number, number, number];
+          const oldOx = existing.pathOffset?.x ?? 0;
+          const oldOy = existing.pathOffset?.y ?? 0;
+          const localToCanvasWith = (
+            pt: { x: number; y: number },
+            m: [number, number, number, number, number, number],
+            ox: number,
+            oy: number,
+          ) => ({
+            x: m[0] * (pt.x - ox) + m[2] * (pt.y - oy) + m[4],
+            y: m[1] * (pt.x - ox) + m[3] * (pt.y - oy) + m[5],
+          });
+          const refCanvasBefore = refLocal ? localToCanvasWith(refLocal, oldMatrix, oldOx, oldOy) : null;
+          const setPath = (existing as unknown as { _setPath(path: string, adjust?: boolean): void })._setPath.bind(
+            existing,
+          );
+          // Rebuild without Fabric's position adjustment. `left/top` is our stable poster-space
+          // origin; Fabric's internal pathOffset may change as points are added.
+          setPath(d, false);
+          // Path geometry edits can stay visually stale when Fabric reuses object cache for
+          // same-size bounds; force cache invalidation so handle drags update in real time.
+          (existing as { dirty?: boolean }).dirty = true;
+          (existing as { data?: Record<string, unknown> }).data = {
+            ...(existing as { data?: Record<string, unknown> }).data,
+            pathGeomKey: geomKey,
+          };
+          const fillOpacity = p.fillOpacity ?? 1;
+          const fillNorm = normalizePosterShapeFill(p.fill, '#14b8a6');
+          const fb = shapeFillFallbackForType('polygon');
+          const stroke = p.stroke && (p.strokeWidth ?? 0) > 0 ? p.stroke : '';
+          const strokeWidth = stroke ? (p.strokeWidth ?? 2) : 0;
+          const pathSize = getPathLocalSize(p.pathPoints);
+          const fill =
+            fillNorm.type === 'pattern'
+              ? existing.fill
+              : posterShapeFillToFabric(fillNorm, pathSize.w, pathSize.h, fillOpacity);
+          existing.set({
+            left: p.left,
+            top: p.top,
+            scaleX: p.scaleX,
+            scaleY: p.scaleY,
+            angle: p.angle,
+            opacity: p.opacity,
+            originX: 'left',
+            originY: 'top',
+            shadow: toFabricShadow(p.shadow) ?? null,
+            stroke: stroke || lineStrokeFromFill({ type: 'solid', color: fb }, fb),
+            strokeWidth,
+            fill,
+            objectCaching: false,
+          });
+          existing.setCoords();
+          if (geomChanged && refLocal && refCanvasBefore) {
+            const newMatrix = existing.calcTransformMatrix() as [number, number, number, number, number, number];
+            const newOx = existing.pathOffset?.x ?? 0;
+            const newOy = existing.pathOffset?.y ?? 0;
+            const refCanvasAfter = localToCanvasWith(refLocal, newMatrix, newOx, newOy);
+            const dx = refCanvasBefore.x - refCanvasAfter.x;
+            const dy = refCanvasBefore.y - refCanvasAfter.y;
+            if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+              const correctedLeft = (existing.left ?? p.left) + dx;
+              const correctedTop = (existing.top ?? p.top) + dy;
+              existing.set({ left: correctedLeft, top: correctedTop });
+              existing.setCoords();
+              usePosterStore.setState((s) => ({
+                elements: s.elements.map((e) =>
+                  e.id === p.id ? { ...e, left: correctedLeft, top: correctedTop } : e,
+                ),
+              }));
+            }
+          }
+          continue;
         }
 
         if ((el as { type: string }).type === 'freehand') {
@@ -781,6 +933,17 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
               }
             }
           }
+          if (el.type === 'path') {
+            const pathEl = el as PosterPathElement;
+            const fillNorm = normalizePosterShapeFill(pathEl.fill, '#14b8a6');
+            const fillOpacity = pathEl.fillOpacity ?? 1;
+            const stroke = pathEl.stroke && (pathEl.strokeWidth ?? 0) > 0 ? pathEl.stroke : '';
+            const strokeWidth = stroke ? (pathEl.strokeWidth ?? 2) : 0;
+            const size = getPathLocalSize(pathEl.pathPoints);
+            updates.fill = posterShapeFillToFabric(fillNorm, size.w, size.h, fillOpacity);
+            updates.stroke = stroke;
+            updates.strokeWidth = strokeWidth;
+          }
           existing.set(updates);
           if (
             el.type === 'rect' &&
@@ -819,11 +982,19 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                 const adjKey = elIsImageLike
                   ? getImageAdjustmentsKey(el as PosterImageElement | Poster3DTextElement)
                   : undefined;
+                const pathGeomKey =
+                  el.type === 'path'
+                    ? `${(el as PosterPathElement).closed ?? false}\0${pathPointsToPathD(
+                        (el as PosterPathElement).pathPoints,
+                        (el as PosterPathElement).closed ?? false,
+                      )}`
+                    : undefined;
                 (obj as { data?: Record<string, unknown> }).data = {
                   posterId: el.id,
                   imageSrc,
                   ...(imageEffectsKey !== undefined ? { imageEffectsKey } : {}),
                   ...(adjKey !== undefined ? { adjustmentsKey: adjKey } : {}),
+                  ...(pathGeomKey !== undefined ? { pathGeomKey } : {}),
                 };
                 if (elIsImageLike) {
                   applyImageAdjustmentFilters(
@@ -891,6 +1062,10 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                     if (poly.points?.length) {
                       updates.polygonPoints = poly.points.map((p) => ({ x: p.x, y: p.y }));
                     }
+                  }
+                  if (live.type === 'path' && obj instanceof Path) {
+                    // Path node geometry is edited via dedicated overlay controls.
+                    // Keep transform updates only here.
                   }
                   updateElement(live.id, updates as Partial<PosterElement>);
                 });
@@ -1019,6 +1194,46 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     ? viewportHeight
     : Math.max(viewportHeight, renderY + scaledH + effectiveSBUF);
 
+  const pathEditTarget = pathEditTargetId
+    ? elements.find((e) => e.id === pathEditTargetId)
+    : null;
+  const activePath = activePathId
+    ? elements.find((e) => e.id === activePathId && e.type === 'path')
+    : null;
+
+  const fabricPathTransformSourceId =
+    pathEditTarget?.type === 'path'
+      ? pathEditTargetId
+      : isPenToolMode && activePathId
+        ? activePathId
+        : null;
+  const pathFabricForTransform = (() => {
+    if (!fabricPathTransformSourceId) return null;
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    return (
+      canvas
+        .getObjects()
+        .find(
+          (o) => (o as { data?: { posterId?: string } }).data?.posterId === fabricPathTransformSourceId,
+        ) ?? null
+    );
+  })();
+  const fabricPathTransform =
+    pathFabricForTransform instanceof Path
+      ? {
+          matrix: pathFabricForTransform.calcTransformMatrix() as [number, number, number, number, number, number],
+          pathOffsetX: pathFabricForTransform.pathOffset?.x ?? 0,
+          pathOffsetY: pathFabricForTransform.pathOffset?.y ?? 0,
+        }
+      : null;
+
+  const pathOverlayEnabled =
+    !readOnly &&
+    (isPenToolMode ||
+      (!!pathEditTarget &&
+        (pathEditTarget.type === 'polygon' || pathEditTarget.type === 'line' || pathEditTarget.type === 'path')));
+
   return (
     <div
       ref={viewportRef}
@@ -1035,6 +1250,29 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           minHeight: viewportHeight,
         }}
       >
+        {!readOnly && (
+          <div className="absolute left-3 top-3 z-40 flex items-center gap-1 rounded-md border border-zinc-300 bg-white/90 p-1 text-[11px] shadow dark:border-zinc-700 dark:bg-zinc-900/90">
+            {([
+              ['pen-straight', 'Straight Pen (P)'],
+              ['pen-curve', 'Curve Pen (Shift+P)'],
+              ['direct', 'Direct (A)'],
+              ['convert', 'Convert (C)'],
+            ] as const).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setPathToolMode(mode)}
+                className={`rounded px-2 py-1 ${
+                  pathToolMode === mode
+                    ? 'bg-amber-500 text-white'
+                    : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <div
           ref={zoomWrapperRef}
           className="absolute shadow-xl ring-1 ring-zinc-200 dark:ring-zinc-700"
@@ -1064,6 +1302,63 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
               readOnly={readOnly}
             />
           )}
+          {pathOverlayEnabled && (
+            <PathEditOverlay
+              target={(pathEditTarget as PosterShapeElement | PosterPathElement | null) ?? null}
+              scale={scale}
+              onChange={(updates) => {
+                const id = pathEditTarget?.id ?? activePathId;
+                if (id) updateElement(id, updates);
+              }}
+              onCommit={() => pushHistory()}
+              toolMode={pathToolMode}
+              activePath={activePath as PosterPathElement | null}
+              onCreatePathAt={(x, y, opts) => {
+                const fromDrag = opts?.smoothFromLocal;
+                const pathPoints: PosterPathPoint[] = fromDrag
+                  ? [
+                      {
+                        x: 0,
+                        y: 0,
+                        inX: -fromDrag.x,
+                        inY: -fromDrag.y,
+                        outX: fromDrag.x,
+                        outY: fromDrag.y,
+                      },
+                    ]
+                  : [{ x: 0, y: 0 }];
+                addElement({
+                  type: 'path',
+                  left: x,
+                  top: y,
+                  scaleX: 1,
+                  scaleY: 1,
+                  angle: 0,
+                  opacity: 1,
+                  fill: { type: 'solid', color: '#14b8a6' },
+                  stroke: '#0f172a',
+                  strokeWidth: 2,
+                  pathPoints,
+                  closed: false,
+                });
+                const nextId = usePosterStore.getState().selectedIds[0] ?? null;
+                if (nextId) setActivePathId(nextId);
+              }}
+              onSelectPathNode={(idx) => {
+                const id =
+                  pathEditTarget?.type === 'path' ? pathEditTargetId : activePathId;
+                if (idx == null || !id) {
+                  setSelectedPathNode(null);
+                  setSelectedPathHandle(null);
+                  return;
+                }
+                setSelectedPathNode({ elementId: id, nodeIndex: idx });
+                setSelectedPathHandle(null);
+              }}
+              fabricPathTransform={fabricPathTransform}
+              fabricCanvasRef={canvasRef}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -1080,6 +1375,492 @@ function rebuildPosterPerCornerPath(
   const d = roundedRectPathD(w, h, tl, tr, br, bl);
   (fabricPath as unknown as { _setPath(p: string, adjust?: boolean): void })._setPath(d, false);
   fabricPath.set({ left: shape.left, top: shape.top });
+}
+
+function getPathLocalSize(points: PosterPathPoint[]): { w: number; h: number } {
+  if (!points.length) return { w: 100, h: 100 };
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return {
+    w: Math.max(1, Math.max(...xs) - Math.min(...xs)),
+    h: Math.max(1, Math.max(...ys) - Math.min(...ys)),
+  };
+}
+
+type FabricPathXform = {
+  matrix: [number, number, number, number, number, number];
+  pathOffsetX: number;
+  pathOffsetY: number;
+} | null;
+
+function localPathHitTolerance(
+  scale: number,
+  fabricPathTransform: FabricPathXform | undefined,
+  sx: number,
+  sy: number,
+): number {
+  const tolCanvas = 12 / scale;
+  if (fabricPathTransform) {
+    const [a, b, c, d] = fabricPathTransform.matrix;
+    const m = Math.max(Math.hypot(a, c), Math.hypot(b, d), 0.01);
+    return tolCanvas / m;
+  }
+  return tolCanvas / Math.max(Math.abs(sx), Math.abs(sy), 0.01);
+}
+
+type PathEditOverlayProps = {
+  target: PosterShapeElement | PosterPathElement | null;
+  scale: number;
+  onChange: (updates: Partial<PosterElement>) => void;
+  onCommit: () => void;
+  toolMode: 'pen' | 'pen-straight' | 'pen-curve' | 'direct' | 'convert';
+  activePath: PosterPathElement | null;
+  onCreatePathAt: (
+    x: number,
+    y: number,
+    opts?: { smoothFromLocal?: { x: number; y: number } },
+  ) => void;
+  onSelectPathNode: (nodeIndex: number | null) => void;
+  fabricPathTransform?: FabricPathXform;
+  /** Use Fabric scene space for clicks — matches path `calcTransformMatrix` (fixes drift vs hand-divided coords). */
+  fabricCanvasRef: RefObject<Canvas | null>;
+};
+
+function PathEditOverlay({
+  target,
+  scale,
+  onChange,
+  onCommit,
+  toolMode,
+  activePath,
+  onCreatePathAt,
+  onSelectPathNode,
+  fabricPathTransform,
+  fabricCanvasRef,
+}: PathEditOverlayProps) {
+  const [dragging, setDragging] = useState<string | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const isPenMode = toolMode === 'pen' || toolMode === 'pen-straight' || toolMode === 'pen-curve';
+  const isCurvePenMode = toolMode === 'pen-curve';
+  const [penRubber, setPenRubber] = useState<{
+    ax: number;
+    ay: number;
+    px: number;
+    py: number;
+  } | null>(null);
+
+  const getLocalPoint = (e: {
+    clientX: number;
+    clientY: number;
+    currentTarget: HTMLDivElement;
+    nativeEvent: PointerEvent | MouseEvent;
+  }) => {
+    const fc = fabricCanvasRef.current;
+    if (fc) {
+      const pt = fc.getScenePoint(e.nativeEvent);
+      return { x: pt.x, y: pt.y };
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) / scale,
+      y: (e.clientY - rect.top) / scale,
+    };
+  };
+
+  if (!target && !isPenMode) return null;
+
+  const coordSource = target ?? (isPenMode ? activePath : null);
+  const polygonPts =
+    target?.type === 'polygon' ? (target.polygonPoints ?? []).map((p) => ({ x: p.x, y: p.y })) : [];
+  const pathPts = target?.type === 'path' ? target.pathPoints : [];
+  const baseLeft = coordSource?.left ?? 0;
+  const baseTop = coordSource?.top ?? 0;
+  const sx = coordSource?.scaleX ?? 1;
+  const sy = coordSource?.scaleY ?? 1;
+  const angleDeg = coordSource?.angle ?? 0;
+  const angleRad = (angleDeg * Math.PI) / 180;
+  const cosA = Math.cos(angleRad);
+  const sinA = Math.sin(angleRad);
+
+  const toCanvas = (p: { x: number; y: number }) => {
+    if (fabricPathTransform) {
+      const [a, b, c, d, e, f] = fabricPathTransform.matrix;
+      const lx = p.x - fabricPathTransform.pathOffsetX;
+      const ly = p.y - fabricPathTransform.pathOffsetY;
+      return { x: a * lx + c * ly + e, y: b * lx + d * ly + f };
+    }
+    const xScaled = p.x * sx;
+    const yScaled = p.y * sy;
+    const xRot = xScaled * cosA - yScaled * sinA;
+    const yRot = xScaled * sinA + yScaled * cosA;
+    return { x: baseLeft + xRot, y: baseTop + yRot };
+  };
+  const toLocal = (p: { x: number; y: number }) => {
+    if (fabricPathTransform) {
+      const [a, b, c, d, e, f] = fabricPathTransform.matrix;
+      const det = a * d - b * c;
+      if (Math.abs(det) > 1e-8) {
+        const dx = p.x - e;
+        const dy = p.y - f;
+        const lx = (d * dx - c * dy) / det;
+        const ly = (-b * dx + a * dy) / det;
+        return {
+          x: lx + fabricPathTransform.pathOffsetX,
+          y: ly + fabricPathTransform.pathOffsetY,
+        };
+      }
+    }
+    const dx = p.x - baseLeft;
+    const dy = p.y - baseTop;
+    const xUnrot = dx * cosA + dy * sinA;
+    const yUnrot = -dx * sinA + dy * cosA;
+    const safeSx = Math.abs(sx) < 1e-6 ? 1 : sx;
+    const safeSy = Math.abs(sy) < 1e-6 ? 1 : sy;
+    return { x: xUnrot / safeSx, y: yUnrot / safeSy };
+  };
+
+  const applyNode = (idx: number, p: { x: number; y: number }) => {
+    if (!target) return;
+    const local = toLocal(p);
+    if (target.type === 'polygon') {
+      const next = [...polygonPts];
+      if (!next[idx]) return;
+      next[idx] = { x: local.x, y: local.y };
+      onChange({ polygonPoints: next });
+      return;
+    }
+    if (target.type === 'line') {
+      if (idx === 0) onChange({ x1: local.x, y1: local.y });
+      if (idx === 1) onChange({ x2: local.x, y2: local.y });
+      return;
+    }
+    if (target.type === 'path') {
+      const next = [...pathPts];
+      if (!next[idx]) return;
+      next[idx] = { ...next[idx], x: local.x, y: local.y };
+      onChange({ pathPoints: next });
+    }
+  };
+
+  const applyHandle = (
+    idx: number,
+    kind: 'in' | 'out',
+    p: { x: number; y: number },
+    altBreak: boolean
+  ) => {
+    if (!target) return;
+    const local = toLocal(p);
+    if (target.type === 'line') {
+      onChange({
+        curveControl: { x: local.x, y: local.y },
+      });
+      return;
+    }
+    if (target.type !== 'path') return;
+    const next = [...pathPts];
+    const node = next[idx];
+    if (!node) return;
+    const updated = kind === 'in'
+      ? { ...node, inX: local.x, inY: local.y }
+      : { ...node, outX: local.x, outY: local.y };
+    if (!altBreak) {
+      const dx = local.x - node.x;
+      const dy = local.y - node.y;
+      if (kind === 'in') {
+        updated.outX = node.x - dx;
+        updated.outY = node.y - dy;
+      } else {
+        updated.inX = node.x - dx;
+        updated.inY = node.y - dy;
+      }
+    }
+    next[idx] = updated;
+    onChange({ pathPoints: next });
+  };
+
+  const finalizePenPoint = (anchorCanvas: { x: number; y: number }, endCanvas: { x: number; y: number }) => {
+    const dxCanvas = endCanvas.x - anchorCanvas.x;
+    const dyCanvas = endCanvas.y - anchorCanvas.y;
+    const dragged = Math.hypot(dxCanvas, dyCanvas) > 2 / scale;
+    const smooth = isCurvePenMode || dragged;
+    if (!activePath) {
+      if (smooth) {
+        const vec = dragged
+          ? { x: dxCanvas, y: dyCanvas }
+          : { x: Math.max(12 / scale, 8), y: 0 };
+        onCreatePathAt(anchorCanvas.x, anchorCanvas.y, {
+          smoothFromLocal: {
+            x: vec.x,
+            y: vec.y,
+          },
+        });
+      } else {
+        onCreatePathAt(anchorCanvas.x, anchorCanvas.y);
+      }
+      return;
+    }
+    const anchorL = toLocal(anchorCanvas);
+    const endL = toLocal(endCanvas);
+    const smoothEndL = dragged
+      ? endL
+      : { x: anchorL.x + Math.max(12 / scale, 8), y: anchorL.y };
+    const nextPts = smooth
+      ? appendSmoothAnchor(activePath.pathPoints, anchorL, smoothEndL)
+      : appendCornerAnchor(activePath.pathPoints, anchorL.x, anchorL.y);
+    onChange({ pathPoints: nextPts, closed: false });
+  };
+
+  const anchors: Array<{ key: string; x: number; y: number; idx: number }> = (() => {
+    if (target?.type === 'line') {
+      return [
+        { key: 'line-start', idx: 0, ...toCanvas({ x: target.x1 ?? 0, y: target.y1 ?? 0 }) },
+        { key: 'line-end', idx: 1, ...toCanvas({ x: target.x2 ?? 120, y: target.y2 ?? 80 }) },
+      ];
+    }
+    if (target?.type === 'polygon') {
+      return polygonPts.map((p, idx) => ({
+        key: `node-${idx}`,
+        idx,
+        ...toCanvas(p),
+      }));
+    }
+    if (target?.type === 'path') {
+      return pathPts.map((p, idx) => ({
+        key: `node-${idx}`,
+        idx,
+        ...toCanvas(p),
+      }));
+    }
+    // Pen with path edit Off: still show existing vertices on the active path.
+    if (isPenMode && activePath) {
+      return activePath.pathPoints.map((p, idx) => ({
+        key: `node-${idx}`,
+        idx,
+        ...toCanvas(p),
+      }));
+    }
+    return [];
+  })();
+
+  return (
+    <div className="absolute inset-0 z-30 pointer-events-none">
+      <div
+        className="absolute inset-0 pointer-events-auto"
+        onPointerDown={(e) => {
+          const pt = getLocalPoint(e);
+          const pathForPenClose = target?.type === 'path' ? target : activePath;
+
+          if (isPenMode && pathForPenClose && pathForPenClose.pathPoints.length >= 3) {
+            const firstPt = pathForPenClose.pathPoints[0]!;
+            const first = toCanvas({ x: firstPt.x, y: firstPt.y });
+            const dist = Math.hypot(pt.x - first.x, pt.y - first.y);
+            if (dist <= 8 / scale) {
+              onChange({ closed: true });
+              onCommit();
+              setPenRubber(null);
+              return;
+            }
+          }
+
+          const pathForHit =
+            target?.type === 'path'
+              ? target
+              : activePath && activePath.type === 'path'
+                ? activePath
+                : null;
+
+          if (toolMode === 'direct' && pathForHit) {
+            const local = toLocal(pt);
+            const tol = localPathHitTolerance(scale, fabricPathTransform, sx, sy);
+            const hit = hitTestPathSegments(
+              pathForHit.pathPoints,
+              pathForHit.closed ?? false,
+              local,
+              tol,
+            );
+            if (hit != null) {
+              const { points, insertedIndex } = insertPathAnchorOnSegment(
+                pathForHit.pathPoints,
+                pathForHit.closed ?? false,
+                hit.segmentIndex,
+                hit.t,
+              );
+              onChange({ pathPoints: points });
+              onCommit();
+              if (insertedIndex >= 0) onSelectPathNode(insertedIndex);
+              e.preventDefault();
+              return;
+            }
+          }
+
+          if (toolMode === 'direct') {
+            onSelectPathNode(null);
+            return;
+          }
+
+          if (!isPenMode) return;
+
+          dragStartRef.current = pt;
+          setDragging('pen:new');
+          setPenRubber({ ax: pt.x, ay: pt.y, px: pt.x, py: pt.y });
+        }}
+        onPointerMove={(e) => {
+          if (dragging === 'pen:new') {
+            const p = getLocalPoint(e);
+            setPenRubber((r) => (r ? { ...r, px: p.x, py: p.y } : null));
+            return;
+          }
+          if (!dragging) return;
+          let local = getLocalPoint(e);
+          if (e.shiftKey && dragStartRef.current) {
+            const dx = local.x - dragStartRef.current.x;
+            const dy = local.y - dragStartRef.current.y;
+            if (Math.abs(dx) >= Math.abs(dy)) {
+              local = { x: local.x, y: dragStartRef.current.y };
+            } else {
+              local = { x: dragStartRef.current.x, y: local.y };
+            }
+          }
+          const [kind, idxRaw, handleKind] = dragging.split(':');
+          const idx = parseInt(idxRaw ?? '0', 10) || 0;
+          if (kind === 'node') applyNode(idx, local);
+          if (kind === 'handle') applyHandle(idx, handleKind === 'in' ? 'in' : 'out', local, e.altKey);
+          if (kind === 'convert' && target?.type === 'path') {
+            const next = [...pathPts];
+            const n = next[idx];
+            if (!n) return;
+            const localPathPoint = toLocal(local);
+            const dx = localPathPoint.x - n.x;
+            const dy = localPathPoint.y - n.y;
+            n.inX = n.x - dx;
+            n.inY = n.y - dy;
+            n.outX = n.x + dx;
+            n.outY = n.y + dy;
+            onChange({ pathPoints: next });
+          }
+        }}
+        onPointerUp={(e) => {
+          if (dragging === 'pen:new') {
+            const start = dragStartRef.current;
+            const end = getLocalPoint(e);
+            if (start) finalizePenPoint(start, end);
+            setPenRubber(null);
+          }
+          if (!dragging) return;
+          setDragging(null);
+          dragStartRef.current = null;
+          onCommit();
+        }}
+      >
+        {penRubber && isPenMode && (
+          <svg
+            className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+            aria-hidden
+          >
+            <line
+              x1={penRubber.ax}
+              y1={penRubber.ay}
+              x2={penRubber.px}
+              y2={penRubber.py}
+              stroke="rgb(245 158 11)"
+              strokeWidth={Math.max(0.5, 1 / scale)}
+              strokeDasharray={`${4 / scale} ${4 / scale}`}
+            />
+          </svg>
+        )}
+        {anchors.map((a) => (
+          <button
+            key={a.key}
+            type="button"
+            className="absolute h-3 w-3 -translate-x-1.5 -translate-y-1.5 rounded-full border border-white bg-amber-500 shadow"
+            style={{ left: a.x, top: a.y }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (toolMode === 'direct') {
+                if (target?.type === 'path') onSelectPathNode(a.idx);
+                dragStartRef.current = { x: a.x, y: a.y };
+                setDragging(`node:${a.idx}`);
+                return;
+              }
+              if (toolMode === 'convert') {
+                if (target?.type === 'path') {
+                  const next = [...pathPts];
+                  const n = next[a.idx];
+                  if (!n) return;
+                  const has = n.inX != null || n.outX != null;
+                  if (has && e.altKey) {
+                    next[a.idx] = { x: n.x, y: n.y };
+                    onChange({ pathPoints: next });
+                    onCommit();
+                  } else {
+                    if (!has) {
+                      next[a.idx] = { ...n, inX: n.x - 20, inY: n.y, outX: n.x + 20, outY: n.y };
+                      onChange({ pathPoints: next });
+                    }
+                    dragStartRef.current = { x: a.x, y: a.y };
+                    setDragging(`convert:${a.idx}`);
+                  }
+                }
+                return;
+              }
+              if (isPenMode && (target?.type === 'path' || activePath) && a.idx === 0 && anchors.length >= 3) {
+                onChange({ closed: true });
+                onCommit();
+              }
+            }}
+            aria-label="Path anchor"
+          />
+        ))}
+        {target?.type === 'line' && target.curveControl && (
+          <button
+            type="button"
+            className="absolute h-2.5 w-2.5 -translate-x-1.5 -translate-y-1.5 rounded-full border border-white bg-cyan-500 shadow"
+            style={{ left: toCanvas(target.curveControl).x, top: toCanvas(target.curveControl).y }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setDragging('handle:0:out');
+            }}
+            aria-label="Curve handle"
+          />
+        )}
+        {target?.type === 'path' &&
+          pathPts.map((p, idx) => (
+            <div key={`handles-${idx}`}>
+              {p.inX != null && p.inY != null && (
+                <button
+                  type="button"
+                  className="absolute h-2.5 w-2.5 -translate-x-1.5 -translate-y-1.5 rounded-full border border-white bg-cyan-500 shadow"
+                  style={{ left: toCanvas({ x: p.inX, y: p.inY }).x, top: toCanvas({ x: p.inX, y: p.inY }).y }}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (toolMode === 'direct' || toolMode === 'convert') setDragging(`handle:${idx}:in`);
+                    dragStartRef.current = toCanvas({ x: p.inX!, y: p.inY! });
+                  }}
+                  aria-label="In handle"
+                />
+              )}
+              {p.outX != null && p.outY != null && (
+                <button
+                  type="button"
+                  className="absolute h-2.5 w-2.5 -translate-x-1.5 -translate-y-1.5 rounded-full border border-white bg-cyan-500 shadow"
+                  style={{ left: toCanvas({ x: p.outX, y: p.outY }).x, top: toCanvas({ x: p.outX, y: p.outY }).y }}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (toolMode === 'direct' || toolMode === 'convert') setDragging(`handle:${idx}:out`);
+                    dragStartRef.current = toCanvas({ x: p.outX!, y: p.outY! });
+                  }}
+                  aria-label="Out handle"
+                />
+              )}
+            </div>
+          ))}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -1291,6 +2072,29 @@ async function createFabricObject(
         fill: fillValue,
         stroke,
         strokeWidth,
+      });
+    }
+    case 'path': {
+      const pathEl = el as PosterPathElement;
+      const d = pathPointsToPathD(pathEl.pathPoints, pathEl.closed ?? false);
+      const size = getPathLocalSize(pathEl.pathPoints);
+      const fillNorm = normalizePosterShapeFill(pathEl.fill, '#14b8a6');
+      const fillOpacity = pathEl.fillOpacity ?? 1;
+      const fillValue = fillNorm.type === 'pattern'
+        ? await posterPatternFillToFabric(
+            fillNorm.textureId,
+            fillNorm.repeat ?? 'repeat',
+            fillNorm.scale ?? 1
+          )
+        : posterShapeFillToFabric(fillNorm, size.w, size.h, fillOpacity);
+      const stroke = pathEl.stroke && (pathEl.strokeWidth ?? 0) > 0 ? pathEl.stroke : '';
+      const strokeWidth = stroke ? (pathEl.strokeWidth ?? 2) : 0;
+      return new Path(d, {
+        ...common,
+        fill: fillValue,
+        stroke,
+        strokeWidth,
+        objectCaching: false,
       });
     }
     case 'text': {

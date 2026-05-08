@@ -164,7 +164,7 @@ export function PosterMobileScaleFader({ readOnly }: Props) {
   return (
     <div
       className={[
-        'fixed left-[max(0.5rem,env(safe-area-inset-left))] top-1/2 z-[42] flex -translate-y-1/2 flex-col items-center gap-0.5 lg:hidden',
+        'pointer-events-none fixed left-[max(0.5rem,env(safe-area-inset-left))] top-1/2 z-[42] flex -translate-y-1/2 flex-col items-center gap-0.5 lg:pointer-events-auto lg:absolute lg:left-2 lg:top-1/2',
         interacting ? 'opacity-100' : 'opacity-[0.35] hover:opacity-90',
         'transition-[opacity] duration-700 ease-in-out',
       ].join(' ')}

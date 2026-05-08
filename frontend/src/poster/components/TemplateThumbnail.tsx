@@ -4,6 +4,7 @@ import type {
   PosterElement,
   PosterTextElement,
   PosterShapeElement,
+  PosterPathElement,
   CanvasBackground,
   PosterShapeFill,
   GradientStop,
@@ -14,6 +15,7 @@ import {
   roundedRectPathD,
   perCornerRadiiFromShape,
 } from '../roundedRectPath';
+import { resolveSegmentControls } from '../path/penToolMath';
 
 interface TemplateThumbnailProps {
   project: PosterProject;
@@ -375,6 +377,59 @@ function renderElement(
         else ctx.lineTo(px, py);
       });
       ctx.closePath();
+      ctx.save();
+      ctx.globalAlpha *= fillOpacity;
+      ctx.fill();
+      ctx.restore();
+      if (strokeW) {
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = strokeW;
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'path': {
+      const pathEl = el as PosterPathElement;
+      const pts = pathEl.pathPoints ?? [];
+      if (!pts.length) break;
+      const fillOpacity = pathEl.fillOpacity ?? 1;
+      const stroke = pathEl.stroke && (pathEl.strokeWidth ?? 0) > 0 ? pathEl.stroke : '';
+      const strokeW = stroke ? (pathEl.strokeWidth ?? 2) * scale * Math.max(sx, sy) : 0;
+      const xs = pts.map((p) => p.x);
+      const ys = pts.map((p) => p.y);
+      const w = Math.max(1, Math.max(...xs) - Math.min(...xs)) * sx;
+      const h = Math.max(1, Math.max(...ys) - Math.min(...ys)) * sy;
+      const fill = resolveShapeFill(ctx, pathEl.fill, x, y, w, h);
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      ctx.moveTo(x + pts[0]!.x * sx, y + pts[0]!.y * sy);
+      for (let i = 1; i < pts.length; i++) {
+        const prev = pts[i - 1]!;
+        const cur = pts[i]!;
+        const [, b1, b2, b3] = resolveSegmentControls(prev, cur);
+        ctx.bezierCurveTo(
+          x + b1.x * sx,
+          y + b1.y * sy,
+          x + b2.x * sx,
+          y + b2.y * sy,
+          x + b3.x * sx,
+          y + b3.y * sy,
+        );
+      }
+      if (pathEl.closed && pts.length > 1) {
+        const last = pts[pts.length - 1]!;
+        const first = pts[0]!;
+        const [, b1, b2, b3] = resolveSegmentControls(last, first);
+        ctx.bezierCurveTo(
+          x + b1.x * sx,
+          y + b1.y * sy,
+          x + b2.x * sx,
+          y + b2.y * sy,
+          x + b3.x * sx,
+          y + b3.y * sy,
+        );
+        ctx.closePath();
+      }
       ctx.save();
       ctx.globalAlpha *= fillOpacity;
       ctx.fill();

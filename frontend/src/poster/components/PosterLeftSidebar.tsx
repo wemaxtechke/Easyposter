@@ -47,6 +47,8 @@ function layerDisplayLabel(el: PosterElement): string {
       return 'Line';
     case 'polygon':
       return 'Polygon';
+    case 'path':
+      return 'Path';
     case 'image':
       return 'Image';
     case '3d-text':
@@ -72,6 +74,8 @@ function layerKindLabel(el: PosterElement): string {
       return 'Line';
     case 'polygon':
       return 'Polygon';
+    case 'path':
+      return 'Path';
     case 'image':
       return 'Image';
     case '3d-text':
@@ -103,6 +107,8 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
   const [recreateStatus, setRecreateStatus] = useState<string | null>(null);
   const [layerDragFromIndex, setLayerDragFromIndex] = useState<number | null>(null);
   const [layerDragOverIndex, setLayerDragOverIndex] = useState<number | null>(null);
+  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [editingLayerName, setEditingLayerName] = useState('');
 
   const handleRecreateUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -164,6 +170,22 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
         }
       });
     });
+  };
+
+  const beginLayerRename = (el: PosterElement) => {
+    if (readOnly) {
+      navigate('/login');
+      return;
+    }
+    setEditingLayerId(el.id);
+    setEditingLayerName(el.layerName ?? layerDisplayLabel(el));
+  };
+
+  const commitLayerRename = (id: string) => {
+    const trimmed = editingLayerName.trim();
+    updateElement(id, { layerName: trimmed || undefined });
+    setEditingLayerId(null);
+    setEditingLayerName('');
   };
 
   const handleAddText = () => {
@@ -283,7 +305,7 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
       <PosterShapesModal
         open={shapesModalOpen}
         onClose={() => setShapesModalOpen(false)}
-        onPick={(id) => addElement(posterShapePresetToElement(id) as Omit<PosterShapeElement, 'id' | 'zIndex'>)}
+        onPick={(id) => addElement(posterShapePresetToElement(id) as Omit<PosterElement, 'id' | 'zIndex'>)}
       />
 
       <PosterImageLibraryModal
@@ -324,7 +346,7 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
           <p className="rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-3 py-3 text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-400">
             Add an element to see it here. Click a layer to select it—even when it is hidden behind
             others on the canvas. Hold Ctrl (or ⌘ on Mac) to add or remove layers from the selection.
-            Double-click a text layer to edit its contents.
+            Double-click a layer name to rename it.
           </p>
         ) : (
           <ul className="max-h-[min(40vh,280px)] space-y-1 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50/80 p-1 dark:border-zinc-700 dark:bg-zinc-800/40">
@@ -400,14 +422,49 @@ export function PosterLeftSidebar({ readOnly = false, onOpen3DModal }: PosterLef
                       onDoubleClick={(e) => {
                         e.preventDefault();
                         selectLayer(el.id, false);
-                        if (el.type === 'text') tryEnterTextEdit(el.id);
+                        beginLayerRename(el);
                       }}
                       className="flex min-w-0 flex-1 flex-col items-start gap-0.5"
                     >
-                      <span className="w-full truncate font-medium">{layerDisplayLabel(el)}</span>
+                      {editingLayerId === el.id ? (
+                        <input
+                          autoFocus
+                          value={editingLayerName}
+                          onChange={(e) => setEditingLayerName(e.target.value)}
+                          onBlur={() => commitLayerRename(el.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              commitLayerRename(el.id);
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              setEditingLayerId(null);
+                              setEditingLayerName('');
+                            }
+                          }}
+                          className="w-full rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs font-medium text-zinc-900 outline-none ring-accent-500 focus:ring-1 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                          aria-label="Layer name"
+                        />
+                      ) : (
+                        <span className="w-full truncate font-medium">{el.layerName?.trim() || layerDisplayLabel(el)}</span>
+                      )}
                       <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                         {layerKindLabel(el)}
                       </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        beginLayerRename(el);
+                      }}
+                      title="Rename layer"
+                      className="shrink-0 rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                      aria-label="Rename layer"
+                    >
+                      <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M14.69 2.86a2 2 0 112.83 2.83l-8.33 8.33a1 1 0 01-.47.27l-3.33.83a1 1 0 01-1.21-1.21l.83-3.33a1 1 0 01.27-.47l8.33-8.33zm1.41 1.41a.5.5 0 00-.71 0l-8.15 8.15-.47 1.88 1.88-.47 8.15-8.15a.5.5 0 000-.71l-.7-.7z" />
+                      </svg>
                     </button>
                     <button
                       type="button"
