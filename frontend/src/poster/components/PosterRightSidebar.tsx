@@ -173,6 +173,8 @@ function PathEditingControls({
   updateElement: (id: string, updates: Partial<PosterElement>) => void;
 }) {
   const [selectedNode, setSelectedNode] = useState(0);
+  const storeSelectedPathNode = usePosterStore((s) => s.selectedPathNode);
+  const setSelectedPathNode = usePosterStore((s) => s.setSelectedPathNode);
   const isPath = element.type === 'path';
   const points: PosterPathPoint[] = isPath
     ? (element as PosterPathElement).pathPoints
@@ -189,6 +191,18 @@ function PathEditingControls({
         : [];
 
   const canEdit = element.type === 'polygon' || element.type === 'line' || element.type === 'path';
+
+  // Sync store selection to local state when canvas node is clicked
+  useEffect(() => {
+    if (
+      storeSelectedPathNode &&
+      storeSelectedPathNode.elementId === element.id &&
+      storeSelectedPathNode.nodeIndex >= 0 &&
+      storeSelectedPathNode.nodeIndex < points.length
+    ) {
+      setSelectedNode(storeSelectedPathNode.nodeIndex);
+    }
+  }, [storeSelectedPathNode, element.id, points.length]);
 
   useEffect(() => {
     setSelectedNode((prev) => Math.max(0, Math.min(prev, Math.max(0, points.length - 1))));
@@ -233,7 +247,11 @@ function PathEditingControls({
                 <label className="text-xs text-zinc-600 dark:text-zinc-400">Node</label>
                 <select
                   value={selectedNode}
-                  onChange={(e) => setSelectedNode(parseInt(e.target.value, 10) || 0)}
+                  onChange={(e) => {
+                    const idx = parseInt(e.target.value, 10) || 0;
+                    setSelectedNode(idx);
+                    setSelectedPathNode({ elementId: element.id, nodeIndex: idx });
+                  }}
                   className="rounded border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
                 >
                   {points.map((_, idx) => (

@@ -60,6 +60,7 @@ function layerGeometryFingerprint(layers: EditorSceneLayer[]): string {
             width: l.shape.width,
             height: l.shape.height,
             ringHoleRatio: l.shape.ringHoleRatio,
+            svgPathD: l.shape.svgPathD,
           },
         };
       }

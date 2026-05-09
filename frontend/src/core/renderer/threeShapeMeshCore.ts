@@ -8,6 +8,7 @@ import {
   type ThreeTextMeshLoadedTextures,
   type ThreeTextRendererProps,
 } from './threeTextMeshCore';
+import { svgPathToShapes } from './svgPathToThree';
 
 /** Centered rounded rectangle (Y-up); `radius` clamped so corners never cross. */
 function appendRoundedRectContour(shape: THREE.Shape, w: number, h: number, radius: number): void {
@@ -225,6 +226,17 @@ function buildShape2D(spec: ShapeLayerSpec): THREE.Shape {
       shape.closePath();
       break;
     }
+    case 'svgPath': {
+      // Handled in buildThreeShapeMeshGroup before buildShape2D
+      const x0 = -w / 2;
+      const y0 = -h / 2;
+      shape.moveTo(x0, y0);
+      shape.lineTo(x0 + w, y0);
+      shape.lineTo(x0 + w, y0 + h);
+      shape.lineTo(x0, y0 + h);
+      shape.closePath();
+      break;
+    }
     default: {
       const x0 = -w / 2;
       const y0 = -h / 2;
@@ -291,8 +303,34 @@ export async function buildThreeShapeMeshGroup(
         )
       : ext.curveSegments;
 
-  const shape2d = buildShape2D(spec);
   const isCrescent = spec.kind === 'crescent';
+  const isSvg = spec.kind === 'svgPath';
+
+  if (isSvg) {
+    if (!spec.svgPathD || !spec.svgPathD.trim()) return null;
+    const shapes = svgPathToShapes(spec.svgPathD, w, h);
+    if (shapes.length === 0) return null;
+
+    const bevelSizeWorld = ext.effectiveBevelSize;
+    const bevelOn = bevelSizeWorld > 1e-8;
+    const geometry = new THREE.ExtrudeGeometry(shapes, {
+      depth: ext.depth,
+      curveSegments: ext.curveSegments,
+      bevelEnabled: bevelOn,
+      bevelThickness: bevelOn ? ext.effectiveBT : 0,
+      bevelSize: bevelSizeWorld,
+      bevelSegments: bevelOn ? ext.effectiveBS : 1,
+    });
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox!;
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    geometry.translate(-center.x, -center.y, -center.z);
+    applyExtrusionShearToGeometry(geometry, extrusionAngle);
+    return finalizeExtrudedMeshGroup(geometry, props, opts);
+  }
+
+  const shape2d = buildShape2D(spec);
   /** Large bevels round the horn tips; crescents use a fraction to stay closer to a sharp 2D icon. */
   const bevelMul = isCrescent ? 0.34 : 1;
   const bevelSegs = isCrescent ? Math.max(3, Math.round(ext.effectiveBS * 0.55)) : ext.effectiveBS;

@@ -193,7 +193,8 @@ export type ShapeLayerKind =
   | 'ellipse'
   | 'triangle'
   | 'crescent'
-  | 'star';
+  | 'star'
+  | 'svgPath';
 
 /** Default inner-hole radius as a fraction of outer radius for `kind: 'ring'`. */
 export const DEFAULT_RING_HOLE_RATIO = 0.4;
@@ -209,6 +210,8 @@ export interface ShapeLayerSpec {
    * Omitted → {@link DEFAULT_RING_HOLE_RATIO}.
    */
   ringHoleRatio?: number;
+  /** SVG path `d` attribute for `kind: 'svgPath'`. */
+  svgPathD?: string;
 }
 
 /** Per-layer 3D text: content/style + transform. Scene lighting/HDRI stay on `EditorState`. */

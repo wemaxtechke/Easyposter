@@ -571,6 +571,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         if (patch.ringHoleRatio !== undefined) {
           nextShape.ringHoleRatio = Math.max(0.06, Math.min(0.92, patch.ringHoleRatio));
         }
+        if (patch.svgPathD !== undefined) {
+          nextShape.svgPathD = patch.svgPathD;
+        }
         return assignTextureRepeatDefaults({
           ...l,
           shape: nextShape,

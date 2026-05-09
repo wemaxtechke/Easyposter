@@ -809,6 +809,7 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                         <option value="triangle">Triangle</option>
                         <option value="crescent">Crescent</option>
                         <option value="star">Star</option>
+                        <option value="svgPath">SVG Path</option>
                       </select>
                     </label>
                     <div className="grid grid-cols-2 gap-2">
@@ -860,6 +861,23 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                           updateActiveShape({ ringHoleRatio: Math.max(0.06, Math.min(0.92, v)) })
                         }
                       />
+                    )}
+                    {activeLayer.shape.kind === 'svgPath' && (
+                      <div className="flex flex-col gap-2">
+                        <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                          SVG Path Data
+                        </span>
+                        <textarea
+                          value={activeLayer.shape.svgPathD ?? ''}
+                          onChange={(e) => updateActiveShape({ svgPathD: e.target.value })}
+                          rows={5}
+                          className="w-full rounded border border-zinc-200 bg-white px-2 py-1.5 font-mono text-xs dark:border-zinc-600 dark:bg-zinc-800"
+                          placeholder={'Paste the SVG path d attribute value here...\ne.g. M10 10 L50 10 L50 50 Z'}
+                        />
+                        <p className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
+                          Paste the <code className="text-zinc-600 dark:text-zinc-300">d</code> attribute value from an SVG <code className="text-zinc-600 dark:text-zinc-300">{'<path>'}</code> element. The path is scaled to fit the width and height above.
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}

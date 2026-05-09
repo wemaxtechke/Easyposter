@@ -205,6 +205,7 @@ export function shapeLayerFromRoot(
       ...(shape.ringHoleRatio !== undefined
         ? { ringHoleRatio: Math.max(0.06, Math.min(0.92, shape.ringHoleRatio)) }
         : {}),
+      ...(shape.svgPathD !== undefined ? { svgPathD: shape.svgPathD } : {}),
     },
     ...t,
     ...styleFieldsFromRoot(s),

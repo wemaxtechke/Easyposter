@@ -6,13 +6,23 @@ import * as THREE from 'three';
 
 export type OpenTypeFont = import('opentype.js').Font;
 
+export interface PathCommand {
+  type: string;
+  x?: number;
+  y?: number;
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+}
+
 export interface ContourPoint {
   x: number;
   y: number;
 }
 
 /** Signed area of a contour (positive = counter-clockwise, negative = clockwise). */
-function contourSignedArea(pts: ContourPoint[]): number {
+export function contourSignedArea(pts: ContourPoint[]): number {
   let area = 0;
   const n = pts.length;
   for (let i = 0; i < n; i++) {
@@ -23,7 +33,7 @@ function contourSignedArea(pts: ContourPoint[]): number {
 }
 
 /** Centroid of a contour. */
-function contourCentroid(pts: ContourPoint[]): ContourPoint {
+export function contourCentroid(pts: ContourPoint[]): ContourPoint {
   let cx = 0;
   let cy = 0;
   const n = pts.length;
@@ -45,7 +55,7 @@ function contourCentroid(pts: ContourPoint[]): ContourPoint {
 }
 
 /** Ray casting: is point inside the contour? */
-function pointInContour(contour: ContourPoint[], px: number, py: number): boolean {
+export function pointInContour(contour: ContourPoint[], px: number, py: number): boolean {
   let inside = false;
   const n = contour.length;
   for (let i = 0, j = n - 1; i < n; j = i++) {
@@ -61,7 +71,7 @@ function pointInContour(contour: ContourPoint[], px: number, py: number): boolea
 }
 
 /** Flatten contour commands to an array of points (for area/centroid/point-in). */
-function contourToPoints(commands: { type: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }[]): ContourPoint[] {
+export function contourToPoints(commands: PathCommand[]): ContourPoint[] {
   const pts: ContourPoint[] = [];
   let x = 0;
   let y = 0;
@@ -99,9 +109,7 @@ function contourToPoints(commands: { type: string; x?: number; y?: number; x1?: 
 }
 
 /** Split path commands into contours (each starts with M, ends with Z). */
-function splitContours(
-  commands: { type: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }[]
-): { type: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }[][] {
+export function splitContours(commands: PathCommand[]): PathCommand[][] {
   const contours: typeof commands[] = [];
   let current: typeof commands = [];
   for (const cmd of commands) {
@@ -120,8 +128,8 @@ function splitContours(
 }
 
 /** Build a single THREE.Shape from one contour's commands. Y is flipped and scaled. */
-function commandsToShape(
-  commands: { type: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }[],
+export function commandsToShape(
+  commands: PathCommand[],
   flipY: number,
   scale: number
 ): THREE.Shape {
@@ -200,7 +208,7 @@ export function generateShapesFromText(
   const letterSpacing = options.letterSpacing ?? 0;
   const needsPerCharLayout = letterSpacing !== 0 || text.includes('\n');
 
-  let commands: { type: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }[];
+  let commands: PathCommand[];
   if (!needsPerCharLayout) {
     const path = font.getPath(text, 0, 0, fontSize);
     commands = path.commands;

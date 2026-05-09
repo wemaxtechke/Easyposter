@@ -1785,6 +1785,7 @@ function PathEditOverlay({
               }
               if (toolMode === 'convert') {
                 if (target?.type === 'path') {
+                  onSelectPathNode(a.idx);
                   const next = [...pathPts];
                   const n = next[a.idx];
                   if (!n) return;
@@ -1836,6 +1837,7 @@ function PathEditOverlay({
                   onPointerDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    onSelectPathNode(idx);
                     if (toolMode === 'direct' || toolMode === 'convert') setDragging(`handle:${idx}:in`);
                     dragStartRef.current = toCanvas({ x: p.inX!, y: p.inY! });
                   }}
@@ -1850,6 +1852,7 @@ function PathEditOverlay({
                   onPointerDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    onSelectPathNode(idx);
                     if (toolMode === 'direct' || toolMode === 'convert') setDragging(`handle:${idx}:out`);
                     dragStartRef.current = toCanvas({ x: p.outX!, y: p.outY! });
                   }}
