@@ -16,6 +16,8 @@ import {
 } from 'fabric';
 import { usePosterStore } from '../store/posterStore';
 import { setFabricCanvasRef } from '../canvasRef';
+import { ObjectSelectionEngine } from '../selection/ObjectSelectionEngine';
+import { DetectionEngine } from '../selection/DetectionEngine';
 import type {
   PosterElement,
   PosterTextElement,
@@ -136,6 +138,7 @@ interface PosterCanvasProps {
 export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }: PosterCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<Canvas | null>(null);
+  const selectionEngineRef = useRef<ObjectSelectionEngine | null>(null);
   const zoomWrapperRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [fontsReady, setFontsReady] = useState(() => {
@@ -171,9 +174,12 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const setActivePathId = usePosterStore((s) => s.setActivePathId);
   const setSelectedPathNode = usePosterStore((s) => s.setSelectedPathNode);
   const setSelectedPathHandle = usePosterStore((s) => s.setSelectedPathHandle);
+  const setMarqueePath = usePosterStore((s) => s.setMarqueePath);
+  const marqueePath = usePosterStore((s) => s.marqueePath);
   const initCanvas = useCallback(() => {
     const host = containerRef.current;
     if (!host) return;
+    const store = usePosterStore;
     // Read size/background from store here — do NOT put canvasWidth/Height/Background in
     // this callback's deps. Recreating the Fabric canvas on those changes disposes all
     // objects; the elements sync effect only runs when `elements` changes, so layers
@@ -199,7 +205,26 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       selectionColor: 'rgba(99, 102, 241, 0.15)',
     });
     canvasRef.current = canvas;
+    (canvas as any).posterStore = store;
+    const detectionEngine = new DetectionEngine(canvas);
+    (canvas as any).detectionEngine = detectionEngine;
     setFabricCanvasRef(canvas);
+
+    selectionEngineRef.current = new ObjectSelectionEngine(
+      canvas,
+      (path) => setMarqueePath(path),
+      async (path, mode) => {
+        const targetId = await detectionEngine.detectObject(path);
+        if (targetId) {
+          setSelected([targetId]);
+          const precisePath = await detectionEngine.generatePrecisePath(targetId);
+          setMarqueePath(precisePath);
+        } else {
+          setSelected([]);
+          setMarqueePath(null);
+        }
+      }
+    );
 
     // Fabric's `selection:updated` only lists newly selected objects in `e.selected`, not the full set.
     // Reading `getActiveObject()` keeps Ctrl/Cmd multi-select in sync with Zustand and avoids collapsing the group.
@@ -353,6 +378,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       textareaObserver.disconnect();
       host.removeEventListener('mousedown', saveScrollPositions, true);
       host.removeEventListener('touchstart', saveScrollPositions, true);
+      selectionEngineRef.current?.unbindEvents();
+      selectionEngineRef.current = null;
       canvas.dispose();
       canvasRef.current = null;
       setFabricCanvasRef(null);
@@ -369,6 +396,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     if (!canvas) return;
     const els = usePosterStore.getState().elements;
     const isDirect = activeTool === 'direct';
+    const isObjSel = activeTool === 'object-selection';
 
     for (const obj of canvas.getObjects()) {
       const id = (obj as { data?: { posterId?: string } }).data?.posterId;
@@ -378,7 +406,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
       const updates: Record<string, unknown> = {
         selectable: !readOnly,
-        evented: true,
+        evented: !isObjSel,
         lockMovementX: lockAll,
         lockMovementY: lockAll,
         lockScalingX: lockAll,
@@ -422,14 +450,64 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       const tag = (e.target as HTMLElement | null)?.tagName;
       const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       if (inInput) return;
-      const key = e.key.toLowerCase();
-      if (key === 'p') {
+
+      const { selectedIds, removeElements, duplicateElements, setSelected, setMarqueePath } = usePosterStore.getState();
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault();
+        setSelected([]);
+        setMarqueePath(null);
+        return;
+      }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedIds.length > 0) {
+          removeElements(selectedIds);
+          setMarqueePath(null);
+          return;
+        }
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        // Copy: handled by duplicate for now as it's the closest internal action
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        if (selectedIds.length > 0) {
+           duplicateElements(selectedIds);
+           return;
+        }
+      }
+
+      if (e.key === 'Enter' && usePosterStore.getState().activeTool === 'object-selection') {
+        e.preventDefault();
+        const { confirmSelectionAsVector } = usePosterStore.getState();
+        confirmSelectionAsVector();
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+      if (key === 'v') {
+        e.preventDefault();
+        setActiveTool('select');
+      } else if (key === 'p') {
+        e.preventDefault();
+        setActiveTool('pen');
         setPathToolMode(e.shiftKey ? 'pen-curve' : 'pen-straight');
       } else if (key === 'a') {
         e.preventDefault();
+        setActiveTool('direct');
         setPathToolMode('direct');
-      } else if (key === 'c') {
+      } else if (key === 't') {
+        e.preventDefault();
+        setActiveTool('text');
+      } else if (key === 'u') {
+        e.preventDefault();
+        setActiveTool('shape');
+      } else if (key === 'w') {
+        e.preventDefault();
+        setActiveTool('object-selection');
+      } else if (key === 'c' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         setPathToolMode('convert');
       } else if (e.key === 'Escape') {
@@ -1305,6 +1383,15 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       (!!pathEditTarget &&
         (pathEditTarget.type === 'polygon' || pathEditTarget.type === 'line' || pathEditTarget.type === 'path')));
 
+  const objectSelectionMode = usePosterStore((s) => s.objectSelectionMode);
+
+  const marqueePathD = useMemo(() => {
+    if (!marqueePath || marqueePath.length < 2) return null;
+    const pts = marqueePath.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ');
+    const isClosed = activeTool === 'object-selection' && (objectSelectionMode === 'rectangle' || objectSelectionMode === 'ai');
+    return isClosed ? pts + ' Z' : pts;
+  }, [marqueePath, activeTool, objectSelectionMode, scale]); // Include scale to redraw if needed, though pts are scene-space
+
   return (
     <div
       ref={viewportRef}
@@ -1362,6 +1449,30 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             className="absolute inset-0"
             style={{ width: canvasWidth, height: canvasHeight }}
           />
+          {marqueePathD && (
+            <svg
+              className="pointer-events-none absolute inset-0 h-full w-full overflow-visible z-50"
+              style={{ width: canvasWidth, height: canvasHeight }}
+            >
+              <path
+                d={marqueePathD}
+                fill="rgba(27, 115, 64, 0.1)"
+                stroke="#1b7340"
+                strokeWidth={2 / scale}
+                strokeDasharray={`${4 / scale} ${4 / scale}`}
+                className="marching-ants"
+              />
+              <style>{`
+                @keyframes marching-ants {
+                  from { stroke-dashoffset: 0; }
+                  to { stroke-dashoffset: ${8 / scale}; }
+                }
+                .marching-ants {
+                  animation: marching-ants 0.5s linear infinite;
+                }
+              `}</style>
+            </svg>
+          )}
           {imageCropTargetId && (
             <PosterImageCropOverlay
               zoomWrapperRef={zoomWrapperRef}

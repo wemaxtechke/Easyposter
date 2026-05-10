@@ -34,7 +34,8 @@ function normalizeBackground(bg: CanvasBackground | string | undefined): CanvasB
 }
 
 export type CanvasPan = { x: number; y: number };
-export type PosterTool = 'select' | 'direct' | 'pen' | 'text' | 'shape';
+export type PosterTool = 'select' | 'direct' | 'pen' | 'text' | 'shape' | 'object-selection';
+export type ObjectSelectionMode = 'rectangle' | 'lasso' | 'magnetic' | 'ai';
 export type PathToolMode = 'pen' | 'pen-straight' | 'pen-curve' | 'direct' | 'convert';
 export type PathNodeSelection = { elementId: string; nodeIndex: number };
 export type PathHandleSelection = PathNodeSelection & { kind: 'in' | 'out' };
@@ -58,6 +59,15 @@ interface PosterStore {
   setPathEditTargetId: (id: string | null) => void;
   activeTool: PosterTool;
   setActiveTool: (tool: PosterTool) => void;
+  objectSelectionMode: ObjectSelectionMode;
+  setObjectSelectionMode: (mode: ObjectSelectionMode) => void;
+  /** Points for the active selection marquee (marching ants) */
+  marqueePath: { x: number; y: number }[] | null;
+  setMarqueePath: (path: { x: number; y: number }[] | null) => void;
+  featherSelection: (amount: number) => void;
+  expandContractSelection: (amount: number) => void;
+  invertSelection: () => void;
+  confirmSelectionAsVector: () => void;
   pathToolMode: PathToolMode;
   setPathToolMode: (mode: PathToolMode) => void;
   activePathId: string | null;
@@ -120,6 +130,59 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
   selectedIds: [],
   activeTool: 'select',
   setActiveTool: (tool) => set({ activeTool: tool }),
+  objectSelectionMode: 'rectangle',
+  setObjectSelectionMode: (mode) => set({ objectSelectionMode: mode }),
+  marqueePath: null,
+  setMarqueePath: (path) => set({ marqueePath: path }),
+  featherSelection: async (amount) => {
+    const { marqueePath } = get();
+    if (!marqueePath) return;
+    const { DetectionEngine } = await import('../selection/DetectionEngine');
+    const engine = new DetectionEngine(null as any);
+    set({ marqueePath: engine.featherPath(marqueePath, amount) });
+  },
+  expandContractSelection: async (amount) => {
+    const { marqueePath } = get();
+    if (!marqueePath) return;
+    const { DetectionEngine } = await import('../selection/DetectionEngine');
+    const engine = new DetectionEngine(null as any);
+    set({ marqueePath: engine.expandContractPath(marqueePath, amount) });
+  },
+  invertSelection: async () => {
+    const { marqueePath, canvasWidth, canvasHeight } = get();
+    if (!marqueePath) return;
+    const { DetectionEngine } = await import('../selection/DetectionEngine');
+    const engine = new DetectionEngine(null as any);
+    set({ marqueePath: engine.invertSelection(marqueePath, canvasWidth, canvasHeight) });
+  },
+  confirmSelectionAsVector: async () => {
+    const { marqueePath } = get();
+    if (!marqueePath || marqueePath.length < 3) return;
+
+    // In a real scenario, this would create a 'path' type element in the store.
+    // For now, we use addElement logic.
+    const minX = Math.min(...marqueePath.map(p => p.x));
+    const minY = Math.min(...marqueePath.map(p => p.y));
+    const maxX = Math.max(...marqueePath.map(p => p.x));
+    const maxY = Math.max(...marqueePath.map(p => p.y));
+
+    const { DetectionEngine } = await import('../selection/DetectionEngine');
+    const _pathData = DetectionEngine.pointsToPathData(marqueePath);
+
+    get().addElement({
+      type: 'path',
+      left: minX,
+      top: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+      fill: { type: 'solid', color: '#1b7340' },
+      opacity: 0.5,
+      pathPoints: marqueePath.map(p => ({ x: p.x - minX, y: p.y - minY })),
+      closed: true,
+    } as any);
+
+    set({ marqueePath: null });
+  },
   pathEditTargetId: null,
   setPathEditTargetId: (id) => set({ pathEditTargetId: id }),
   pathToolMode: 'direct',

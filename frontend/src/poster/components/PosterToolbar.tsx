@@ -62,17 +62,34 @@ const TOOLS: ToolButton[] = [
       </svg>
     ),
   },
+  {
+    id: 'object-selection',
+    label: 'Object Selection',
+    shortcut: 'W',
+    icon: (
+      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="4 2" />
+        <path d="M12 8v8M8 12h8" />
+      </svg>
+    ),
+  },
 ];
 
 export const PosterToolbar = memo(function PosterToolbar() {
   const activeTool = usePosterStore((s) => s.activeTool);
   const setActiveTool = usePosterStore((s) => s.setActiveTool);
+  const objectSelectionMode = usePosterStore((s) => s.objectSelectionMode);
+  const setObjectSelectionMode = usePosterStore((s) => s.setObjectSelectionMode);
   const setPathEditTargetId = usePosterStore((s) => s.setPathEditTargetId);
+  const setMarqueePath = usePosterStore((s) => s.setMarqueePath);
 
   const handleToolClick = (toolId: PosterTool) => {
     setActiveTool(toolId);
     if (toolId !== 'direct') {
       setPathEditTargetId(null);
+    }
+    if (toolId !== 'object-selection') {
+      setMarqueePath(null);
     }
   };
 
@@ -92,9 +109,43 @@ export const PosterToolbar = memo(function PosterToolbar() {
         >
           {tool.icon}
 
+          {/* Sub-menu for Object Selection */}
+          {tool.id === 'object-selection' && activeTool === 'object-selection' && (
+            <div className="absolute left-full ml-4 flex gap-1 p-1 bg-white/95 dark:bg-zinc-900/95 border border-zinc-200 dark:border-zinc-800 rounded-md shadow-lg backdrop-blur-sm">
+              {(['rectangle', 'lasso', 'magnetic', 'ai'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setObjectSelectionMode(mode);
+                  }}
+                  className={`px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded ${
+                    objectSelectionMode === mode
+                      ? 'bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+              <div className="w-[1px] h-4 bg-zinc-200 dark:bg-zinc-800 mx-1 self-center" />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  usePosterStore.getState().invertSelection();
+                }}
+                className="px-2 py-1 text-[10px] uppercase tracking-wider font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded"
+              >
+                Invert
+              </button>
+            </div>
+          )}
+
           {/* Tooltip */}
-      <div className="absolute left-full ml-2 px-2 py-1 bg-zinc-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 flex items-center">
-        {tool.label} <span className="text-zinc-400 ml-2 bg-zinc-800 px-1 rounded">{tool.shortcut}</span>
+          <div className="absolute left-full ml-2 px-2 py-1 bg-zinc-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 flex items-center">
+            {tool.label} <span className="text-zinc-400 ml-2 bg-zinc-800 px-1 rounded">{tool.shortcut}</span>
           </div>
         </button>
       ))}
