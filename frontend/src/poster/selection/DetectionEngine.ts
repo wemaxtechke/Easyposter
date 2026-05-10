@@ -150,6 +150,55 @@ export class DetectionEngine {
       return this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, r * 2, r * 2);
     }
 
+    if (obj.type === 'ellipse') {
+      const rx = (obj as any).rx;
+      const ry = (obj as any).ry;
+      const pts: Point[] = [];
+      for (let i = 0; i < 360; i += 10) {
+        const rad = (i * Math.PI) / 180;
+        pts.push({ x: rx + rx * Math.cos(rad), y: ry + ry * Math.sin(rad) });
+      }
+      return this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, rx * 2, ry * 2);
+    }
+
+    if (obj.type === 'triangle') {
+      const w = (obj as any).width;
+      const h = (obj as any).height;
+      return this.transformPoints([
+        { x: w / 2, y: 0 },
+        { x: w, y: h },
+        { x: 0, y: h }
+      ], matrix, (obj as any).originX, (obj as any).originY, w, h);
+    }
+
+    if (obj.type === 'polygon') {
+      const pts = (obj as any).points;
+      const w = (obj as any).width;
+      const h = (obj as any).height;
+      return this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, w, h);
+    }
+
+    if (obj.type === 'path') {
+      const pathData = (obj as any).path;
+      const pts: Point[] = [];
+      // Simplified: just take the points from M and L commands
+      for (const cmd of pathData) {
+        if (cmd[0] === 'M' || cmd[0] === 'L') {
+          pts.push({ x: cmd[1], y: cmd[2] });
+        } else if (cmd[0] === 'Q') {
+          pts.push({ x: cmd[1], y: cmd[2] });
+          pts.push({ x: cmd[3], y: cmd[4] });
+        } else if (cmd[0] === 'C') {
+          pts.push({ x: cmd[1], y: cmd[2] });
+          pts.push({ x: cmd[3], y: cmd[4] });
+          pts.push({ x: cmd[5], y: cmd[6] });
+        }
+      }
+      const w = (obj as any).width;
+      const h = (obj as any).height;
+      return this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, w, h);
+    }
+
     // Default to bounding rect for others (images, etc)
     const rect = obj.getBoundingRect(true);
     let path = [
