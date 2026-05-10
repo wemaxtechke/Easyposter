@@ -158,6 +158,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const imageCropTargetId = usePosterStore((s) => s.imageCropTargetId);
   const setImageCropTargetId = usePosterStore((s) => s.setImageCropTargetId);
   const setSelected = usePosterStore((s) => s.setSelected);
+  const activeTool = usePosterStore((s) => s.activeTool);
+  const setActiveTool = usePosterStore((s) => s.setActiveTool);
   const addElement = usePosterStore((s) => s.addElement);
   const updateElement = usePosterStore((s) => s.updateElement);
   const pushHistory = usePosterStore((s) => s.pushHistory);
@@ -192,6 +194,9 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       preserveObjectStacking: true,
       /** Ctrl (Windows/Linux) or Cmd (macOS) + click to add/remove objects from the selection */
       selectionKey: ['ctrlKey', 'metaKey'],
+      selectionDashArray: [4, 4],
+      selectionBorderColor: '#6366f1',
+      selectionColor: 'rgba(99, 102, 241, 0.15)',
     });
     canvasRef.current = canvas;
     setFabricCanvasRef(canvas);
@@ -202,6 +207,51 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       if (syncingSelectionFromStoreRef.current) return;
       setSelected(getPosterIdsFromFabricActive(canvas));
     };
+
+    canvas.on('mouse:down', (opt) => {
+      const { activeTool: tool } = usePosterStore.getState();
+      if (tool === 'text' && !opt.target) {
+        const ptr = canvas.getScenePoint(opt.e);
+        usePosterStore.getState().addElement({
+          type: 'text',
+          text: 'New Text',
+          fontSize: 32,
+          fontFamily: 'Arial, sans-serif',
+          fill: '#000000',
+          left: ptr.x,
+          top: ptr.y,
+          scaleX: 1,
+          scaleY: 1,
+          angle: 0,
+          opacity: 1,
+        } as any);
+        usePosterStore.getState().setActiveTool('select');
+      } else if (tool === 'shape' && !opt.target) {
+        const ptr = canvas.getScenePoint(opt.e);
+        usePosterStore.getState().addElement({
+          type: 'rect',
+          fill: '#6366f1',
+          width: 100,
+          height: 100,
+          left: ptr.x,
+          top: ptr.y,
+          scaleX: 1,
+          scaleY: 1,
+          angle: 0,
+          opacity: 1,
+        } as any);
+        usePosterStore.getState().setActiveTool('select');
+      } else if (tool === 'direct' && opt.target) {
+        const id = (opt.target as any).data?.posterId;
+        if (id) {
+          const el = usePosterStore.getState().elements.find(e => e.id === id);
+          if (el?.type === 'path' || el?.type === 'line' || el?.type === 'polygon') {
+            usePosterStore.getState().setPathEditTargetId(id);
+          }
+        }
+      }
+    });
+
     canvas.on('selection:created', onFabricSelectionChange);
     canvas.on('selection:updated', onFabricSelectionChange);
     canvas.on('selection:cleared', (e) => {
@@ -302,27 +352,32 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     const canvas = canvasRef.current;
     if (!canvas) return;
     const els = usePosterStore.getState().elements;
+    const isDirect = activeTool === 'direct';
+
     for (const obj of canvas.getObjects()) {
       const id = (obj as { data?: { posterId?: string } }).data?.posterId;
       const el = id ? els.find((e) => e.id === id) : null;
       const locked = !!el?.locked;
       const lockAll = locked || readOnly || (id != null && id === pathEditTargetId);
+
       const updates: Record<string, unknown> = {
-        selectable: true,
+        selectable: !readOnly,
         evented: true,
         lockMovementX: lockAll,
         lockMovementY: lockAll,
         lockScalingX: lockAll,
         lockScalingY: lockAll,
         lockRotation: lockAll,
+        hasControls: !isDirect && !lockAll,
+        hasBorders: !isDirect && !lockAll,
       };
       if (obj instanceof Textbox) {
-        updates.editable = !readOnly;
+        updates.editable = !readOnly && activeTool === 'text';
       }
       obj.set(updates);
     }
     canvas.requestRenderAll();
-  }, [readOnly, elements, pathEditTargetId]);
+  }, [readOnly, elements, pathEditTargetId, activeTool]);
 
   useEffect(() => {
     if (!pathEditTargetId) return;
