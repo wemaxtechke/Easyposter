@@ -4,7 +4,12 @@ import type { EditorState } from '../../core/types';
 import { MAX_TEXT_LAYERS, isShapeLayer } from '../../core/types';
 import { useEditorStore } from '../../store/editorStore';
 import { PRESETS } from '../../data/presets';
-import { generateStyleFromPrompt, adjustStyleFromPrompt, getAiUsage } from '../../services/threeTextAiApi';
+import {
+  generateStyleFromPrompt,
+  adjustStyleFromPrompt,
+  getAiUsage,
+  generateShapeFromPrompt,
+} from '../../services/threeTextAiApi';
 import { getToken } from '../../lib/api';
 import { ThemeToggle } from '../ThemeToggle';
 import { UserMenu } from '../../auth/UserMenu';
@@ -28,8 +33,10 @@ export const LeftSidebar = memo(function LeftSidebar({
   const setState = useEditorStore((s) => s.setState);
   const [aiPrompt, setAiPrompt] = useState('');
   const [adjustPrompt, setAdjustPrompt] = useState('');
+  const [shapePrompt, setShapePrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isAdjusting, setIsAdjusting] = useState(false);
+  const [isGeneratingShape, setIsGeneratingShape] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [usage, setUsage] = useState<{ tokensUsed: number; limit: number | null; remaining: number | null } | null>(null);
 
@@ -90,6 +97,30 @@ export const LeftSidebar = memo(function LeftSidebar({
       setError(err instanceof Error ? err.message : 'Failed to adjust');
     } finally {
       setIsAdjusting(false);
+    }
+  };
+
+  const handleGenerateShape = async () => {
+    if (!shapePrompt.trim()) return;
+    setIsGeneratingShape(true);
+    setError(null);
+    try {
+      const result = await generateShapeFromPrompt(shapePrompt.trim());
+      if (result) {
+        addShapeLayer({
+          kind: 'svgPath',
+          svgPathD: result.d,
+          width: 4,
+          height: 4,
+        });
+        setShapePrompt('');
+      }
+      const u = await getAiUsage();
+      if (u) setUsage(u);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate shape');
+    } finally {
+      setIsGeneratingShape(false);
     }
   };
 
@@ -286,6 +317,31 @@ export const LeftSidebar = memo(function LeftSidebar({
             className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 hover:border-zinc-300 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:border-zinc-600"
           >
             {isAdjusting ? 'Adjusting...' : 'Adjust'}
+          </button>
+        </div>
+
+        <div className="mt-8 flex flex-col gap-2 border-t border-zinc-100 pt-6 dark:border-zinc-800">
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            AI Shape Generator
+          </h2>
+          <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+            Describe a 3D icon or shape to generate and extrude it.
+          </p>
+          <textarea
+            value={shapePrompt}
+            onChange={(e) => setShapePrompt(e.target.value)}
+            placeholder="e.g. lightning bolt, minimalist crown, coffee cup"
+            rows={2}
+            className="w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm placeholder-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-800 dark:placeholder-zinc-500 dark:focus:border-zinc-500 dark:focus:ring-zinc-500"
+            disabled={isGeneratingShape || !isLoggedIn}
+          />
+          <button
+            type="button"
+            onClick={handleGenerateShape}
+            disabled={isGeneratingShape || !shapePrompt.trim() || !isLoggedIn}
+            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-50"
+          >
+            {isGeneratingShape ? 'Generating Icon...' : 'Generate 3D Icon'}
           </button>
         </div>
       </section>
