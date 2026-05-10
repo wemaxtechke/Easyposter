@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { PosterTopBar } from './PosterTopBar';
 import { PosterLeftSidebar } from './PosterLeftSidebar';
 import { PosterCanvas } from './PosterCanvas';
+import { PosterToolbar } from './PosterToolbar';
 import { PosterRightSidebar } from './PosterRightSidebar';
 import { ThreeTextModal } from './ThreeTextModal';
 import { CanvasSizeModal } from './CanvasSizeModal';
@@ -532,20 +533,39 @@ export function PosterLayout() {
 
       if (inInput) return;
 
-      if (!ctrl && (e.key === 'p' || e.key === 'P')) {
-        e.preventDefault();
-        usePosterStore.getState().setPathToolMode(e.shiftKey ? 'pen-curve' : 'pen-straight');
-        return;
-      }
-      if (!ctrl && (e.key === 'a' || e.key === 'A')) {
-        e.preventDefault();
-        usePosterStore.getState().setPathToolMode('direct');
-        return;
-      }
-      if (!ctrl && (e.key === 'c' || e.key === 'C')) {
-        e.preventDefault();
-        usePosterStore.getState().setPathToolMode('convert');
-        return;
+      if (!ctrl) {
+        const key = e.key.toLowerCase();
+        if (key === 'v') {
+          e.preventDefault();
+          usePosterStore.getState().setActiveTool('select');
+          return;
+        }
+        if (key === 'a') {
+          e.preventDefault();
+          usePosterStore.getState().setActiveTool('direct');
+          return;
+        }
+        if (key === 'p') {
+          e.preventDefault();
+          usePosterStore.getState().setActiveTool('pen');
+          usePosterStore.getState().setPathToolMode(e.shiftKey ? 'pen-curve' : 'pen-straight');
+          return;
+        }
+        if (key === 't') {
+          e.preventDefault();
+          usePosterStore.getState().setActiveTool('text');
+          return;
+        }
+        if (key === 'u') {
+          e.preventDefault();
+          usePosterStore.getState().setActiveTool('shape');
+          return;
+        }
+        if (key === 'c') {
+          e.preventDefault();
+          usePosterStore.getState().setPathToolMode('convert');
+          return;
+        }
       }
 
       // Cut
@@ -786,6 +806,7 @@ export function PosterLayout() {
         </aside>
 
         <main ref={mainRef} className="relative flex min-w-0 flex-1 overflow-hidden p-1 pb-9 sm:p-3 sm:pb-9 lg:overflow-auto lg:p-6 lg:pb-6">
+          {!readOnly && <PosterToolbar />}
           <PosterCanvas readOnly={readOnly} viewportWidth={viewportSize.width} viewportHeight={viewportSize.height} />
           <PosterMobileScaleFader readOnly={readOnly} />
         </main>

@@ -34,6 +34,7 @@ function normalizeBackground(bg: CanvasBackground | string | undefined): CanvasB
 }
 
 export type CanvasPan = { x: number; y: number };
+export type PosterTool = 'select' | 'direct' | 'pen' | 'text' | 'shape';
 export type PathToolMode = 'pen' | 'pen-straight' | 'pen-curve' | 'direct' | 'convert';
 export type PathNodeSelection = { elementId: string; nodeIndex: number };
 export type PathHandleSelection = PathNodeSelection & { kind: 'in' | 'out' };
@@ -55,6 +56,8 @@ interface PosterStore {
   /** Active path-edit target; null disables point/handle editing overlays. */
   pathEditTargetId: string | null;
   setPathEditTargetId: (id: string | null) => void;
+  activeTool: PosterTool;
+  setActiveTool: (tool: PosterTool) => void;
   pathToolMode: PathToolMode;
   setPathToolMode: (mode: PathToolMode) => void;
   activePathId: string | null;
@@ -115,6 +118,8 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
   imageCropTargetId: null,
   setImageCropTargetId: (id) => set({ imageCropTargetId: id }),
   selectedIds: [],
+  activeTool: 'select',
+  setActiveTool: (tool) => set({ activeTool: tool }),
   pathEditTargetId: null,
   setPathEditTargetId: (id) => set({ pathEditTargetId: id }),
   pathToolMode: 'direct',
