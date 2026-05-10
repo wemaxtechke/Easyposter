@@ -12,11 +12,11 @@ interface ToolButton {
 const TOOLS: ToolButton[] = [
   {
     id: 'select',
-    label: 'Move Tool',
+    label: 'Selection Tool',
     shortcut: 'V',
     icon: (
-      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M5 3l14 9-7 2 7 7-3 1-6-7-5 6V3z" fill="currentColor" />
+      <svg className="w-5 h-5" viewBox="0 0 24 24">
+        <path d="M7 2l12 11.2-5.8.8 3.3 6.7-2.2 1.1-3.4-6.6L7 19z" fill="currentColor" />
       </svg>
     ),
   },
@@ -25,8 +25,8 @@ const TOOLS: ToolButton[] = [
     label: 'Direct Selection',
     shortcut: 'A',
     icon: (
-      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M5 3l14 9-7 2 7 7-3 1-6-7-5 6V3z" />
+      <svg className="w-5 h-5" viewBox="0 0 24 24">
+        <path d="M7 2l12 11.2-5.8.8 3.3 6.7-2.2 1.1-3.4-6.6L7 19z" fill="none" stroke="currentColor" strokeWidth="1.5" />
       </svg>
     ),
   },
@@ -58,7 +58,7 @@ const TOOLS: ToolButton[] = [
     shortcut: 'U',
     icon: (
       <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <rect x="4" y="4" width="16" height="16" />
       </svg>
     ),
   },
@@ -67,6 +67,14 @@ const TOOLS: ToolButton[] = [
 export const PosterToolbar = memo(function PosterToolbar() {
   const activeTool = usePosterStore((s) => s.activeTool);
   const setActiveTool = usePosterStore((s) => s.setActiveTool);
+  const setPathEditTargetId = usePosterStore((s) => s.setPathEditTargetId);
+
+  const handleToolClick = (toolId: PosterTool) => {
+    setActiveTool(toolId);
+    if (toolId !== 'direct') {
+      setPathEditTargetId(null);
+    }
+  };
 
   return (
     <div className="absolute left-4 top-1/2 -translate-y-1/2 z-40 flex flex-col gap-1 p-1 bg-white/90 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-xl backdrop-blur-md">
@@ -74,10 +82,10 @@ export const PosterToolbar = memo(function PosterToolbar() {
         <button
           key={tool.id}
           type="button"
-          onClick={() => setActiveTool(tool.id)}
+          onClick={() => handleToolClick(tool.id)}
           className={`group relative flex items-center justify-center w-10 h-10 rounded-md transition-colors ${
             activeTool === tool.id
-              ? 'bg-accent-600 text-white shadow-inner'
+              ? 'bg-[#1b7340] text-white shadow-inner'
               : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
           }`}
           title={`${tool.label} (${tool.shortcut})`}
@@ -85,8 +93,8 @@ export const PosterToolbar = memo(function PosterToolbar() {
           {tool.icon}
 
           {/* Tooltip */}
-          <div className="absolute left-full ml-2 px-2 py-1 bg-zinc-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
-            {tool.label} <span className="text-zinc-400 ml-1">{tool.shortcut}</span>
+      <div className="absolute left-full ml-2 px-2 py-1 bg-zinc-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 flex items-center">
+        {tool.label} <span className="text-zinc-400 ml-2 bg-zinc-800 px-1 rounded">{tool.shortcut}</span>
           </div>
         </button>
       ))}

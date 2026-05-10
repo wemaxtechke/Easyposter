@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { PosterTopBar } from './PosterTopBar';
 import { PosterLeftSidebar } from './PosterLeftSidebar';
+import { PosterToolbar } from './PosterToolbar';
 import { PosterCanvas } from './PosterCanvas';
 import { PosterRightSidebar } from './PosterRightSidebar';
 import { ThreeTextModal } from './ThreeTextModal';
@@ -786,6 +787,7 @@ export function PosterLayout() {
         </aside>
 
         <main ref={mainRef} className="relative flex min-w-0 flex-1 overflow-hidden p-1 pb-9 sm:p-3 sm:pb-9 lg:overflow-auto lg:p-6 lg:pb-6">
+          <PosterToolbar />
           <PosterCanvas readOnly={readOnly} viewportWidth={viewportSize.width} viewportHeight={viewportSize.height} />
           <PosterMobileScaleFader readOnly={readOnly} />
         </main>

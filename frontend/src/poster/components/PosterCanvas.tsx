@@ -193,7 +193,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       backgroundColor: isSolidBackground(bg) ? (bg.color || '#ffffff') : 'transparent',
       preserveObjectStacking: true,
       /** Ctrl (Windows/Linux) or Cmd (macOS) + click to add/remove objects from the selection */
-      selectionKey: ['ctrlKey', 'metaKey'],
+      selectionKey: ['ctrlKey', 'metaKey', 'shiftKey'],
       selectionDashArray: [4, 4],
       selectionBorderColor: '#6366f1',
       selectionColor: 'rgba(99, 102, 241, 0.15)',
@@ -321,6 +321,21 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     });
     textareaObserver.observe(host, { childList: true, subtree: true });
 
+    let animationFrameId: number;
+    const animateSelection = () => {
+      if (!canvas.isSelecting) {
+        animationFrameId = requestAnimationFrame(animateSelection);
+        return;
+      }
+      if (canvas.selectionDashOffset === undefined) {
+        canvas.selectionDashOffset = 0;
+      }
+      canvas.selectionDashOffset = (canvas.selectionDashOffset + 0.2) % 8;
+      canvas.requestRenderAll();
+      animationFrameId = requestAnimationFrame(animateSelection);
+    };
+    animateSelection();
+
     canvas.on('text:editing:entered', () => {
       const obj = canvas.getActiveObject();
       const ta = obj && (obj as { hiddenTextarea?: HTMLTextAreaElement }).hiddenTextarea;
@@ -334,6 +349,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     host.addEventListener('touchstart', saveScrollPositions, true);
 
     return () => {
+      cancelAnimationFrame(animationFrameId);
       textareaObserver.disconnect();
       host.removeEventListener('mousedown', saveScrollPositions, true);
       host.removeEventListener('touchstart', saveScrollPositions, true);
