@@ -128,7 +128,7 @@ interface EditorStore extends EditorState {
   setWebGLExportAPI: (api: WebGLExportAPI | null) => void;
   reset: () => void;
   addTextLayer: () => void;
-  addShapeLayer: () => void;
+  addShapeLayer: (spec?: ShapeLayerSpec) => void;
   removeTextLayer: (id: string) => void;
   duplicateTextLayer: () => void;
   setActiveTextLayerId: (id: string) => void;
@@ -447,7 +447,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       });
     }),
 
-  addShapeLayer: () =>
+  addShapeLayer: (spec) =>
     set((state) => {
       const layers = state.textLayers ?? [];
       if (layers.length >= MAX_TEXT_LAYERS) return {};
@@ -467,7 +467,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         shapeLayerFromRoot(
           { ...(state as EditorState), textLayers: synced, activeTextLayerId: aid },
           newId,
-          undefined,
+          spec || undefined,
           { positionZ: (activeLayer?.positionZ ?? 0) + 0.2 }
         )
       );

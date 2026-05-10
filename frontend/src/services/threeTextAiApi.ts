@@ -61,6 +61,27 @@ export async function adjustStyleFromPrompt(
   return data.preset ?? null;
 }
 
+export interface ThreeTextAiShapeResponse {
+  d: string;
+  label: string;
+}
+
+export async function generateShapeFromPrompt(prompt: string): Promise<ThreeTextAiShapeResponse | null> {
+  const res = await apiFetch('/api/3d-text-ai/generate-shape', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ prompt }),
+  });
+  const data = (await res.json().catch(() => ({}))) as ThreeTextAiShapeResponse & {
+    error?: string;
+    message?: string;
+  };
+  if (!res.ok) {
+    throw new Error(getErrorMessage(res, data));
+  }
+  return { d: data.d, label: data.label };
+}
+
 export async function getAiUsage(): Promise<ThreeTextAiUsageResponse | null> {
   const res = await apiFetch('/api/ai/usage');
   if (res.status === 401) return null;
