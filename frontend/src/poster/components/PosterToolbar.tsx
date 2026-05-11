@@ -88,7 +88,8 @@ export const PosterToolbar = memo(function PosterToolbar() {
     if (toolId !== 'direct') {
       setPathEditTargetId(null);
     }
-    if (toolId !== 'object-selection') {
+    // Only clear marquee when switching away from BOTH object-selection and direct
+    if (toolId !== 'object-selection' && toolId !== 'direct') {
       setMarqueePath(null);
     }
   };
