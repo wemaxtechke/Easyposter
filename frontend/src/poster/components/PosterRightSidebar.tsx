@@ -175,6 +175,8 @@ function PathEditingControls({
   const [selectedNode, setSelectedNode] = useState(0);
   const storeSelectedPathNode = usePosterStore((s) => s.selectedPathNode);
   const setSelectedPathNode = usePosterStore((s) => s.setSelectedPathNode);
+  const pathToolMode = usePosterStore((s) => s.pathToolMode);
+  const setPathToolMode = usePosterStore((s) => s.setPathToolMode);
   const isPath = element.type === 'path';
   const points: PosterPathPoint[] = isPath
     ? (element as PosterPathElement).pathPoints
@@ -226,6 +228,30 @@ function PathEditingControls({
 
   return (
     <div className="flex flex-col gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+      <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-700">
+        <p className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">Path tools</p>
+        <div className="flex gap-1">
+          {([
+            ['pen-straight', 'Pen Straight'],
+            ['pen-curve', 'Pen Curve'],
+            ['direct', 'Direct'],
+            ['convert', 'Convert'],
+          ] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setPathToolMode(mode)}
+              className={`rounded px-2 py-1 text-xs ${
+                pathToolMode === mode
+                  ? 'bg-amber-500 text-white'
+                  : 'border border-zinc-200 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Path edit</p>
         <button
@@ -2111,30 +2137,6 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
       <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
         Properties
       </h3>
-      <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-700">
-        <p className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">Path tools</p>
-        <div className="flex gap-1">
-          {([
-            ['pen-straight', 'Pen Straight'],
-            ['pen-curve', 'Pen Curve'],
-            ['direct', 'Direct'],
-            ['convert', 'Convert'],
-          ] as const).map(([mode, label]) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setPathToolMode(mode)}
-              className={`rounded px-2 py-1 text-xs ${
-                pathToolMode === mode
-                  ? 'bg-amber-500 text-white'
-                  : 'border border-zinc-200 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {single && (
         <>
