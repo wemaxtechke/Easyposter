@@ -283,11 +283,14 @@ export class DetectionEngine {
             // Check if it's a boundary pixel
             if (this.isBoundary(x, y, mask, width, height)) {
               const contour = this.traceContour(x, y, mask, width, height, visited);
-              if (contour.length > 3) {
-                // To avoid small noise islands, set a minimum size
-                if (contour.length >= 4) {
-                  // Simplified each contour
-                  const simplified = this.simplifyPath(contour, 1.5);
+              // To avoid small noise islands, set a minimum size.
+              // A 2x2 square has a perimeter of 4 pixels.
+              if (contour.length >= 4) {
+                // Simplified each contour
+                const simplified = this.simplifyPath(contour, 1.5);
+                // Ensure the simplified path is still a valid polygon
+                // For very small islands that simplify to 2 points, they are likely noise
+                if (simplified.length >= 3) {
                   allContours.push(simplified);
                 }
               }
