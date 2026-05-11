@@ -212,13 +212,17 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
     selectionEngineRef.current = new ObjectSelectionEngine(
       canvas,
-      (path) => setMarqueePath(path),
+      (path) => {
+        // Transform scene marquee drag to target-local space if needed,
+        // but for rectangular selection we keep it scene-space until finished.
+        setMarqueePath([path] as any);
+      },
       async (path, mode) => {
         const targetId = await detectionEngine.detectObject(path);
         if (targetId) {
           setSelected([targetId]);
-          const precisePath = await detectionEngine.generatePrecisePath(targetId);
-          setMarqueePath(precisePath);
+          const precisePath = await detectionEngine.generatePrecisePathLocal(targetId);
+          setMarqueePath(precisePath, targetId);
         } else {
           setSelected([]);
           setMarqueePath(null);
@@ -289,9 +293,12 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       }
       setSelected([]);
     });
-    canvas.on('object:modified', (opt) => {
+    canvas.on('object:modified', async (opt) => {
       if (isFabricReflectSuppressed()) return;
-      const target = opt.target;
+
+      // We don't need to re-generate the marquee path anymore on transform,
+      // because we store it in local space and transform it during rendering.
+
       if (target instanceof ActiveSelection) {
         const store = usePosterStore.getState();
         const groupMatrix = target.calcTransformMatrix();
@@ -1385,12 +1392,45 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
   const objectSelectionMode = usePosterStore((s) => s.objectSelectionMode);
 
+  const marqueeLocalPath = usePosterStore((s) => s.marqueeLocalPath);
+  const marqueeTargetId = usePosterStore((s) => s.marqueeTargetId);
+  const updateMarqueePoint = usePosterStore((s) => s.updateMarqueePoint);
+
   const marqueePathD = useMemo(() => {
-    if (!marqueePath || marqueePath.length < 2) return null;
-    const pts = marqueePath.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ');
-    const isClosed = activeTool === 'object-selection' && (objectSelectionMode === 'rectangle' || objectSelectionMode === 'ai');
-    return isClosed ? pts + ' Z' : pts;
-  }, [marqueePath, activeTool, objectSelectionMode, scale]); // Include scale to redraw if needed, though pts are scene-space
+    if (!marqueeLocalPath || marqueeLocalPath.length === 0) return null;
+
+    let transform: (p: {x: number, y: number}) => {x: number, y: number} = p => p;
+
+    if (marqueeTargetId) {
+      const obj = canvasRef.current?.getObjects().find((o: any) => o.data?.posterId === marqueeTargetId);
+      if (obj) {
+        const matrix = obj.calcTransformMatrix();
+        const w = (obj as any).width || 0;
+        const h = (obj as any).height || 0;
+        const offsetX = obj.originX === 'center' ? w / 2 : 0;
+        const offsetY = obj.originY === 'center' ? h / 2 : 0;
+
+        transform = p => {
+          const lx = p.x - offsetX;
+          const ly = p.y - offsetY;
+          return {
+            x: matrix[0] * lx + matrix[2] * ly + matrix[4],
+            y: matrix[1] * lx + matrix[3] * ly + matrix[5]
+          };
+        };
+      }
+    }
+
+    return marqueeLocalPath.map(path => {
+      if (path.length < 2) return '';
+      const pts = path.map((lp, i) => {
+        const p = transform(lp);
+        return (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`);
+      }).join(' ');
+      const isClosed = activeTool === 'object-selection' && (objectSelectionMode === 'rectangle' || objectSelectionMode === 'ai');
+      return isClosed ? pts + ' Z' : pts;
+    }).join(' ');
+  }, [marqueeLocalPath, marqueeTargetId, activeTool, objectSelectionMode, elements]);
 
   return (
     <div
@@ -1450,28 +1490,121 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             style={{ width: canvasWidth, height: canvasHeight }}
           />
           {marqueePathD && (
-            <svg
-              className="pointer-events-none absolute inset-0 h-full w-full overflow-visible z-50"
-              style={{ width: canvasWidth, height: canvasHeight }}
-            >
-              <path
-                d={marqueePathD}
-                fill="rgba(27, 115, 64, 0.1)"
-                stroke="#1b7340"
-                strokeWidth={2 / scale}
-                strokeDasharray={`${4 / scale} ${4 / scale}`}
-                className="marching-ants"
-              />
-              <style>{`
-                @keyframes marching-ants {
-                  from { stroke-dashoffset: 0; }
-                  to { stroke-dashoffset: ${8 / scale}; }
-                }
-                .marching-ants {
-                  animation: marching-ants 0.5s linear infinite;
-                }
-              `}</style>
-            </svg>
+            <div className="absolute inset-0 pointer-events-none z-50">
+              <svg
+                className="absolute inset-0 h-full w-full overflow-visible"
+                style={{ width: canvasWidth, height: canvasHeight }}
+              >
+                <path
+                  d={marqueePathD}
+                  fill="rgba(27, 115, 64, 0.1)"
+                  stroke="#1b7340"
+                  strokeWidth={2 / scale}
+                  strokeDasharray={`${4 / scale} ${4 / scale}`}
+                  className="marching-ants"
+                />
+                <style>{`
+                  @keyframes marching-ants {
+                    from { stroke-dashoffset: 0; }
+                    to { stroke-dashoffset: ${8 / scale}; }
+                  }
+                  .marching-ants {
+                    animation: marching-ants 0.5s linear infinite;
+                  }
+                `}</style>
+              </svg>
+
+              {/* Marquee anchor points for manual adjustment */}
+              {activeTool === 'object-selection' && marqueeLocalPath && marqueeLocalPath.length > 0 && (
+                <div className="absolute inset-0 pointer-events-none">
+                  {marqueeLocalPath.map((path, pathIdx) => {
+                    let transform: (p: {x: number, y: number}) => {x: number, y: number} = p => p;
+                    if (marqueeTargetId) {
+                      const obj = canvasRef.current?.getObjects().find((o: any) => o.data?.posterId === marqueeTargetId);
+                      if (obj) {
+                        const matrix = obj.calcTransformMatrix();
+                        const w = (obj as any).width || 0;
+                        const h = (obj as any).height || 0;
+                        const offsetX = obj.originX === 'center' ? w / 2 : 0;
+                        const offsetY = obj.originY === 'center' ? h / 2 : 0;
+                        transform = p => {
+                          const lx = p.x - offsetX;
+                          const ly = p.y - offsetY;
+                          return {
+                            x: matrix[0] * lx + matrix[2] * ly + matrix[4],
+                            y: matrix[1] * lx + matrix[3] * ly + matrix[5]
+                          };
+                        };
+                      }
+                    }
+
+                    return (
+                    <div key={`marquee-path-${pathIdx}`} className="absolute inset-0 pointer-events-none">
+                      {path.map((lp, ptIdx) => {
+                        const p = transform(lp);
+                        return (
+                        <div
+                          key={`marquee-node-${pathIdx}-${ptIdx}`}
+                          className="absolute rounded-full border border-white bg-[#1b7340] shadow cursor-move pointer-events-auto"
+                          style={{
+                            left: p.x,
+                            top: p.y,
+                            width: 8 / scale,
+                            height: 8 / scale,
+                            transform: 'translate(-50%, -50%)'
+                          }}
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const startX = e.clientX;
+                            const startY = e.clientY;
+                            const startPos = { x: lp.x, y: lp.y };
+
+                            const onMove = (moveEvent: PointerEvent) => {
+                              const dxRaw = (moveEvent.clientX - startX) / scale;
+                              const dyRaw = (moveEvent.clientY - startY) / scale;
+
+                              // We need to un-transform the delta back to local space
+                              // For simplicity if there is no rotation/scale, it's just raw delta.
+                              // For full accuracy, we'd use the inverse matrix.
+                              // Let's assume raw delta for now or use a simplified un-transform.
+
+                              let dx = dxRaw;
+                              let dy = dyRaw;
+
+                              if (marqueeTargetId) {
+                                const obj = canvasRef.current?.getObjects().find((o: any) => o.data?.posterId === marqueeTargetId);
+                                if (obj) {
+                                  const matrix = obj.calcTransformMatrix();
+                                  const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
+                                  if (Math.abs(det) > 1e-8) {
+                                    dx = (matrix[3] * dxRaw - matrix[2] * dyRaw) / det;
+                                    dy = (-matrix[1] * dxRaw + matrix[0] * dyRaw) / det;
+                                  }
+                                }
+                              }
+
+                              updateMarqueePoint(pathIdx, ptIdx, {
+                                x: startPos.x + dx,
+                                y: startPos.y + dy
+                              });
+                            };
+
+                            const onUp = () => {
+                              window.removeEventListener('pointermove', onMove);
+                              window.removeEventListener('pointerup', onUp);
+                            };
+
+                            window.addEventListener('pointermove', onMove);
+                            window.addEventListener('pointerup', onUp);
+                          }}
+                        />
+                      )})}
+                    </div>
+                  )})}
+                </div>
+              )}
+            </div>
           )}
           {imageCropTargetId && (
             <PosterImageCropOverlay

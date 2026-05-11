@@ -64,17 +64,23 @@ export class DetectionEngine {
     return newPath;
   }
 
-  public invertSelection(path: Point[], canvasWidth: number, canvasHeight: number): Point[] {
-    // Create a path that covers the whole canvas but has a hole for the selection
-    return [
+  public invertSelection(paths: Point[][], canvasWidth: number, canvasHeight: number): Point[] {
+    // Create a path that covers the whole canvas but has holes for the selection
+    let result = [
       { x: 0, y: 0 },
       { x: canvasWidth, y: 0 },
       { x: canvasWidth, y: canvasHeight },
       { x: 0, y: canvasHeight },
-      { x: 0, y: 0 },
-      ...path,
-      path[0]
+      { x: 0, y: 0 }
     ];
+
+    paths.forEach(path => {
+      if (path.length > 0) {
+        result = [...result, ...path, path[0]];
+      }
+    });
+
+    return result;
   }
 
   /**
@@ -122,7 +128,7 @@ export class DetectionEngine {
   /**
    * Generates a precise path around the object.
    */
-  public async generatePrecisePath(elementId: string): Promise<Point[] | null> {
+  public async generatePrecisePath(elementId: string): Promise<Point[][] | null> {
     const obj = this.canvas.getObjects().find((o: any) => o.data?.posterId === elementId);
     if (!obj) return null;
 
@@ -132,12 +138,12 @@ export class DetectionEngine {
     if (obj.type === 'rect') {
       const w = (obj as any).width;
       const h = (obj as any).height;
-      return this.transformPoints([
+      return [this.transformPoints([
         { x: 0, y: 0 },
         { x: w, y: 0 },
         { x: w, y: h },
         { x: 0, y: h }
-      ], matrix, (obj as any).originX, (obj as any).originY, w, h);
+      ], matrix, (obj as any).originX, (obj as any).originY, w, h)];
     }
 
     if (obj.type === 'circle') {
@@ -147,7 +153,7 @@ export class DetectionEngine {
         const rad = (i * Math.PI) / 180;
         pts.push({ x: r + r * Math.cos(rad), y: r + r * Math.sin(rad) });
       }
-      return this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, r * 2, r * 2);
+      return [this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, r * 2, r * 2)];
     }
 
     if (obj.type === 'ellipse') {
@@ -158,24 +164,24 @@ export class DetectionEngine {
         const rad = (i * Math.PI) / 180;
         pts.push({ x: rx + rx * Math.cos(rad), y: ry + ry * Math.sin(rad) });
       }
-      return this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, rx * 2, ry * 2);
+      return [this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, rx * 2, ry * 2)];
     }
 
     if (obj.type === 'triangle') {
       const w = (obj as any).width;
       const h = (obj as any).height;
-      return this.transformPoints([
+      return [this.transformPoints([
         { x: w / 2, y: 0 },
         { x: w, y: h },
         { x: 0, y: h }
-      ], matrix, (obj as any).originX, (obj as any).originY, w, h);
+      ], matrix, (obj as any).originX, (obj as any).originY, w, h)];
     }
 
     if (obj.type === 'polygon') {
       const pts = (obj as any).points;
       const w = (obj as any).width;
       const h = (obj as any).height;
-      return this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, w, h);
+      return [this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, w, h)];
     }
 
     if (obj.type === 'path') {
@@ -196,36 +202,30 @@ export class DetectionEngine {
       }
       const w = (obj as any).width;
       const h = (obj as any).height;
-      return this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, w, h);
+      return [this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, w, h)];
     }
 
     // Default to bounding rect for others (images, etc)
     const rect = obj.getBoundingRect(true);
-    let path = [
+    let paths = [[
       { x: rect.left, y: rect.top },
       { x: rect.left + rect.width, y: rect.top },
       { x: rect.left + rect.width, y: rect.top + rect.height },
       { x: rect.left, y: rect.top + rect.height },
-    ];
+    ]];
 
     // For AI selection, we "shrink-wrap" if it's an image with transparency
     if (obj.type === 'image') {
-      const tight = await this.getTightBoundingBox(obj as any);
-      if (tight) {
-        path = [
-          { x: tight.left, y: tight.top },
-          { x: tight.left + tight.width, y: tight.top },
-          { x: tight.left + tight.width, y: tight.top + tight.height },
-          { x: tight.left, y: tight.top + tight.height },
-        ];
+      const contours = await this.getContourPoints(obj as any);
+      if (contours && contours.length > 0) {
+        return contours;
       }
     }
 
-    return path;
+    return paths;
   }
 
-  private async getTightBoundingBox(img: any): Promise<{left: number, top: number, width: number, height: number} | null> {
-    // Basic pixel-based shrink wrap for images
+  private async getContourPoints(img: any): Promise<Point[][] | null> {
     try {
       const element = img.getElement();
       if (!element) return null;
@@ -239,40 +239,192 @@ export class DetectionEngine {
       ctx.drawImage(element, 0, 0);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
+      const width = canvas.width;
+      const height = canvas.height;
 
-      let minX = canvas.width, maxX = 0, minY = canvas.height, maxY = 0;
-      let found = false;
+      // Alpha threshold mask
+      const threshold = 10;
+      const mask = new Uint8Array(width * height);
+      for (let i = 0; i < data.length; i += 4) {
+        mask[i / 4] = data[i + 3] > threshold ? 1 : 0;
+      }
 
-      for (let y = 0; y < canvas.height; y++) {
-        for (let x = 0; x < canvas.width; x++) {
-          const alpha = data[(y * canvas.width + x) * 4 + 3];
-          if (alpha > 10) { // threshold
-            if (x < minX) minX = x;
-            if (x > maxX) maxX = x;
-            if (y < minY) minY = y;
-            if (y > maxY) maxY = y;
-            found = true;
+      // Moore Neighborhood Tracing implementation
+      const allContours: Point[][] = [];
+      const visited = new Uint8Array(width * height);
+
+      // Find all islands and holes
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          // Find any boundary (external or internal)
+          if (mask[y * width + x] && !visited[y * width + x]) {
+            // Check if it's a boundary pixel
+            if (this.isBoundary(x, y, mask, width, height)) {
+              const contour = this.traceContour(x, y, mask, width, height, visited);
+              if (contour.length > 3) {
+                // To avoid small noise islands, set a minimum size
+                if (contour.length >= 4) {
+                  // Simplified each contour
+                  const simplified = this.simplifyPath(contour, 1.5);
+                  allContours.push(simplified);
+                }
+              }
+            } else {
+              // Internal pixel, mark as visited so we don't check neighbors repeatedly
+              // Although Moore tracing marks its path, it doesn't mark the INSIDE.
+              // We use a flood fill or just rely on the fact that we only start from boundaries.
+              // For robustness, if we found a non-boundary mask pixel, we could mark it visited
+              // but we need to be careful not to skip real islands.
+            }
           }
         }
       }
 
-      if (!found) return null;
+      if (allContours.length === 0) return null;
 
-      // Transform local tight box to canvas coordinates
-      const rect = img.getBoundingRect(true);
-      const scaleX = rect.width / canvas.width;
-      const scaleY = rect.height / canvas.height;
+      // Transform local points to canvas coordinates
+      const matrix = img.calcTransformMatrix();
+      const originX = img.originX;
+      const originY = img.originY;
 
-      return {
-        left: rect.left + minX * scaleX,
-        top: rect.top + minY * scaleY,
-        width: (maxX - minX) * scaleX,
-        height: (maxY - minY) * scaleY
-      };
+      return allContours.map(contour =>
+        this.transformPoints(contour, matrix, originX, originY, width, height)
+      );
+
     } catch (e) {
-      console.error('Failed to get tight bounding box', e);
+      console.error('Failed to get contour points', e);
       return null;
     }
+  }
+
+  private isBoundary(x: number, y: number, mask: Uint8Array, width: number, height: number): boolean {
+    if (!mask[y * width + x]) return false;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height || !mask[ny * width + nx]) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private traceContour(startX: number, startY: number, mask: Uint8Array, width: number, height: number, visited: Uint8Array): Point[] {
+    const contour: Point[] = [];
+    let currX = startX;
+    let currY = startY;
+
+    // Moore Neighborhood Tracing
+    let prevX = startX - 1;
+    let prevY = startY;
+
+    const maxIters = width * height;
+    let iters = 0;
+
+    do {
+      contour.push({ x: currX, y: currY });
+      visited[currY * width + currX] = 1;
+
+      // Clockwise search from prev
+      let found = false;
+      const neighbors = [
+        [currX - 1, currY - 1], [currX, currY - 1], [currX + 1, currY - 1],
+        [currX + 1, currY], [currX + 1, currY + 1], [currX, currY + 1],
+        [currX - 1, currY + 1], [currX - 1, currY]
+      ];
+
+      // Find index of prev neighbor
+      let startIdx = 0;
+      for (let i = 0; i < 8; i++) {
+        if (neighbors[i][0] === prevX && neighbors[i][1] === prevY) {
+          startIdx = i;
+          break;
+        }
+      }
+
+      for (let i = 1; i <= 8; i++) {
+        const idx = (startIdx + i) % 8;
+        const nx = neighbors[idx][0];
+        const ny = neighbors[idx][1];
+
+        if (nx >= 0 && nx < width && ny >= 0 && ny < height && mask[ny * width + nx]) {
+          prevX = currX;
+          prevY = currY;
+          currX = nx;
+          currY = ny;
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) break;
+      iters++;
+    } while ((currX !== startX || currY !== startY) && iters < maxIters);
+
+    // To support holes, we only mark the boundary pixels as visited in the main loop.
+    // The main loop in getContourPoints will then find hole boundaries (inner contours).
+    // However, to avoid infinite loops and re-tracing, we need a way to know if we've already
+    // traced this boundary. Tracing it once and marking it visited is enough for the boundary.
+    // For holes, the "inside" of a hole is 0 (transparent), so it won't trigger a new trace.
+
+    return contour;
+  }
+
+  private simplifyPath(points: Point[], tolerance: number): Point[] {
+    if (points.length <= 2) return points;
+
+    // Ramer-Douglas-Peucker algorithm
+    const sqTolerance = tolerance * tolerance;
+
+    const simplifyRecursive = (pts: Point[], start: number, end: number): number[] => {
+      let maxSqDist = 0;
+      let index = -1;
+
+      for (let i = start + 1; i < end; i++) {
+        const sqDist = this.getSqSegDist(pts[i], pts[start], pts[end]);
+        if (sqDist > maxSqDist) {
+          index = i;
+          maxSqDist = sqDist;
+        }
+      }
+
+      if (maxSqDist > sqTolerance) {
+        const results1 = simplifyRecursive(pts, start, index);
+        const results2 = simplifyRecursive(pts, index, end);
+        return results1.concat(results2.slice(1));
+      } else {
+        return [start, end];
+      }
+    };
+
+    const indices = simplifyRecursive(points, 0, points.length - 1);
+    return indices.map(idx => points[idx]);
+  }
+
+  private getSqSegDist(p: Point, p1: Point, p2: Point): number {
+    let x = p1.x;
+    let y = p1.y;
+    let dx = p2.x - x;
+    let dy = p2.y - y;
+
+    if (dx !== 0 || dy !== 0) {
+      const t = ((p.x - x) * dx + (p.y - y) * dy) / (dx * dx + dy * dy);
+      if (t > 1) {
+        x = p2.x;
+        y = p2.y;
+      } else if (t > 0) {
+        x += dx * t;
+        y += dy * t;
+      }
+    }
+
+    dx = p.x - x;
+    dy = p.y - y;
+
+    return dx * dx + dy * dy;
   }
 
   private transformPoints(pts: Point[], matrix: any, originX: string, originY: string, w: number, h: number): Point[] {
@@ -340,15 +492,17 @@ export class DetectionEngine {
   }
 
   /**
-   * Converts a Point array to a Fabric.js Path string.
+   * Converts multiple Point arrays to a single Fabric.js Path string.
    */
-  public static pointsToPathData(points: Point[]): string {
-    if (points.length < 2) return '';
-    let d = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 1; i < points.length; i++) {
-      d += ` L ${points[i].x} ${points[i].y}`;
-    }
-    d += ' Z';
-    return d;
+  public static pointsToPathData(paths: Point[][]): string {
+    if (!paths || paths.length === 0) return '';
+    return paths.map(points => {
+      if (points.length < 2) return '';
+      let d = `M ${points[0].x} ${points[0].y}`;
+      for (let i = 1; i < points.length; i++) {
+        d += ` L ${points[i].x} ${points[i].y}`;
+      }
+      return d + ' Z';
+    }).join(' ');
   }
 }
