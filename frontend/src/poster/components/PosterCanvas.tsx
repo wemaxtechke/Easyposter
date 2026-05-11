@@ -1562,6 +1562,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                             const startPos = { x: lp.x, y: lp.y };
 
                             const onMove = (moveEvent: PointerEvent) => {
+                              if (!Number.isFinite(scale) || scale === 0) return;
                               const dxRaw = (moveEvent.clientX - startX) / scale;
                               const dyRaw = (moveEvent.clientY - startY) / scale;
 

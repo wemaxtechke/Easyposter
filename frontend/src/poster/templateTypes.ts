@@ -56,7 +56,7 @@ export function getTemplateFieldKeys(template: PosterTemplateDefinition | undefi
   if (Array.isArray(template.fields)) {
     return template.fields.map((f) => f.key);
   }
-  if (template.allowedPlaceholderKeys && template.allowedPlaceholderKeys.length > 0) {
+  if (Array.isArray(template.allowedPlaceholderKeys) && template.allowedPlaceholderKeys.length > 0) {
     return [...template.allowedPlaceholderKeys];
   }
   return [...DEFAULT_POSTER_PLACEHOLDER_KEYS];
