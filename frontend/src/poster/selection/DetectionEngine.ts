@@ -126,24 +126,21 @@ export class DetectionEngine {
   }
 
   /**
-   * Generates a precise path around the object.
+   * Generates a precise path around the object in its local coordinate space.
    */
-  public async generatePrecisePath(elementId: string): Promise<Point[][] | null> {
+  public async generatePrecisePathLocal(elementId: string): Promise<Point[][] | null> {
     const obj = this.canvas.getObjects().find((o: any) => o.data?.posterId === elementId);
     if (!obj) return null;
-
-    // For Fabric objects, we can get their coordinates
-    const matrix = obj.calcTransformMatrix();
 
     if (obj.type === 'rect') {
       const w = (obj as any).width;
       const h = (obj as any).height;
-      return [this.transformPoints([
+      return [[
         { x: 0, y: 0 },
         { x: w, y: 0 },
         { x: w, y: h },
         { x: 0, y: h }
-      ], matrix, (obj as any).originX, (obj as any).originY, w, h)];
+      ]];
     }
 
     if (obj.type === 'circle') {
@@ -153,7 +150,7 @@ export class DetectionEngine {
         const rad = (i * Math.PI) / 180;
         pts.push({ x: r + r * Math.cos(rad), y: r + r * Math.sin(rad) });
       }
-      return [this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, r * 2, r * 2)];
+      return [pts];
     }
 
     if (obj.type === 'ellipse') {
@@ -164,24 +161,22 @@ export class DetectionEngine {
         const rad = (i * Math.PI) / 180;
         pts.push({ x: rx + rx * Math.cos(rad), y: ry + ry * Math.sin(rad) });
       }
-      return [this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, rx * 2, ry * 2)];
+      return [pts];
     }
 
     if (obj.type === 'triangle') {
       const w = (obj as any).width;
       const h = (obj as any).height;
-      return [this.transformPoints([
+      return [[
         { x: w / 2, y: 0 },
         { x: w, y: h },
         { x: 0, y: h }
-      ], matrix, (obj as any).originX, (obj as any).originY, w, h)];
+      ]];
     }
 
     if (obj.type === 'polygon') {
       const pts = (obj as any).points;
-      const w = (obj as any).width;
-      const h = (obj as any).height;
-      return [this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, w, h)];
+      return [pts.map((p: any) => ({ x: p.x, y: p.y }))];
     }
 
     if (obj.type === 'path') {
@@ -200,23 +195,22 @@ export class DetectionEngine {
           pts.push({ x: cmd[5], y: cmd[6] });
         }
       }
-      const w = (obj as any).width;
-      const h = (obj as any).height;
-      return [this.transformPoints(pts, matrix, (obj as any).originX, (obj as any).originY, w, h)];
+      return [pts];
     }
 
-    // Default to bounding rect for others (images, etc)
-    const rect = obj.getBoundingRect(true);
+    // Default to local bounding rect for others (images, etc)
+    const w = (obj as any).width || 0;
+    const h = (obj as any).height || 0;
     let paths = [[
-      { x: rect.left, y: rect.top },
-      { x: rect.left + rect.width, y: rect.top },
-      { x: rect.left + rect.width, y: rect.top + rect.height },
-      { x: rect.left, y: rect.top + rect.height },
+      { x: 0, y: 0 },
+      { x: w, y: 0 },
+      { x: w, y: h },
+      { x: 0, y: h },
     ]];
 
     // For AI selection, we "shrink-wrap" if it's an image with transparency
     if (obj.type === 'image') {
-      const contours = await this.getContourPoints(obj as any);
+      const contours = await this.getContourPointsLocal(obj as any);
       if (contours && contours.length > 0) {
         return contours;
       }
@@ -225,7 +219,26 @@ export class DetectionEngine {
     return paths;
   }
 
-  private async getContourPoints(img: any): Promise<Point[][] | null> {
+  /**
+   * Generates a precise path around the object in scene space.
+   */
+  public async generatePrecisePath(elementId: string): Promise<Point[][] | null> {
+    const obj = this.canvas.getObjects().find((o: any) => o.data?.posterId === elementId);
+    if (!obj) return null;
+
+    const localPaths = await this.generatePrecisePathLocal(elementId);
+    if (!localPaths) return null;
+
+    const matrix = obj.calcTransformMatrix();
+    const w = (obj as any).width || 0;
+    const h = (obj as any).height || 0;
+
+    return localPaths.map(path =>
+      this.transformPoints(path, matrix, (obj as any).originX, (obj as any).originY, w, h)
+    );
+  }
+
+  private async getContourPointsLocal(img: any): Promise<Point[][] | null> {
     try {
       const element = img.getElement();
       if (!element) return null;
@@ -282,14 +295,7 @@ export class DetectionEngine {
 
       if (allContours.length === 0) return null;
 
-      // Transform local points to canvas coordinates
-      const matrix = img.calcTransformMatrix();
-      const originX = img.originX;
-      const originY = img.originY;
-
-      return allContours.map(contour =>
-        this.transformPoints(contour, matrix, originX, originY, width, height)
-      );
+      return allContours;
 
     } catch (e) {
       console.error('Failed to get contour points', e);

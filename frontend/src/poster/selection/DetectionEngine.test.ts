@@ -30,12 +30,12 @@ describe('DetectionEngine', () => {
 
       const result = await engine.generatePrecisePath('test-id');
 
-      expect(result).toEqual([
+      expect(result).toEqual([[
         { x: 100, y: 100 },
         { x: 110, y: 100 },
         { x: 110, y: 110 },
         { x: 100, y: 110 },
-      ]);
+      ]]);
     });
 
     it('returns precise points for a triangle', async () => {
@@ -53,11 +53,11 @@ describe('DetectionEngine', () => {
 
       const result = await engine.generatePrecisePath('tri-id');
 
-      expect(result).toEqual([
+      expect(result).toEqual([[
         { x: 50, y: 0 },
         { x: 100, y: 100 },
         { x: 0, y: 100 },
-      ]);
+      ]]);
     });
   });
 });

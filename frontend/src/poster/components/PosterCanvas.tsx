@@ -299,6 +299,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       // We don't need to re-generate the marquee path anymore on transform,
       // because we store it in local space and transform it during rendering.
 
+      const target = opt.target;
       if (target instanceof ActiveSelection) {
         const store = usePosterStore.getState();
         const groupMatrix = target.calcTransformMatrix();
