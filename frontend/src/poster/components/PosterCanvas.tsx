@@ -215,7 +215,11 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       (path) => {
         // Transform scene marquee drag to target-local space if needed,
         // but for rectangular selection we keep it scene-space until finished.
-        setMarqueePath([path] as any);
+        if (!path) {
+          setMarqueePath(null);
+        } else {
+          setMarqueePath([path]);
+        }
       },
       async (path, mode) => {
         const targetId = await detectionEngine.detectObject(path);
@@ -487,7 +491,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
         }
       }
 
-      if (e.key === 'Enter' && usePosterStore.getState().activeTool === 'object-selection') {
+      if (e.key === 'Enter' && (usePosterStore.getState().activeTool === 'object-selection' || (usePosterStore.getState().activeTool === 'direct' && usePosterStore.getState().marqueeLocalPath))) {
         e.preventDefault();
         const { confirmSelectionAsVector } = usePosterStore.getState();
         confirmSelectionAsVector();
@@ -1428,7 +1432,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
         const p = transform(lp);
         return (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`);
       }).join(' ');
-      const isClosed = activeTool === 'object-selection' && (objectSelectionMode === 'rectangle' || objectSelectionMode === 'ai');
+      const isClosed = (activeTool === 'object-selection' || activeTool === 'direct') && (objectSelectionMode === 'rectangle' || objectSelectionMode === 'ai' || marqueeTargetId != null);
       return isClosed ? pts + ' Z' : pts;
     }).join(' ');
   }, [marqueeLocalPath, marqueeTargetId, activeTool, objectSelectionMode, elements]);
@@ -1516,7 +1520,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
               </svg>
 
               {/* Marquee anchor points for manual adjustment */}
-              {activeTool === 'object-selection' && marqueeLocalPath && marqueeLocalPath.length > 0 && (
+              {(activeTool === 'object-selection' || activeTool === 'direct') && marqueeLocalPath && marqueeLocalPath.length > 0 && (
                 <div className="absolute inset-0 pointer-events-none">
                   {marqueeLocalPath.map((path, pathIdx) => {
                     let transform: (p: {x: number, y: number}) => {x: number, y: number} = p => p;

@@ -186,10 +186,9 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
     const target = elements.find(e => e.id === marqueeTargetId);
     const baseLeft = target?.left ?? 0;
     const baseTop = target?.top ?? 0;
-
-    const allPoints = marqueeLocalPath.flat();
-    const minX = Math.min(...allPoints.map(p => p.x));
-    const minY = Math.min(...allPoints.map(p => p.y));
+    const scaleX = target?.scaleX ?? 1;
+    const scaleY = target?.scaleY ?? 1;
+    const angle = target?.angle ?? 0;
 
     // To properly support multi-island paths in the existing 'path' element,
     // we would need to update the PosterPathElement type.
@@ -201,6 +200,9 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
         type: 'path',
         left: baseLeft,
         top: baseTop,
+        scaleX,
+        scaleY,
+        angle,
         fill: { type: 'solid', color: '#1b7340' },
         opacity: 0.5,
         pathPoints: path.map(p => ({ x: p.x, y: p.y })),

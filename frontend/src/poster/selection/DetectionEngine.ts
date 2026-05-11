@@ -208,8 +208,8 @@ export class DetectionEngine {
       { x: 0, y: h },
     ]];
 
-    // For AI selection, we "shrink-wrap" if it's an image with transparency
-    if (obj.type === 'image') {
+    // For AI selection, we "shrink-wrap" if it's an image or 3D text with transparency
+    if (obj.type === 'image' || obj.type === '3d-text') {
       const contours = await this.getContourPointsLocal(obj as any);
       if (contours && contours.length > 0) {
         return contours;
