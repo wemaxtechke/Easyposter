@@ -60,11 +60,11 @@ describe('DetectionEngine Contour Tracing', () => {
       drawImage: vi.fn(),
       getImageData: () => ({
         data: Array.from({ length: 10 * 10 * 4 }, (_, i) => {
-          // Create two 2x2 squares
+          // Create two 3x3 squares
           const x = Math.floor(i / 4) % 10;
           const y = Math.floor(Math.floor(i / 4) / 10);
-          const isSquare1 = x >= 1 && x <= 2 && y >= 1 && y <= 2;
-          const isSquare2 = x >= 5 && x <= 6 && y >= 5 && y <= 6;
+          const isSquare1 = x >= 1 && x <= 3 && y >= 1 && y <= 3;
+          const isSquare2 = x >= 5 && x <= 7 && y >= 5 && y <= 7;
           if (i % 4 === 3) return (isSquare1 || isSquare2) ? 255 : 0;
           return 0;
         })
