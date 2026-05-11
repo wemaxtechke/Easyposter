@@ -400,7 +400,13 @@ function PathStyleControls({
           max={24}
           step={1}
           value={path.strokeWidth ?? 0}
-          onChange={(e) => updateElement(path.id, { strokeWidth: parseInt(e.target.value, 10) || 0 })}
+          onChange={(e) => {
+            const v = parseInt(e.target.value, 10) || 0;
+            updateElement(path.id, {
+              strokeWidth: v,
+              stroke: v > 0 ? (path.stroke || '#0f172a') : undefined,
+            });
+          }}
           className="w-full"
         />
       </div>
