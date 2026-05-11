@@ -170,6 +170,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const setPathEditTargetId = usePosterStore((s) => s.setPathEditTargetId);
   const pathToolMode = usePosterStore((s) => s.pathToolMode);
   const setPathToolMode = usePosterStore((s) => s.setPathToolMode);
+  const pathPointSize = usePosterStore((s) => s.pathPointSize);
   const activePathId = usePosterStore((s) => s.activePathId);
   const setActivePathId = usePosterStore((s) => s.setActivePathId);
   const setSelectedPathNode = usePosterStore((s) => s.setSelectedPathNode);
@@ -1554,8 +1555,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                           style={{
                             left: p.x,
                             top: p.y,
-                            width: 8 / scale,
-                            height: 8 / scale,
+                            width: pathPointSize / scale,
+                            height: pathPointSize / scale,
                             transform: 'translate(-50%, -50%)'
                           }}
                           onPointerDown={(e) => {
@@ -1627,6 +1628,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             <PathEditOverlay
               target={(pathEditTarget as PosterShapeElement | PosterPathElement | null) ?? null}
               scale={scale}
+              pathPointSize={pathPointSize}
               onChange={(updates) => {
                 const id = pathEditTarget?.id ?? activePathId;
                 if (id) updateElement(id, updates);
@@ -1742,6 +1744,7 @@ type PathEditOverlayProps = {
     opts?: { smoothFromLocal?: { x: number; y: number } },
   ) => void;
   onSelectPathNode: (nodeIndex: number | null) => void;
+  pathPointSize: number;
   fabricPathTransform?: FabricPathXform;
   /** Use Fabric scene space for clicks — matches path `calcTransformMatrix` (fixes drift vs hand-divided coords). */
   fabricCanvasRef: RefObject<Canvas | null>;
@@ -1756,6 +1759,7 @@ function PathEditOverlay({
   activePath,
   onCreatePathAt,
   onSelectPathNode,
+  pathPointSize,
   fabricPathTransform,
   fabricCanvasRef,
 }: PathEditOverlayProps) {
@@ -2093,8 +2097,14 @@ function PathEditOverlay({
           <button
             key={a.key}
             type="button"
-            className="absolute h-3 w-3 -translate-x-1.5 -translate-y-1.5 rounded-full border border-white bg-amber-500 shadow"
-            style={{ left: a.x, top: a.y }}
+            className="absolute rounded-full border border-white bg-amber-500 shadow"
+            style={{
+              left: a.x,
+              top: a.y,
+              width: pathPointSize / scale,
+              height: pathPointSize / scale,
+              transform: 'translate(-50%, -50%)',
+            }}
             onPointerDown={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -2137,8 +2147,14 @@ function PathEditOverlay({
         {target?.type === 'line' && target.curveControl && (
           <button
             type="button"
-            className="absolute h-2.5 w-2.5 -translate-x-1.5 -translate-y-1.5 rounded-full border border-white bg-cyan-500 shadow"
-            style={{ left: toCanvas(target.curveControl).x, top: toCanvas(target.curveControl).y }}
+            className="absolute rounded-full border border-white bg-cyan-500 shadow"
+            style={{
+              left: toCanvas(target.curveControl).x,
+              top: toCanvas(target.curveControl).y,
+              width: (pathPointSize * 0.8) / scale,
+              height: (pathPointSize * 0.8) / scale,
+              transform: 'translate(-50%, -50%)',
+            }}
             onPointerDown={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -2153,8 +2169,14 @@ function PathEditOverlay({
               {p.inX != null && p.inY != null && (
                 <button
                   type="button"
-                  className="absolute h-2.5 w-2.5 -translate-x-1.5 -translate-y-1.5 rounded-full border border-white bg-cyan-500 shadow"
-                  style={{ left: toCanvas({ x: p.inX, y: p.inY }).x, top: toCanvas({ x: p.inX, y: p.inY }).y }}
+                  className="absolute rounded-full border border-white bg-cyan-500 shadow"
+                  style={{
+                    left: toCanvas({ x: p.inX, y: p.inY }).x,
+                    top: toCanvas({ x: p.inX, y: p.inY }).y,
+                    width: (pathPointSize * 0.8) / scale,
+                    height: (pathPointSize * 0.8) / scale,
+                    transform: 'translate(-50%, -50%)',
+                  }}
                   onPointerDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -2168,8 +2190,14 @@ function PathEditOverlay({
               {p.outX != null && p.outY != null && (
                 <button
                   type="button"
-                  className="absolute h-2.5 w-2.5 -translate-x-1.5 -translate-y-1.5 rounded-full border border-white bg-cyan-500 shadow"
-                  style={{ left: toCanvas({ x: p.outX, y: p.outY }).x, top: toCanvas({ x: p.outX, y: p.outY }).y }}
+                  className="absolute rounded-full border border-white bg-cyan-500 shadow"
+                  style={{
+                    left: toCanvas({ x: p.outX, y: p.outY }).x,
+                    top: toCanvas({ x: p.outX, y: p.outY }).y,
+                    width: (pathPointSize * 0.8) / scale,
+                    height: (pathPointSize * 0.8) / scale,
+                    transform: 'translate(-50%, -50%)',
+                  }}
                   onPointerDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
