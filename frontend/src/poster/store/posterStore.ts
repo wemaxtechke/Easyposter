@@ -204,6 +204,8 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
         scaleY,
         angle,
         fill: { type: 'solid', color: '#1b7340' },
+        stroke: '#0f172a',
+        strokeWidth: 0,
         opacity: 0.5,
         pathPoints: path.map(p => ({ x: p.x, y: p.y })),
         closed: true,
