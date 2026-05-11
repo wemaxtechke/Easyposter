@@ -68,18 +68,25 @@ export function usePosterZoom({
 
       const st = usePosterStore.getState();
       const z0 = st.canvasZoom;
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      const z1 = Math.max(0.1, Math.min(5, z0 + delta));
+
+      // Multiplicative zoom for smoother feel (especially at extremes)
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      const z1 = Math.max(0.1, Math.min(5, z0 * factor));
       if (Math.abs(z1 - z0) < 1e-9) return;
 
       const fit = Math.min(viewportWidth / canvasWidth, viewportHeight / canvasHeight);
       const s0 = fit * z0;
       const s1 = fit * z1;
       const { x: panX, y: panY } = st.canvasPan;
-      const cx = (vx - panX - SBUF) / s0;
-      const cy = (vy - panY - SBUF) / s0;
-      const panXNew = vx - cx * s1 - SBUF;
-      const panYNew = vy - cy * s1 - SBUF;
+
+      // Use dynamic SBUF matching PosterCanvas.tsx to keep cursor-anchored zoom accurate
+      const isCompact = viewportWidth < 768;
+      const sb = isCompact ? 0 : SBUF;
+
+      const cx = (vx - panX - sb) / s0;
+      const cy = (vy - panY - sb) / s0;
+      const panXNew = vx - cx * s1 - sb;
+      const panYNew = vy - cy * s1 - sb;
 
       usePosterStore.setState({
         canvasZoom: z1,
