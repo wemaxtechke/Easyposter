@@ -78,6 +78,8 @@ interface PosterStore {
   setSelectedPathNode: (sel: PathNodeSelection | null) => void;
   selectedPathHandle: PathHandleSelection | null;
   setSelectedPathHandle: (sel: PathHandleSelection | null) => void;
+  pathPointSize: number;
+  setPathPointSize: (size: number) => void;
   history: HistoryEntry[];
   historyIndex: number;
   /** Field bindings from template (key/label/sourceElementId). Null when loading from file or no template. */
@@ -224,6 +226,8 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
   setSelectedPathNode: (sel) => set({ selectedPathNode: sel }),
   selectedPathHandle: null,
   setSelectedPathHandle: (sel) => set({ selectedPathHandle: sel }),
+  pathPointSize: 10,
+  setPathPointSize: (size) => set({ pathPointSize: size }),
   history: [[]],
   historyIndex: 0,
   fieldBindings: null,
