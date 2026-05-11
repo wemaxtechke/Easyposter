@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { PosterTopBar } from './PosterTopBar';
 import { PosterLeftSidebar } from './PosterLeftSidebar';
@@ -638,13 +638,18 @@ export function PosterLayout() {
     return () => document.removeEventListener('keydown', handler);
   }, [readOnly, duplicateElements, removeElements, pushHistory, undo, redo, setSelected]);
 
-  const reservedKeysForLabel = new Set(
-    (templateAuthoring?.fields ?? [])
-      .filter((f) => f.sourceElementId !== labelTargetId)
-      .map((f) => f.key.trim())
+  const reservedKeysForLabel = useMemo(
+    () =>
+      new Set(
+        (templateAuthoring?.fields ?? [])
+          .filter((f) => f.sourceElementId !== labelTargetId)
+          .map((f) => f.key.trim())
+      ),
+    [templateAuthoring?.fields, labelTargetId]
   );
-  const existingBindingForLabel = templateAuthoring?.fields.find(
-    (f) => f.sourceElementId === labelTargetId
+  const existingBindingForLabel = useMemo(
+    () => templateAuthoring?.fields?.find((f) => f.sourceElementId === labelTargetId),
+    [templateAuthoring?.fields, labelTargetId]
   );
 
   /** Mobile: fixed top stack (read-only strip + toolbar). Spacer + drawer top match this height. */

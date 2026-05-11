@@ -77,7 +77,7 @@ describe('DetectionEngine Contour Tracing', () => {
     };
     vi.spyOn(document, 'createElement').mockReturnValue(mockCanvas as any);
 
-    const result = await engine.getContourPoints(mockImage);
+    const result = await (engine as any).getContourPointsLocal(mockImage);
     expect(result?.length).toBe(2);
     // Simplified square might have fewer points but should be >= 2
     expect(result![0].length).toBeGreaterThanOrEqual(2);

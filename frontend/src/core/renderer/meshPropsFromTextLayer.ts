@@ -8,7 +8,7 @@ export function environmentPathFromState(
   hdrPresets: HdriPreset[] | undefined
 ): string {
   return (
-    (hdrPresets ?? []).find((p) => p.id === (environmentId ?? hdrPresets?.[0]?.id))?.path ?? '/hdr/studio.hdr'
+    (hdrPresets ?? []).find((p) => p.id === (environmentId ?? hdrPresets?.[0]?.id))?.path ?? '/hdr/silver.hdr'
   );
 }
 

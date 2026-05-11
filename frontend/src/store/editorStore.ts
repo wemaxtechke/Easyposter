@@ -90,7 +90,7 @@ const BASE_FLAT: EditorState = {
   shadowOpacity: WHITE_GOLD_STATE.shadowOpacity,
   reflectionStrength: WHITE_GOLD_STATE.reflectionStrength,
   renderEngine: WHITE_GOLD_STATE.renderEngine ?? 'webgl',
-  environmentId: 'studio',
+  environmentId: 'silver',
   hdrPresets: undefined,
   frontColor: WHITE_GOLD_STATE.frontColor,
   frontOpacity: 1,

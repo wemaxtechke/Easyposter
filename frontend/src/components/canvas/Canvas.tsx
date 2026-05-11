@@ -208,7 +208,7 @@ export const Canvas = memo(function Canvas({
             environmentPath={
               (state.hdrPresets ?? []).find(
                 (p) => p.id === (state.environmentId ?? state.hdrPresets?.[0]?.id)
-              )?.path ?? '/hdr/studio.hdr'
+              )?.path ?? '/hdr/silver.hdr'
             }
       lightAzimuth={state.lighting.azimuth}
       lightElevation={state.lighting.elevation}
