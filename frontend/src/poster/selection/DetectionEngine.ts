@@ -98,7 +98,7 @@ export class DetectionEngine {
     let maxScore = 0;
 
     // Sample points in a grid to find the most "present" object
-    const samples = 5;
+    const samples = 15;
     for (const obj of objects) {
       const posterId = (obj as any).data?.posterId;
       if (!posterId) continue;
@@ -116,7 +116,7 @@ export class DetectionEngine {
         }
       }
 
-      if (score > maxScore) {
+      if (score > 0 && score > maxScore) {
         maxScore = score;
         bestTargetId = posterId;
       }
@@ -208,8 +208,9 @@ export class DetectionEngine {
       { x: 0, y: h },
     ]];
 
-    // For AI selection, we "shrink-wrap" if it's an image or 3D text with transparency
-    if (obj.type === 'image' || obj.type === '3d-text') {
+    // For AI selection, we "shrink-wrap" if it's an image, 3D text or regular text with transparency
+    const isText = obj.type === 'text' || obj.type === 'textbox' || obj.type === 'i-text';
+    if (obj.type === 'image' || obj.type === '3d-text' || isText) {
       const contours = await this.getContourPointsLocal(obj as any);
       if (contours && contours.length > 0) {
         return contours;
@@ -238,18 +239,26 @@ export class DetectionEngine {
     );
   }
 
-  private async getContourPointsLocal(img: any): Promise<Point[][] | null> {
+  private async getContourPointsLocal(obj: any): Promise<Point[][] | null> {
     try {
-      const element = img.getElement();
-      if (!element) return null;
+      let canvas: HTMLCanvasElement;
+      const element = typeof obj.getElement === 'function' ? obj.getElement() : null;
 
-      const canvas = document.createElement('canvas');
-      canvas.width = element.width;
-      canvas.height = element.height;
+      if (element) {
+        canvas = document.createElement('canvas');
+        canvas.width = element.width || element.naturalWidth;
+        canvas.height = element.height || element.naturalHeight;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return null;
+        ctx.drawImage(element, 0, 0);
+      } else if (typeof obj.toCanvasElement === 'function') {
+        canvas = obj.toCanvasElement({ multiplier: 1, enableRetinaScaling: false });
+      } else {
+        return null;
+      }
+
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) return null;
-
-      ctx.drawImage(element, 0, 0);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
       const width = canvas.width;

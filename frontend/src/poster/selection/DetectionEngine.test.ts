@@ -59,5 +59,37 @@ describe('DetectionEngine', () => {
         { x: 0, y: 100 },
       ]]);
     });
+
+    it('uses contour tracing for textbox elements', async () => {
+      const mockCanvasElement = {
+        width: 10,
+        height: 10,
+        getContext: vi.fn().mockReturnValue({
+          getImageData: vi.fn().mockReturnValue({
+            data: new Uint8Array(10 * 10 * 4).fill(255), // All opaque
+          }),
+        }),
+      };
+
+      const mockTextbox = {
+        type: 'textbox',
+        data: { posterId: 'text-id' },
+        width: 10,
+        height: 10,
+        originX: 'left',
+        originY: 'top',
+        calcTransformMatrix: () => [1, 0, 0, 1, 0, 0],
+        toCanvasElement: vi.fn().mockReturnValue(mockCanvasElement),
+      } as any;
+
+      mockCanvas.getObjects.mockReturnValue([mockTextbox]);
+
+      const result = await engine.generatePrecisePath('text-id');
+
+      // Should return a contour path, not just bounding rect
+      expect(mockTextbox.toCanvasElement).toHaveBeenCalled();
+      expect(result).toBeDefined();
+      expect(result![0].length).toBeGreaterThan(0);
+    });
   });
 });
