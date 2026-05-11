@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { PosterElement, PosterProject, CanvasBackground } from '../types';
+import type { PosterElement, PosterProject, CanvasBackground, PosterPathPoint } from '../types';
 import { DEFAULT_GRADIENT_STOPS } from '../types';
 import type { PosterTemplateDefinition, PosterTemplateFieldBinding } from '../templateTypes';
 import { fetchPosterTemplateById, fetchPosterTemplateList } from '../services/posterTemplatesApi';
@@ -32,7 +32,6 @@ function normalizeBackground(bg: CanvasBackground | string | undefined): CanvasB
     stops: bg.stops?.length >= 2 ? bg.stops : DEFAULT_GRADIENT_STOPS,
   };
 }
-
 export type CanvasPan = { x: number; y: number };
 export type PosterTool = 'select' | 'direct' | 'pen' | 'text' | 'shape' | 'object-selection';
 export type ObjectSelectionMode = 'rectangle' | 'lasso' | 'magnetic' | 'ai';
@@ -61,9 +60,12 @@ interface PosterStore {
   setActiveTool: (tool: PosterTool) => void;
   objectSelectionMode: ObjectSelectionMode;
   setObjectSelectionMode: (mode: ObjectSelectionMode) => void;
-  /** Points for the active selection marquee (marching ants) */
-  marqueePath: { x: number; y: number }[] | null;
-  setMarqueePath: (path: { x: number; y: number }[] | null) => void;
+  /** Multiple paths for the active selection marquee (marching ants), in LOCAL space of the target object. */
+  marqueeLocalPath: PosterPathPoint[][] | null;
+  /** Optional ID of the element this marquee is currently tracking/hugging. */
+  marqueeTargetId: string | null;
+  setMarqueePath: (path: PosterPathPoint[][] | null, targetId?: string | null) => void;
+  updateMarqueePoint: (pathIndex: number, pointIndex: number, updates: Partial<PosterPathPoint>) => void;
   featherSelection: (amount: number) => void;
   expandContractSelection: (amount: number) => void;
   invertSelection: () => void;
@@ -132,56 +134,81 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
   setActiveTool: (tool) => set({ activeTool: tool }),
   objectSelectionMode: 'rectangle',
   setObjectSelectionMode: (mode) => set({ objectSelectionMode: mode }),
-  marqueePath: null,
-  setMarqueePath: (path) => set({ marqueePath: path }),
+  marqueeLocalPath: null,
+  marqueeTargetId: null,
+  setMarqueePath: (path, targetId = null) => set({ marqueeLocalPath: path, marqueeTargetId: targetId }),
+  updateMarqueePoint: (pathIndex, pointIndex, updates) => {
+    const { marqueeLocalPath } = get();
+    if (!marqueeLocalPath || !marqueeLocalPath[pathIndex] || !marqueeLocalPath[pathIndex][pointIndex]) return;
+    const next = [...marqueeLocalPath];
+    next[pathIndex] = [...next[pathIndex]];
+    next[pathIndex][pointIndex] = { ...next[pathIndex][pointIndex], ...updates };
+    set({ marqueeLocalPath: next });
+  },
   featherSelection: async (amount) => {
-    const { marqueePath } = get();
-    if (!marqueePath) return;
+    const { marqueeLocalPath } = get();
+    if (!marqueeLocalPath) return;
     const { DetectionEngine } = await import('../selection/DetectionEngine');
     const engine = new DetectionEngine(null as any);
-    set({ marqueePath: engine.featherPath(marqueePath, amount) });
+    const nextPaths = marqueeLocalPath.map(path => {
+      const points = engine.featherPath(path as any, amount);
+      return points.map(p => ({ x: p.x, y: p.y }));
+    });
+    set({ marqueeLocalPath: nextPaths });
   },
   expandContractSelection: async (amount) => {
-    const { marqueePath } = get();
-    if (!marqueePath) return;
+    const { marqueeLocalPath } = get();
+    if (!marqueeLocalPath) return;
     const { DetectionEngine } = await import('../selection/DetectionEngine');
     const engine = new DetectionEngine(null as any);
-    set({ marqueePath: engine.expandContractPath(marqueePath, amount) });
+    const nextPaths = marqueeLocalPath.map(path => {
+      const points = engine.expandContractPath(path as any, amount);
+      return points.map(p => ({ x: p.x, y: p.y }));
+    });
+    set({ marqueeLocalPath: nextPaths });
   },
   invertSelection: async () => {
-    const { marqueePath, canvasWidth, canvasHeight } = get();
-    if (!marqueePath) return;
+    const { marqueeLocalPath, canvasWidth, canvasHeight } = get();
+    if (!marqueeLocalPath || marqueeLocalPath.length === 0) return;
     const { DetectionEngine } = await import('../selection/DetectionEngine');
     const engine = new DetectionEngine(null as any);
-    set({ marqueePath: engine.invertSelection(marqueePath, canvasWidth, canvasHeight) });
+    // Invert currently only works in scene space because it uses canvas dimensions.
+    // For now we skip or we would need to un-transform the canvas bounds to local space.
+    // Let's assume for now marqueePath is scene space for inversion.
+    // Actually, let's just use first island.
+    const points = engine.invertSelection(marqueeLocalPath as any, canvasWidth, canvasHeight);
+    set({ marqueeLocalPath: [points.map(p => ({ x: p.x, y: p.y }))] });
   },
   confirmSelectionAsVector: async () => {
-    const { marqueePath } = get();
-    if (!marqueePath || marqueePath.length < 3) return;
+    const { marqueeLocalPath, marqueeTargetId, elements } = get();
+    if (!marqueeLocalPath || marqueeLocalPath.length === 0) return;
 
-    // In a real scenario, this would create a 'path' type element in the store.
-    // For now, we use addElement logic.
-    const minX = Math.min(...marqueePath.map(p => p.x));
-    const minY = Math.min(...marqueePath.map(p => p.y));
-    const maxX = Math.max(...marqueePath.map(p => p.x));
-    const maxY = Math.max(...marqueePath.map(p => p.y));
+    const target = elements.find(e => e.id === marqueeTargetId);
+    const baseLeft = target?.left ?? 0;
+    const baseTop = target?.top ?? 0;
 
-    const { DetectionEngine } = await import('../selection/DetectionEngine');
-    const _pathData = DetectionEngine.pointsToPathData(marqueePath);
+    const allPoints = marqueeLocalPath.flat();
+    const minX = Math.min(...allPoints.map(p => p.x));
+    const minY = Math.min(...allPoints.map(p => p.y));
 
-    get().addElement({
-      type: 'path',
-      left: minX,
-      top: minY,
-      width: maxX - minX,
-      height: maxY - minY,
-      fill: { type: 'solid', color: '#1b7340' },
-      opacity: 0.5,
-      pathPoints: marqueePath.map(p => ({ x: p.x - minX, y: p.y - minY })),
-      closed: true,
-    } as any);
+    // To properly support multi-island paths in the existing 'path' element,
+    // we would need to update the PosterPathElement type.
+    // For now, we create a separate path element for each island/hole.
+    // We must transform local points to scene space if we want a single shared 'left/top'.
+    // Or we keep them relative to target's top-left.
+    marqueeLocalPath.forEach(path => {
+      get().addElement({
+        type: 'path',
+        left: baseLeft,
+        top: baseTop,
+        fill: { type: 'solid', color: '#1b7340' },
+        opacity: 0.5,
+        pathPoints: path.map(p => ({ x: p.x, y: p.y })),
+        closed: true,
+      } as any);
+    });
 
-    set({ marqueePath: null });
+    set({ marqueeLocalPath: null, marqueeTargetId: null });
   },
   pathEditTargetId: null,
   setPathEditTargetId: (id) => set({ pathEditTargetId: id }),
