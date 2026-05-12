@@ -332,8 +332,6 @@ function PathEditingControls({
   const setSelectedPathNode = usePosterStore((s) => s.setSelectedPathNode);
   const pathToolMode = usePosterStore((s) => s.pathToolMode);
   const setPathToolMode = usePosterStore((s) => s.setPathToolMode);
-  const pathPointSize = usePosterStore((s) => s.pathPointSize);
-  const setPathPointSize = usePosterStore((s) => s.setPathPointSize);
   const isPath = element.type === 'path';
   const points: PosterPathPoint[] = isPath
     ? (element as PosterPathElement).pathPoints
@@ -409,31 +407,15 @@ function PathEditingControls({
           ))}
         </div>
       </div>
-      <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-700">
-        <div className="flex items-center justify-between">
-          <p className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">Path edit</p>
-          <button
-            type="button"
-            onClick={() => setPathEditActive(!pathEditActive)}
-            className={`${toggleBtn} ${pathEditActive ? toggleBtnOn : toggleBtnOff}`}
-          >
-            {pathEditActive ? 'On' : 'Off'}
-          </button>
-        </div>
-        {pathEditActive && (
-          <div className="flex flex-col gap-1 pt-1">
-            <label className="text-[10px] text-zinc-500 dark:text-zinc-400">Anchor point size ({pathPointSize}px)</label>
-            <input
-              type="range"
-              min={4}
-              max={40}
-              step={1}
-              value={pathPointSize}
-              onChange={(e) => setPathPointSize(parseInt(e.target.value, 10))}
-              className="w-full"
-            />
-          </div>
-        )}
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Path edit</p>
+        <button
+          type="button"
+          onClick={() => setPathEditActive(!pathEditActive)}
+          className={`${toggleBtn} ${pathEditActive ? toggleBtnOn : toggleBtnOff}`}
+        >
+          {pathEditActive ? 'On' : 'Off'}
+        </button>
       </div>
       {pathEditActive && (
         <>
