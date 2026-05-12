@@ -1,4 +1,5 @@
 import { pipeline, env } from '@huggingface/transformers';
+import { SAM_MODEL } from './samConfig';
 
 // Configuration for Transformers.js
 env.allowLocalModels = false;
@@ -14,7 +15,7 @@ export interface SamMask {
 
 export class SamService {
   private static instance: SamService;
-  private model: string = 'Xenova/mobile-sam';
+  private model: string = SAM_MODEL;
 
   private constructor() {}
 
@@ -27,7 +28,12 @@ export class SamService {
 
   private async loadPipeline() {
     if (!samPipeline) {
-      samPipeline = await pipeline('image-segmentation', this.model);
+      try {
+        samPipeline = await pipeline('image-segmentation', this.model);
+      } catch (error) {
+        console.error('Failed to load SAM pipeline:', error);
+        throw error;
+      }
     }
     return samPipeline;
   }

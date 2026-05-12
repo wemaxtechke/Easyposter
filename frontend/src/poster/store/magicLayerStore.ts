@@ -221,70 +221,130 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
       return;
     }
 
-    const { SamService } = await import('../services/SamService');
-    const samService = SamService.getInstance();
-    const samMasks = await samService.generateMasks(sourceCanvas);
-
     const { DetectionEngine } = await import('../selection/DetectionEngine');
-
     const sourceCtx = sourceCanvas.getContext('2d');
     const sourceImageData = sourceCtx!.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
 
-    for (const samMask of samMasks) {
-      const id = generateElementId();
-      const alphaMask = samMask.data;
-      const isolatedCanvas = await DetectionEngine.extractPixels(sourceCanvas, alphaMask);
+    try {
+      const { SamService } = await import('../services/SamService');
+      const samService = SamService.getInstance();
+      const samMasks = await samService.generateMasks(sourceCanvas);
 
-      const contours = DetectionEngine.traceContoursFromMask(alphaMask, samMask.width, samMask.height);
-      if (contours.length === 0) continue;
+      for (const samMask of samMasks) {
+        const id = generateElementId();
+        const alphaMask = samMask.data;
+        const isolatedCanvas = await DetectionEngine.extractPixels(sourceCanvas, alphaMask);
 
-      const newLayer: MagicLayer = {
-        id,
-        sourceObjectId: elementId,
-        sourceImageData,
-        isolatedCanvas,
-        alphaMask,
-        contourPath: contours[0] || [],
-        islands: contours.length > 1 ? contours : undefined,
-        transform: {
-          x: sourceElement.left,
-          y: sourceElement.top,
+        const contours = DetectionEngine.traceContoursFromMask(alphaMask, samMask.width, samMask.height);
+        if (contours.length === 0) continue;
+
+        const newLayer: MagicLayer = {
+          id,
+          sourceObjectId: elementId,
+          sourceImageData,
+          isolatedCanvas,
+          alphaMask,
+          contourPath: contours[0] || [],
+          islands: contours.length > 1 ? contours : undefined,
+          transform: {
+            x: sourceElement.left,
+            y: sourceElement.top,
+            scaleX: sourceElement.scaleX,
+            scaleY: sourceElement.scaleY,
+            rotation: sourceElement.angle,
+          },
+          bounds: {
+            x: 0,
+            y: 0,
+            width: sourceCanvas.width,
+            height: sourceCanvas.height,
+          },
+          editable: true,
+          visible: true,
+          locked: false,
+          createdAt: Date.now(),
+          createdFrom: 'sam',
+        };
+
+        set(state => ({
+          magicLayers: [...state.magicLayers, newLayer],
+        }));
+
+        usePosterStore.getState().addElement({
+          type: 'magic-layer',
+          id,
+          left: sourceElement.left,
+          top: sourceElement.top,
           scaleX: sourceElement.scaleX,
           scaleY: sourceElement.scaleY,
-          rotation: sourceElement.angle,
-        },
-        bounds: {
-          x: 0,
-          y: 0,
-          width: sourceCanvas.width,
-          height: sourceCanvas.height,
-        },
-        editable: true,
-        visible: true,
-        locked: false,
-        createdAt: Date.now(),
-        createdFrom: 'sam',
-      };
+          angle: sourceElement.angle,
+          opacity: 1,
+          sourceObjectId: elementId,
+          isolatedSrc: isolatedCanvas.toDataURL('image/png'),
+          sourceSrc: sourceCanvas.toDataURL('image/png'),
+          contourPath: contours[0] || [],
+          islands: contours.length > 1 ? contours : undefined,
+        } as MagicLayerElement);
+      }
+    } catch (error) {
+      console.error('SAM processing failed, falling back to contour detection:', error);
 
-      set(state => ({
-        magicLayers: [...state.magicLayers, newLayer],
-      }));
+      const engine = new DetectionEngine(fabricCanvas);
+      const contours = await engine.generatePrecisePathLocal(elementId);
 
-      usePosterStore.getState().addElement({
-        type: 'magic-layer',
-        id,
-        left: sourceElement.left,
-        top: sourceElement.top,
-        scaleX: sourceElement.scaleX,
-        scaleY: sourceElement.scaleY,
-        angle: sourceElement.angle,
-        opacity: 1,
-        sourceObjectId: elementId,
-        isolatedSrc: isolatedCanvas.toDataURL('image/png'),
-        sourceSrc: sourceCanvas.toDataURL('image/png'),
-        contourPath: contours[0] || [],
-        islands: contours.length > 1 ? contours : undefined,
-      } as MagicLayerElement);
+      if (contours && contours.length > 0) {
+        const id = generateElementId();
+        const alphaMask = await DetectionEngine.createAlphaMask(contours, sourceCanvas.width, sourceCanvas.height);
+        const isolatedCanvas = await DetectionEngine.extractPixels(sourceCanvas, alphaMask);
+
+        const newLayer: MagicLayer = {
+          id,
+          sourceObjectId: elementId,
+          sourceImageData,
+          isolatedCanvas,
+          alphaMask,
+          contourPath: contours[0] || [],
+          islands: contours.length > 1 ? contours : undefined,
+          transform: {
+            x: sourceElement.left,
+            y: sourceElement.top,
+            scaleX: sourceElement.scaleX,
+            scaleY: sourceElement.scaleY,
+            rotation: sourceElement.angle,
+          },
+          bounds: {
+            x: 0,
+            y: 0,
+            width: sourceCanvas.width,
+            height: sourceCanvas.height,
+          },
+          editable: true,
+          visible: true,
+          locked: false,
+          createdAt: Date.now(),
+          createdFrom: 'contour',
+        };
+
+        set(state => ({
+          magicLayers: [...state.magicLayers, newLayer],
+        }));
+
+        usePosterStore.getState().addElement({
+          type: 'magic-layer',
+          id,
+          left: sourceElement.left,
+          top: sourceElement.top,
+          scaleX: sourceElement.scaleX,
+          scaleY: sourceElement.scaleY,
+          angle: sourceElement.angle,
+          opacity: 1,
+          sourceObjectId: elementId,
+          isolatedSrc: isolatedCanvas.toDataURL('image/png'),
+          sourceSrc: sourceCanvas.toDataURL('image/png'),
+          contourPath: contours[0] || [],
+          islands: contours.length > 1 ? contours : undefined,
+        } as MagicLayerElement);
+      }
     }
   },
 }));
