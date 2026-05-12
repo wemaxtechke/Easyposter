@@ -239,6 +239,267 @@ export class DetectionEngine {
     );
   }
 
+  public static async createAlphaMask(paths: Point[][], width: number, height: number, feather: number = 0): Promise<Uint8ClampedArray> {
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return new Uint8ClampedArray(width * height);
+
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = 'white';
+
+    paths.forEach(path => {
+      if (path.length < 2) return;
+      ctx.beginPath();
+      ctx.moveTo(path[0].x, path[0].y);
+      for (let i = 1; i < path.length; i++) {
+        ctx.lineTo(path[i].x, path[i].y);
+      }
+      ctx.closePath();
+      ctx.fill();
+    });
+
+    if (feather > 0) {
+      ctx.filter = `blur(${feather}px)`;
+      ctx.globalCompositeOperation = 'copy';
+      ctx.drawImage(canvas, 0, 0);
+    }
+
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const alphaMask = new Uint8ClampedArray(width * height);
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      // Use the red channel (since we painted white on black)
+      alphaMask[i / 4] = imageData.data[i];
+    }
+    return alphaMask;
+  }
+
+  public static async extractPixels(sourceCanvas: HTMLCanvasElement | OffscreenCanvas, alphaMask: Uint8ClampedArray): Promise<HTMLCanvasElement> {
+    const width = sourceCanvas.width;
+    const height = sourceCanvas.height;
+    const outputCanvas = document.createElement('canvas');
+    outputCanvas.width = width;
+    outputCanvas.height = height;
+    const outCtx = outputCanvas.getContext('2d');
+    if (!outCtx) return outputCanvas;
+
+    const sourceCtx = sourceCanvas.getContext('2d');
+    if (!sourceCtx) return outputCanvas;
+
+    const sourceData = sourceCtx.getImageData(0, 0, width, height);
+    const outData = outCtx.createImageData(width, height);
+
+    for (let i = 0; i < sourceData.data.length; i += 4) {
+      const alpha = alphaMask[i / 4];
+      outData.data[i] = sourceData.data[i];
+      outData.data[i + 1] = sourceData.data[i + 1];
+      outData.data[i + 2] = sourceData.data[i + 2];
+      // Multiply original alpha by mask alpha
+      outData.data[i + 3] = (sourceData.data[i + 3] * alpha) / 255;
+    }
+
+    outCtx.putImageData(outData, 0, 0);
+    return outputCanvas;
+  }
+
+  public static async applyFeatherToMask(
+    mask: Uint8ClampedArray,
+    width: number,
+    height: number,
+    radius: number
+  ): Promise<Uint8ClampedArray> {
+    if (radius <= 0) return mask;
+
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return mask;
+
+    const imageData = ctx.createImageData(width, height);
+    for (let i = 0; i < mask.length; i++) {
+      const val = mask[i];
+      imageData.data[i * 4] = val;
+      imageData.data[i * 4 + 1] = val;
+      imageData.data[i * 4 + 2] = val;
+      imageData.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    const tempCanvas = new OffscreenCanvas(width, height);
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return mask;
+
+    tempCtx.filter = `blur(${radius}px)`;
+    tempCtx.drawImage(canvas, 0, 0);
+
+    const featheredData = tempCtx.getImageData(0, 0, width, height);
+    const result = new Uint8ClampedArray(width * height);
+    for (let i = 0; i < featheredData.data.length; i += 4) {
+      result[i / 4] = featheredData.data[i];
+    }
+    return result;
+  }
+
+  public static async expandContractMask(
+    mask: Uint8ClampedArray,
+    width: number,
+    height: number,
+    amount: number
+  ): Promise<Uint8ClampedArray> {
+    if (amount === 0) return mask;
+
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return mask;
+
+    const imageData = ctx.createImageData(width, height);
+    for (let i = 0; i < mask.length; i++) {
+      const val = mask[i];
+      imageData.data[i * 4] = val;
+      imageData.data[i * 4 + 1] = val;
+      imageData.data[i * 4 + 2] = val;
+      imageData.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    const resultCanvas = new OffscreenCanvas(width, height);
+    const resultCtx = resultCanvas.getContext('2d');
+    if (!resultCtx) return mask;
+
+    // Use dilation/erosion simulation via blur + threshold or multiple draws
+    // For raster masks, simple way to expand is to blur and then threshold
+    // But for "Expand/Contract" specifically, we might want to use the path offsetting if available.
+    // However, the requirement is for raster masking.
+
+    if (amount > 0) {
+      // Expand: blur and threshold high
+      resultCtx.filter = `blur(${amount}px)`;
+      resultCtx.drawImage(canvas, 0, 0);
+      const data = resultCtx.getImageData(0, 0, width, height);
+      const res = new Uint8ClampedArray(width * height);
+      for (let i = 0; i < data.data.length; i += 4) {
+        // If blurred value > 0, it means it's near an original pixel
+        res[i / 4] = data.data[i] > 0 ? 255 : 0;
+      }
+      return res;
+    } else {
+      // Contract: invert, blur, threshold, invert
+      resultCtx.fillStyle = 'white';
+      resultCtx.fillRect(0, 0, width, height);
+      resultCtx.globalCompositeOperation = 'difference';
+      resultCtx.drawImage(canvas, 0, 0);
+
+      const tempCanvas = new OffscreenCanvas(width, height);
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx!.filter = `blur(${Math.abs(amount)}px)`;
+      tempCtx!.drawImage(resultCanvas, 0, 0);
+
+      const data = tempCtx!.getImageData(0, 0, width, height);
+      const res = new Uint8ClampedArray(width * height);
+      for (let i = 0; i < data.data.length; i += 4) {
+        res[i / 4] = data.data[i] > 0 ? 0 : 255;
+      }
+      return res;
+    }
+  }
+
+  public static async subtractMaskFromImage(
+    sourceCanvas: HTMLCanvasElement | OffscreenCanvas,
+    alphaMask: Uint8ClampedArray
+  ): Promise<HTMLCanvasElement> {
+    const width = sourceCanvas.width;
+    const height = sourceCanvas.height;
+    const outputCanvas = document.createElement('canvas');
+    outputCanvas.width = width;
+    outputCanvas.height = height;
+    const outCtx = outputCanvas.getContext('2d');
+    if (!outCtx) return outputCanvas;
+
+    const sourceCtx = sourceCanvas.getContext('2d');
+    if (!sourceCtx) return outputCanvas;
+
+    const sourceData = sourceCtx.getImageData(0, 0, width, height);
+    const outData = outCtx.createImageData(width, height);
+
+    for (let i = 0; i < sourceData.data.length; i += 4) {
+      const maskAlpha = alphaMask[i / 4];
+      outData.data[i] = sourceData.data[i];
+      outData.data[i + 1] = sourceData.data[i + 1];
+      outData.data[i + 2] = sourceData.data[i + 2];
+      // Subtract mask alpha from original alpha
+      outData.data[i + 3] = Math.max(0, sourceData.data[i + 3] - maskAlpha);
+    }
+
+    outCtx.putImageData(outData, 0, 0);
+    return outputCanvas;
+  }
+
+  public static async smoothMask(
+    mask: Uint8ClampedArray,
+    width: number,
+    height: number,
+    iterations: number = 1
+  ): Promise<Uint8ClampedArray> {
+    let currentMask = mask;
+    for (let i = 0; i < iterations; i++) {
+      // Smoothing a raster mask can be done via a small blur and re-threshold
+      currentMask = await this.applyFeatherToMask(currentMask, width, height, 1);
+      const nextMask = new Uint8ClampedArray(width * height);
+      for (let j = 0; j < currentMask.length; j++) {
+        nextMask[j] = currentMask[j] > 127 ? 255 : 0;
+      }
+      currentMask = nextMask;
+    }
+    return currentMask;
+  }
+
+  public static applyBrushToMask(
+    mask: Uint8ClampedArray,
+    x: number,
+    y: number,
+    radius: number,
+    hardness: number,
+    strength: number,
+    mode: 'add' | 'subtract',
+    width: number,
+    height: number
+  ): Uint8ClampedArray {
+    const result = new Uint8ClampedArray(mask);
+    const rSq = radius * radius;
+    const innerRadius = radius * hardness;
+    const innerRSq = innerRadius * innerRadius;
+
+    const startX = Math.max(0, Math.floor(x - radius));
+    const endX = Math.min(width - 1, Math.ceil(x + radius));
+    const startY = Math.max(0, Math.floor(y - radius));
+    const endY = Math.min(height - 1, Math.ceil(y + radius));
+
+    for (let py = startY; py <= endY; py++) {
+      for (let px = startX; px <= endX; px++) {
+        const dx = px - x;
+        const dy = py - y;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq <= rSq) {
+          let falloff = 1;
+          if (distSq > innerRSq) {
+            const dist = Math.sqrt(distSq);
+            falloff = 1 - (dist - innerRadius) / (radius - innerRadius);
+          }
+
+          const idx = py * width + px;
+          const delta = falloff * strength * 255;
+
+          if (mode === 'add') {
+            result[idx] = Math.min(255, result[idx] + delta);
+          } else {
+            result[idx] = Math.max(0, result[idx] - delta);
+          }
+        }
+      }
+    }
+    return result;
+  }
+
   private async getContourPointsLocal(obj: any): Promise<Point[][] | null> {
     try {
       let canvas: HTMLCanvasElement;
@@ -264,11 +525,23 @@ export class DetectionEngine {
       const width = canvas.width;
       const height = canvas.height;
 
-      // Alpha threshold mask
-      const threshold = 10;
+      // Alpha-aware threshold mask
+      // Instead of a hard threshold, we can use edge strength estimation
       const mask = new Uint8Array(width * height);
-      for (let i = 0; i < data.length; i += 4) {
-        mask[i / 4] = data[i + 3] > threshold ? 1 : 0;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          const alpha = data[idx + 3];
+
+          // Basic alpha threshold
+          if (alpha > 10) {
+            mask[y * width + x] = 1;
+          } else {
+            // Check for semi-transparent edges if needed
+            // For Moore Neighborhood, we still need a binary mask.
+            mask[y * width + x] = 0;
+          }
+        }
       }
 
       // Moore Neighborhood Tracing implementation

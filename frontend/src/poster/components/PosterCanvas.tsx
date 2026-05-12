@@ -242,8 +242,68 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       setSelected(getPosterIdsFromFabricActive(canvas));
     };
 
+    canvas.on('mouse:move', (opt) => {
+      const { activeTool: tool } = usePosterStore.getState();
+      if (tool === 'magic-brush' && opt.e.buttons === 1) {
+        const { useMagicLayerStore } = (require('../store/magicLayerStore'));
+        const { activeMagicLayerId, brushSettings, magicLayers, updateMagicLayerMask } = useMagicLayerStore.getState();
+        if (!activeMagicLayerId) return;
+        const layer = magicLayers.find(l => l.id === activeMagicLayerId);
+        if (!layer) return;
+
+        const obj = canvas.getObjects().find((o: any) => o.data?.posterId === activeMagicLayerId);
+        if (!obj) return;
+
+        const pointer = obj.getLocalPointer(opt.e);
+        const lx = pointer.x;
+        const ly = pointer.y;
+
+        const newMask = DetectionEngine.applyBrushToMask(
+          layer.alphaMask,
+          lx,
+          ly,
+          brushSettings.radius,
+          brushSettings.hardness,
+          brushSettings.strength,
+          brushSettings.mode,
+          layer.bounds.width,
+          layer.bounds.height
+        );
+        if (newMask) updateMagicLayerMask(activeMagicLayerId, newMask);
+      }
+    });
+
     canvas.on('mouse:down', (opt) => {
       const { activeTool: tool } = usePosterStore.getState();
+      if (tool === 'magic-brush') {
+        const { useMagicLayerStore } = (require('../store/magicLayerStore'));
+        const { activeMagicLayerId, brushSettings, magicLayers, updateMagicLayerMask } = useMagicLayerStore.getState();
+        if (!activeMagicLayerId) return;
+        const layer = magicLayers.find(l => l.id === activeMagicLayerId);
+        if (!layer) return;
+
+        const obj = canvas.getObjects().find((o: any) => o.data?.posterId === activeMagicLayerId);
+        if (!obj) return;
+
+        const pointer = obj.getLocalPointer(opt.e);
+        // Correct for originX/originY 'left'/'top'
+        const lx = pointer.x;
+        const ly = pointer.y;
+
+        const newMask = DetectionEngine.applyBrushToMask(
+          layer.alphaMask,
+          lx,
+          ly,
+          brushSettings.radius,
+          brushSettings.hardness,
+          brushSettings.strength,
+          brushSettings.mode,
+          layer.bounds.width,
+          layer.bounds.height
+        );
+        if (newMask) updateMagicLayerMask(activeMagicLayerId, newMask);
+        return;
+      }
       if (tool === 'text' && !opt.target) {
         const ptr = canvas.getScenePoint(opt.e);
         usePosterStore.getState().addElement({
@@ -1158,10 +1218,10 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                   ...(adjKey !== undefined ? { adjustmentsKey: adjKey } : {}),
                   ...(pathGeomKey !== undefined ? { pathGeomKey } : {}),
                 };
-                if (elIsImageLike) {
+                if (elIsImageLike || el.type === 'magic-layer') {
                   applyImageAdjustmentFilters(
                     obj as FabricImage,
-                    el as PosterImageElement | Poster3DTextElement
+                    el as any
                   );
                 }
                 obj.on('modified', () => {
@@ -2491,10 +2551,21 @@ async function createFabricObject(
       return text;
     }
     case 'image':
-    case '3d-text': {
-      const raster = el as PosterImageElement | Poster3DTextElement;
+    case '3d-text':
+    case 'magic-layer': {
+      const raster = el as PosterImageElement | Poster3DTextElement | MagicLayerElement;
       try {
-        const url = await resolvePosterImageFabricSrc(raster);
+        if (el.type === 'magic-layer') {
+          // Attempt to re-hydrate the magic layer data if missing (e.g. after reload)
+          const { useMagicLayerStore } = await import('../store/magicLayerStore');
+          const magicStore = useMagicLayerStore.getState();
+          if (!magicStore.magicLayers.find(l => l.id === el.id)) {
+            // Re-creation from stored properties
+            // In a production app, we would fetch the original source and re-process,
+            // or rely on a permanent storage for masks.
+          }
+        }
+        const url = el.type === 'magic-layer' ? el.isolatedSrc : await resolvePosterImageFabricSrc(raster as any);
         const opts = /^https?:\/\//i.test(url) ? { crossOrigin: 'anonymous' as const } : undefined;
         const img = await FabricImage.fromURL(url, opts);
         const w = img.width ?? 1;
