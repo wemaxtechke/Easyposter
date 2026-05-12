@@ -319,21 +319,6 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           opacity: 1,
         } as any);
         usePosterStore.getState().setActiveTool('select');
-      } else if (tool === 'shape' && !opt.target) {
-        const ptr = canvas.getScenePoint(opt.e);
-        usePosterStore.getState().addElement({
-          type: 'rect',
-          fill: '#6366f1',
-          width: 100,
-          height: 100,
-          left: ptr.x,
-          top: ptr.y,
-          scaleX: 1,
-          scaleY: 1,
-          angle: 0,
-          opacity: 1,
-        } as any);
-        usePosterStore.getState().setActiveTool('select');
       } else if (tool === 'direct' && opt.target) {
         const id = (opt.target as any).data?.posterId;
         if (id) {
@@ -488,7 +473,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
         hasBorders: !isDirect && !lockAll,
       };
       if (obj instanceof Textbox) {
-        updates.editable = !readOnly && activeTool === 'text';
+        updates.editable = !readOnly && (activeTool === 'text' || activeTool === 'select');
       }
       obj.set(updates);
     }
@@ -566,6 +551,13 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
         e.preventDefault();
         setActiveTool('pen');
         setPathToolMode(e.shiftKey ? 'pen-curve' : 'pen-straight');
+        const { elements, selectedIds, setPathEditTargetId } = usePosterStore.getState();
+        if (selectedIds.length === 1) {
+          const el = elements.find(el => el.id === selectedIds[0]);
+          if (el?.type === 'path' || el?.type === 'line' || el?.type === 'polygon') {
+            setPathEditTargetId(el.id);
+          }
+        }
       } else if (key === 'a') {
         e.preventDefault();
         setActiveTool('direct');
@@ -573,9 +565,6 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       } else if (key === 't') {
         e.preventDefault();
         setActiveTool('text');
-      } else if (key === 'u') {
-        e.preventDefault();
-        setActiveTool('shape');
       } else if (key === 'w') {
         e.preventDefault();
         setActiveTool('object-selection');
@@ -643,7 +632,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           lockRotation: lockAll,
         });
         if (obj instanceof Textbox) {
-          obj.set({ editable: !readOnly });
+          const { activeTool } = usePosterStore.getState();
+          obj.set({ editable: !readOnly && (activeTool === 'text' || activeTool === 'select') });
         }
       }
       c.selection = true;
@@ -1460,6 +1450,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const marqueeLocalPath = usePosterStore((s) => s.marqueeLocalPath);
   const marqueeTargetId = usePosterStore((s) => s.marqueeTargetId);
   const updateMarqueePoint = usePosterStore((s) => s.updateMarqueePoint);
+  const confirmSelectionAsVector = usePosterStore((s) => s.confirmSelectionAsVector);
 
   const marqueePathD = useMemo(() => {
     if (!marqueeLocalPath || marqueeLocalPath.length === 0) return null;
@@ -1496,6 +1487,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       return isClosed ? pts + ' Z' : pts;
     }).join(' ');
   }, [marqueeLocalPath, marqueeTargetId, activeTool, objectSelectionMode, elements]);
+
+  const showSelectionPopup = !!marqueeLocalPath && (activeTool === 'object-selection' || activeTool === 'direct');
 
   return (
     <div
@@ -1682,6 +1675,27 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
               targetId={imageCropTargetId}
               readOnly={readOnly}
             />
+          )}
+          {showSelectionPopup && (
+            <div
+              className="absolute bottom-6 left-1/2 z-[60] -translate-x-1/2 flex items-center gap-2 rounded-lg border border-zinc-200 bg-white/95 p-2 shadow-xl backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/95"
+              style={{ transform: `translateX(-50%) scale(${1/scale})`, transformOrigin: 'bottom center' }}
+            >
+              <button
+                type="button"
+                onClick={() => confirmSelectionAsVector()}
+                className="rounded bg-amber-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-600 active:scale-95 transition-transform"
+              >
+                Convert to Path
+              </button>
+              <button
+                type="button"
+                onClick={() => setMarqueePath(null)}
+                className="rounded border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 active:scale-95 transition-transform"
+              >
+                Cancel
+              </button>
+            </div>
           )}
           {pathOverlayEnabled && (
             <PathEditOverlay
@@ -2502,9 +2516,10 @@ async function createFabricObject(
       }
       const stroke = t.stroke && (t.strokeWidth ?? 0) > 0 ? t.stroke : undefined;
       const strokeWidth = stroke ? (t.strokeWidth ?? 2) : 0;
+      const { activeTool } = usePosterStore.getState();
       const text = new Textbox(t.text, {
         ...common,
-        editable: !readOnly,
+        editable: !readOnly && (activeTool === 'text' || activeTool === 'select'),
         fontSize: t.fontSize,
         fontFamily: t.fontFamily,
         fill: textFill,
