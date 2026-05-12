@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { MagicLayer, MagicLayerStore, PosterPathPoint, MagicLayerElement } from '../types';
+import type { MagicLayer, MagicLayerStore, PosterPathPoint, MagicLayerElement } from '../types';
 import { usePosterStore } from './posterStore';
 import { generateElementId } from '../utils/generateElementId';
 
