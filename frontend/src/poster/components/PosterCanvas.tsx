@@ -15,6 +15,7 @@ import {
   util,
 } from 'fabric';
 import { usePosterStore } from '../store/posterStore';
+import { useMagicLayerStore } from '../store/magicLayerStore';
 import { setFabricCanvasRef } from '../canvasRef';
 import { ObjectSelectionEngine } from '../selection/ObjectSelectionEngine';
 import { DetectionEngine } from '../selection/DetectionEngine';
@@ -27,6 +28,7 @@ import type {
   PosterShadow,
   PosterPathElement,
   PosterPathPoint,
+  MagicLayerElement,
 } from '../types';
 import { getImageAdjustmentsKey } from '../types';
 import { normalizePosterShapeFill, posterShapeFillToFabric, posterPatternFillToFabric, applyColorOpacity } from '../shapeFillFabric';
@@ -245,7 +247,6 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     canvas.on('mouse:move', (opt) => {
       const { activeTool: tool } = usePosterStore.getState();
       if (tool === 'magic-brush' && opt.e.buttons === 1) {
-        const { useMagicLayerStore } = (require('../store/magicLayerStore'));
         const { activeMagicLayerId, brushSettings, magicLayers, updateMagicLayerMask } = useMagicLayerStore.getState();
         if (!activeMagicLayerId) return;
         const layer = magicLayers.find(l => l.id === activeMagicLayerId);
@@ -276,7 +277,6 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     canvas.on('mouse:down', (opt) => {
       const { activeTool: tool } = usePosterStore.getState();
       if (tool === 'magic-brush') {
-        const { useMagicLayerStore } = (require('../store/magicLayerStore'));
         const { activeMagicLayerId, brushSettings, magicLayers, updateMagicLayerMask } = useMagicLayerStore.getState();
         if (!activeMagicLayerId) return;
         const layer = magicLayers.find(l => l.id === activeMagicLayerId);
@@ -2557,7 +2557,6 @@ async function createFabricObject(
       try {
         if (el.type === 'magic-layer') {
           // Attempt to re-hydrate the magic layer data if missing (e.g. after reload)
-          const { useMagicLayerStore } = await import('../store/magicLayerStore');
           const magicStore = useMagicLayerStore.getState();
           if (!magicStore.magicLayers.find(l => l.id === el.id)) {
             // Re-creation from stored properties
