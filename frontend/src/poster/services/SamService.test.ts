@@ -83,5 +83,10 @@ describe('SamService', () => {
     expect(masks).toBeDefined();
     expect(mockModel.get_image_embeddings).toHaveBeenCalled();
     expect(mockModel).toHaveBeenCalled();
+
+    // Verify tensor shapes
+    const lastCall = mockModel.mock.calls[mockModel.mock.calls.length - 1][0];
+    expect(lastCall.input_points.dims).toEqual([1, 1, 1, 2]);
+    expect(lastCall.input_labels.dims).toEqual([1, 1, 1]);
   });
 });
