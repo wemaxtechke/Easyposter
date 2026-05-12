@@ -506,12 +506,23 @@ export function PosterLayout() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (readOnly) return;
       const tag = (e.target as HTMLElement)?.tagName;
       const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 
       const ctrl = e.ctrlKey || e.metaKey;
-      const { selectedIds, elements: els } = usePosterStore.getState();
+      const { selectedIds, elements: els, activeTool, setActiveTool, setIsSpacePanning } = usePosterStore.getState();
+
+      if (e.code === 'Space' && !inInput) {
+        if (!e.repeat) setIsSpacePanning(true);
+        // Do not return; still want to allow space-based actions if any, though usually we prevent default to avoid scrolling
+        e.preventDefault();
+        return;
+      }
+
+      if (readOnly && e.key.toLowerCase() !== 'h' && e.key.toLowerCase() !== 'v') {
+        // Allow Hand and Select tools even in read-only mode for navigation
+        if (!ctrl) return;
+      }
 
       // Undo / Redo (skip when typing in inputs)
       if (!inInput) {
@@ -546,6 +557,26 @@ export function PosterLayout() {
       if (!ctrl && (e.key === 'c' || e.key === 'C')) {
         e.preventDefault();
         usePosterStore.getState().setPathToolMode('convert');
+        return;
+      }
+      if (!ctrl && (e.key === 'v' || e.key === 'V')) {
+        e.preventDefault();
+        setActiveTool('select');
+        return;
+      }
+      if (!ctrl && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        setActiveTool('text');
+        return;
+      }
+      if (!ctrl && (e.key === 'w' || e.key === 'W')) {
+        e.preventDefault();
+        setActiveTool('object-selection');
+        return;
+      }
+      if (!ctrl && (e.key === 'h' || e.key === 'H')) {
+        e.preventDefault();
+        setActiveTool('hand');
         return;
       }
 
@@ -634,8 +665,18 @@ export function PosterLayout() {
         removeElements(selectedIds);
       }
     };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        usePosterStore.getState().setIsSpacePanning(false);
+      }
+    };
+
     document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
+    document.addEventListener('keyup', onKeyUp);
+    return () => {
+      document.removeEventListener('keydown', handler);
+      document.removeEventListener('keyup', onKeyUp);
+    };
   }, [readOnly, duplicateElements, removeElements, pushHistory, undo, redo, setSelected]);
 
   const reservedKeysForLabel = useMemo(

@@ -33,7 +33,7 @@ function normalizeBackground(bg: CanvasBackground | string | undefined): CanvasB
   };
 }
 export type CanvasPan = { x: number; y: number };
-export type PosterTool = 'select' | 'direct' | 'pen' | 'text' | 'shape' | 'object-selection' | 'magic-brush';
+export type PosterTool = 'select' | 'direct' | 'pen' | 'text' | 'shape' | 'object-selection' | 'magic-brush' | 'hand';
 export type ObjectSelectionMode = 'rectangle' | 'lasso' | 'magnetic' | 'ai';
 export type PathToolMode = 'pen' | 'pen-straight' | 'pen-curve' | 'direct' | 'convert';
 export type PathNodeSelection = { elementId: string; nodeIndex: number };
@@ -58,6 +58,8 @@ interface PosterStore {
   setPathEditTargetId: (id: string | null) => void;
   activeTool: PosterTool;
   setActiveTool: (tool: PosterTool) => void;
+  isSpacePanning: boolean;
+  setIsSpacePanning: (val: boolean) => void;
   objectSelectionMode: ObjectSelectionMode;
   setObjectSelectionMode: (mode: ObjectSelectionMode) => void;
   /** Multiple paths for the active selection marquee (marching ants), in LOCAL space of the target object. */
@@ -131,6 +133,8 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
   setImageCropTargetId: (id) => set({ imageCropTargetId: id }),
   selectedIds: [],
   activeTool: 'select',
+  isSpacePanning: false,
+  setIsSpacePanning: (val) => set({ isSpacePanning: val }),
   setActiveTool: (tool) => {
     const { selectedIds, elements } = get();
     const updates: Partial<PosterStore> = { activeTool: tool };
