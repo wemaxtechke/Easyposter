@@ -53,16 +53,6 @@ const TOOLS: ToolButton[] = [
     ),
   },
   {
-    id: 'shape',
-    label: 'Rectangle Tool',
-    shortcut: 'U',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="4" y="4" width="16" height="16" />
-      </svg>
-    ),
-  },
-  {
     id: 'object-selection',
     label: 'Object Selection',
     shortcut: 'W',
@@ -85,7 +75,16 @@ export const PosterToolbar = memo(function PosterToolbar() {
 
   const handleToolClick = (toolId: PosterTool) => {
     setActiveTool(toolId);
-    if (toolId !== 'direct') {
+    if (toolId === 'pen') {
+      const { setPathToolMode, elements, selectedIds, setPathEditTargetId } = usePosterStore.getState();
+      setPathToolMode('pen-straight');
+      if (selectedIds.length === 1) {
+        const el = elements.find(e => e.id === selectedIds[0]);
+        if (el?.type === 'path' || el?.type === 'line' || el?.type === 'polygon') {
+          setPathEditTargetId(el.id);
+        }
+      }
+    } else if (toolId !== 'direct') {
       setPathEditTargetId(null);
     }
     // Only clear marquee when switching away from BOTH object-selection and direct
