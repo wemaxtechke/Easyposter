@@ -131,7 +131,35 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
   setImageCropTargetId: (id) => set({ imageCropTargetId: id }),
   selectedIds: [],
   activeTool: 'select',
-  setActiveTool: (tool) => set({ activeTool: tool }),
+  setActiveTool: (tool) => {
+    const { selectedIds, elements } = get();
+    const updates: Partial<PosterStore> = { activeTool: tool };
+
+    if (tool === 'pen') {
+      updates.pathToolMode = 'pen-straight';
+      if (selectedIds.length === 1) {
+        const el = elements.find((e) => e.id === selectedIds[0]);
+        if (el?.type === 'path' || el?.type === 'line' || el?.type === 'polygon') {
+          updates.pathEditTargetId = el.id;
+        }
+      }
+    } else if (tool === 'direct' || tool === 'text' || tool === 'object-selection') {
+      updates.pathToolMode = 'direct';
+    } else {
+      updates.pathToolMode = 'direct';
+    }
+
+    if (tool !== 'pen' && tool !== 'direct') {
+      updates.pathEditTargetId = null;
+    }
+
+    if (tool !== 'object-selection' && tool !== 'direct') {
+      updates.marqueeLocalPath = null;
+      updates.marqueeTargetId = null;
+    }
+
+    set(updates);
+  },
   objectSelectionMode: 'rectangle',
   setObjectSelectionMode: (mode) => set({ objectSelectionMode: mode }),
   marqueeLocalPath: null,
@@ -217,7 +245,22 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
   pathEditTargetId: null,
   setPathEditTargetId: (id) => set({ pathEditTargetId: id }),
   pathToolMode: 'direct',
-  setPathToolMode: (mode) => set({ pathToolMode: mode }),
+  setPathToolMode: (mode) => {
+    const { selectedIds, elements } = get();
+    const updates: Partial<PosterStore> = { pathToolMode: mode };
+    if (mode === 'pen-straight' || mode === 'pen-curve') {
+      updates.activeTool = 'pen';
+      if (selectedIds.length === 1) {
+        const el = elements.find((e) => e.id === selectedIds[0]);
+        if (el?.type === 'path' || el?.type === 'line' || el?.type === 'polygon') {
+          updates.pathEditTargetId = el.id;
+        }
+      }
+    } else if (mode === 'direct') {
+      updates.activeTool = 'direct';
+    }
+    set(updates);
+  },
   activePathId: null,
   setActivePathId: (id) => set({ activePathId: id }),
   selectedPathNode: null,

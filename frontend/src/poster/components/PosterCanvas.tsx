@@ -177,7 +177,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const setSelectedPathNode = usePosterStore((s) => s.setSelectedPathNode);
   const setSelectedPathHandle = usePosterStore((s) => s.setSelectedPathHandle);
   const setMarqueePath = usePosterStore((s) => s.setMarqueePath);
-  const marqueePath = usePosterStore((s) => s.marqueePath);
+  const marqueeLocalPath = usePosterStore((s) => s.marqueeLocalPath);
   const initCanvas = useCallback(() => {
     const host = containerRef.current;
     if (!host) return;
@@ -544,34 +544,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       }
 
       const key = e.key.toLowerCase();
-      if (key === 'v') {
-        e.preventDefault();
-        setActiveTool('select');
-      } else if (key === 'p') {
-        e.preventDefault();
-        setActiveTool('pen');
-        setPathToolMode(e.shiftKey ? 'pen-curve' : 'pen-straight');
-        const { elements, selectedIds, setPathEditTargetId } = usePosterStore.getState();
-        if (selectedIds.length === 1) {
-          const el = elements.find(el => el.id === selectedIds[0]);
-          if (el?.type === 'path' || el?.type === 'line' || el?.type === 'polygon') {
-            setPathEditTargetId(el.id);
-          }
-        }
-      } else if (key === 'a') {
-        e.preventDefault();
-        setActiveTool('direct');
-        setPathToolMode('direct');
-      } else if (key === 't') {
-        e.preventDefault();
-        setActiveTool('text');
-      } else if (key === 'w') {
-        e.preventDefault();
-        setActiveTool('object-selection');
-      } else if (key === 'c' && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        setPathToolMode('convert');
-      } else if (e.key === 'Escape') {
+      if (e.key === 'Escape') {
         setPathEditTargetId(null);
         setActivePathId(null);
         setSelectedPathNode(null);
@@ -1447,7 +1420,6 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
   const objectSelectionMode = usePosterStore((s) => s.objectSelectionMode);
 
-  const marqueeLocalPath = usePosterStore((s) => s.marqueeLocalPath);
   const marqueeTargetId = usePosterStore((s) => s.marqueeTargetId);
   const updateMarqueePoint = usePosterStore((s) => s.updateMarqueePoint);
   const confirmSelectionAsVector = usePosterStore((s) => s.confirmSelectionAsVector);

@@ -37,7 +37,7 @@ export class ObjectSelectionEngine {
   }
 
   private handleMouseDown = (opt: any) => {
-    const { activeTool, marqueePath } = (this.canvas as any).posterStore?.getState() || {};
+    const { activeTool, marqueeLocalPath: marqueePath } = (this.canvas as any).posterStore?.getState() || {};
     if (activeTool !== 'object-selection') return;
 
     const pointer = this.canvas.getScenePoint(opt.e);
