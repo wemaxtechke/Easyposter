@@ -241,7 +241,7 @@ export class DetectionEngine {
 
   public static async createAlphaMask(paths: Point[][], width: number, height: number, feather: number = 0): Promise<Uint8ClampedArray> {
     const canvas = new OffscreenCanvas(width, height);
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return new Uint8ClampedArray(width * height);
 
     ctx.fillStyle = 'black';
@@ -280,10 +280,10 @@ export class DetectionEngine {
     const outputCanvas = document.createElement('canvas');
     outputCanvas.width = width;
     outputCanvas.height = height;
-    const outCtx = outputCanvas.getContext('2d');
+    const outCtx = outputCanvas.getContext('2d', { willReadFrequently: true });
     if (!outCtx) return outputCanvas;
 
-    const sourceCtx = sourceCanvas.getContext('2d');
+    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
     if (!sourceCtx) return outputCanvas;
 
     const sourceData = sourceCtx.getImageData(0, 0, width, height);
@@ -311,7 +311,7 @@ export class DetectionEngine {
     if (radius <= 0) return mask;
 
     const canvas = new OffscreenCanvas(width, height);
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return mask;
 
     const imageData = ctx.createImageData(width, height);
@@ -325,7 +325,7 @@ export class DetectionEngine {
     ctx.putImageData(imageData, 0, 0);
 
     const tempCanvas = new OffscreenCanvas(width, height);
-    const tempCtx = tempCanvas.getContext('2d');
+    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
     if (!tempCtx) return mask;
 
     tempCtx.filter = `blur(${radius}px)`;
@@ -348,7 +348,7 @@ export class DetectionEngine {
     if (amount === 0) return mask;
 
     const canvas = new OffscreenCanvas(width, height);
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return mask;
 
     const imageData = ctx.createImageData(width, height);
@@ -362,7 +362,7 @@ export class DetectionEngine {
     ctx.putImageData(imageData, 0, 0);
 
     const resultCanvas = new OffscreenCanvas(width, height);
-    const resultCtx = resultCanvas.getContext('2d');
+    const resultCtx = resultCanvas.getContext('2d', { willReadFrequently: true });
     if (!resultCtx) return mask;
 
     // Use dilation/erosion simulation via blur + threshold or multiple draws
@@ -389,7 +389,7 @@ export class DetectionEngine {
       resultCtx.drawImage(canvas, 0, 0);
 
       const tempCanvas = new OffscreenCanvas(width, height);
-      const tempCtx = tempCanvas.getContext('2d');
+      const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
       tempCtx!.filter = `blur(${Math.abs(amount)}px)`;
       tempCtx!.drawImage(resultCanvas, 0, 0);
 
@@ -411,10 +411,10 @@ export class DetectionEngine {
     const outputCanvas = document.createElement('canvas');
     outputCanvas.width = width;
     outputCanvas.height = height;
-    const outCtx = outputCanvas.getContext('2d');
+    const outCtx = outputCanvas.getContext('2d', { willReadFrequently: true });
     if (!outCtx) return outputCanvas;
 
-    const sourceCtx = sourceCanvas.getContext('2d');
+    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
     if (!sourceCtx) return outputCanvas;
 
     const sourceData = sourceCtx.getImageData(0, 0, width, height);

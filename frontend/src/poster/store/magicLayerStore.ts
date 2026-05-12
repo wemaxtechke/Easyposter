@@ -47,7 +47,7 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
     const alphaMask = await DetectionEngine.createAlphaMask(marqueeLocalPath, sourceCanvas.width, sourceCanvas.height);
     const isolatedCanvas = await DetectionEngine.extractPixels(sourceCanvas, alphaMask);
 
-    const sourceCtx = sourceCanvas.getContext('2d');
+    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
     const sourceImageData = sourceCtx!.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
 
     const newLayer: MagicLayer = {
@@ -107,7 +107,7 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
     const sourceCanvas = document.createElement('canvas');
     sourceCanvas.width = layer.sourceImageData.width;
     sourceCanvas.height = layer.sourceImageData.height;
-    const sourceCtx = sourceCanvas.getContext('2d');
+    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
     sourceCtx!.putImageData(layer.sourceImageData, 0, 0);
 
     const isolatedCanvas = await DetectionEngine.extractPixels(sourceCanvas, mask);
@@ -163,7 +163,7 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
       const sourceCanvas = document.createElement('canvas');
       sourceCanvas.width = layer.sourceImageData.width;
       sourceCanvas.height = layer.sourceImageData.height;
-      const sourceCtx = sourceCanvas.getContext('2d');
+      const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
       sourceCtx!.putImageData(layer.sourceImageData, 0, 0);
 
       const subtractedCanvas = await DetectionEngine.subtractMaskFromImage(sourceCanvas, layer.alphaMask);
@@ -222,7 +222,7 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
     }
 
     const { DetectionEngine } = await import('../selection/DetectionEngine');
-    const sourceCtx = sourceCanvas.getContext('2d');
+    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
     const sourceImageData = sourceCtx!.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
 
     try {

@@ -1,10 +1,11 @@
-import { pipeline, env } from '@huggingface/transformers';
+import { AutoModelForMaskGeneration, AutoProcessor, RawImage, Tensor, env } from '@huggingface/transformers';
 import { SAM_MODEL } from './samConfig';
 
 // Configuration for Transformers.js
 env.allowLocalModels = false;
 
-let samPipeline: any = null;
+let samModel: any = null;
+let samProcessor: any = null;
 
 export interface SamMask {
   data: Uint8ClampedArray;
@@ -15,7 +16,7 @@ export interface SamMask {
 
 export class SamService {
   private static instance: SamService;
-  private model: string = SAM_MODEL;
+  private modelId: string = SAM_MODEL;
 
   private constructor() {}
 
@@ -26,56 +27,90 @@ export class SamService {
     return SamService.instance;
   }
 
-  private async loadPipeline() {
-    if (!samPipeline) {
+  private async loadModelAndProcessor() {
+    if (!samModel || !samProcessor) {
       try {
-        samPipeline = await pipeline('image-segmentation', this.model);
+        samProcessor = await AutoProcessor.from_pretrained(this.modelId);
+        samModel = await AutoModelForMaskGeneration.from_pretrained(this.modelId);
       } catch (error) {
-        console.error('Failed to load SAM pipeline:', error);
+        console.error('Failed to load SAM model/processor:', error);
         throw error;
       }
     }
-    return samPipeline;
+    return { model: samModel, processor: samProcessor };
   }
 
   /**
    * Runs SAM on the provided image and returns a set of candidate masks.
    */
   public async generateMasks(imageElement: HTMLImageElement | HTMLCanvasElement): Promise<SamMask[]> {
-    const pipe = await this.loadPipeline();
+    const { model, processor } = await this.loadModelAndProcessor();
 
-    // Transformers.js 'image-segmentation' pipeline (the replacement for SAM in v3/v4)
-    // The pipeline handles resizing internally if needed.
-    const output = await pipe(imageElement);
+    const image = await RawImage.fromCanvas(imageElement);
+    const inputs = await processor(image);
 
-    const masks: SamMask[] = [];
-    for (const item of output) {
-      // 'image-segmentation' returns an array of { label: string|null, score: number|null, mask: RawImage }
-      const { score, mask } = item;
+    // 1. Get image embeddings (done once per image)
+    const { image_embeddings } = await model.get_image_embeddings(inputs);
 
-      // Ensure mask is single-channel grayscale for our SamMask format
-      const grayscaleMask = mask.channels === 1 ? mask : mask.clone().grayscale();
-
-      // The mask from the pipeline is already scaled to the input image size by default,
-      // but we should ensure it matches our expectations.
-      const maskWidth = grayscaleMask.width;
-      const maskHeight = grayscaleMask.height;
-
-      // Convert RawImage data to our expected Uint8ClampedArray (binary 0 or 255)
-      const maskData = new Uint8ClampedArray(maskWidth * maskHeight);
-      for (let i = 0; i < grayscaleMask.data.length; i++) {
-        maskData[i] = grayscaleMask.data[i] > 127 ? 255 : 0;
+    // 2. Generate a grid of points as prompts (5x5 grid)
+    const numPointsSide = 5;
+    const points = [];
+    for (let i = 1; i <= numPointsSide; i++) {
+      for (let j = 1; j <= numPointsSide; j++) {
+        points.push([
+          (i * image.width) / (numPointsSide + 1),
+          (j * image.height) / (numPointsSide + 1)
+        ]);
       }
-
-      masks.push({
-        data: maskData,
-        width: maskWidth,
-        height: maskHeight,
-        score: score || 1.0,
-      });
     }
 
-    return this.filterAndMergeMasks(masks, imageElement.width, imageElement.height);
+    const allMasks: SamMask[] = [];
+
+    // 3. Run decoder for each point prompt
+    for (const point of points) {
+      const input_points = new Tensor('float32', new Float32Array(point), [1, 1, 2]);
+      const input_labels = new Tensor('int64', new BigInt64Array([1n]), [1, 1]);
+
+      const output = await model({
+        ...inputs,
+        image_embeddings,
+        input_points,
+        input_labels,
+      });
+
+      // output.pred_masks is [1, 1, 3, 256, 256]
+      // output.iou_scores is [1, 1, 3]
+
+      const decodedMasks = await processor.post_process_masks(
+        output.pred_masks,
+        [[image.height, image.width]],
+        [[image.height, image.width]]
+      );
+      // decodedMasks is Tensor[] of length 1, each Tensor [1, 3, H, W]
+
+      const maskTensor = decodedMasks[0];
+      const scores = output.iou_scores.data;
+
+      for (let m = 0; m < 3; m++) {
+        const score = scores[m];
+        if (score < 0.8) continue; // Only keep high-confidence masks
+
+        const maskData = new Uint8ClampedArray(image.width * image.height);
+        const offset = m * image.width * image.height;
+        for (let k = 0; k < maskData.length; k++) {
+          maskData[k] = maskTensor.data[offset + k] ? 255 : 0;
+        }
+
+        allMasks.push({
+          data: maskData,
+          width: image.width,
+          height: image.height,
+          score: score,
+        });
+      }
+    }
+
+    return this.filterAndMergeMasks(allMasks, image.width, image.height);
   }
 
   private filterAndMergeMasks(masks: SamMask[], originalWidth: number, originalHeight: number): SamMask[] {
