@@ -70,27 +70,9 @@ export const PosterToolbar = memo(function PosterToolbar() {
   const setActiveTool = usePosterStore((s) => s.setActiveTool);
   const objectSelectionMode = usePosterStore((s) => s.objectSelectionMode);
   const setObjectSelectionMode = usePosterStore((s) => s.setObjectSelectionMode);
-  const setPathEditTargetId = usePosterStore((s) => s.setPathEditTargetId);
-  const setMarqueePath = usePosterStore((s) => s.setMarqueePath);
 
   const handleToolClick = (toolId: PosterTool) => {
     setActiveTool(toolId);
-    if (toolId === 'pen') {
-      const { setPathToolMode, elements, selectedIds, setPathEditTargetId } = usePosterStore.getState();
-      setPathToolMode('pen-straight');
-      if (selectedIds.length === 1) {
-        const el = elements.find(e => e.id === selectedIds[0]);
-        if (el?.type === 'path' || el?.type === 'line' || el?.type === 'polygon') {
-          setPathEditTargetId(el.id);
-        }
-      }
-    } else if (toolId !== 'direct') {
-      setPathEditTargetId(null);
-    }
-    // Only clear marquee when switching away from BOTH object-selection and direct
-    if (toolId !== 'object-selection' && toolId !== 'direct') {
-      setMarqueePath(null);
-    }
   };
 
   return (
