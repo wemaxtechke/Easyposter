@@ -178,6 +178,9 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const setSelectedPathHandle = usePosterStore((s) => s.setSelectedPathHandle);
   const setMarqueePath = usePosterStore((s) => s.setMarqueePath);
   const marqueeLocalPath = usePosterStore((s) => s.marqueeLocalPath);
+  const isSpacePanning = usePosterStore((s) => s.isSpacePanning);
+  const setCanvasPan = usePosterStore((s) => s.setCanvasPan);
+
   const initCanvas = useCallback(() => {
     const host = containerRef.current;
     if (!host) return;
@@ -455,6 +458,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     const isDirect = activeTool === 'direct';
     const isObjSel = activeTool === 'object-selection';
 
+    const isHand = activeTool === 'hand' || isSpacePanning;
+
     for (const obj of canvas.getObjects()) {
       const id = (obj as { data?: { posterId?: string } }).data?.posterId;
       const el = id ? els.find((e) => e.id === id) : null;
@@ -462,8 +467,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       const lockAll = locked || readOnly || (id != null && id === pathEditTargetId);
 
       const updates: Record<string, unknown> = {
-        selectable: !readOnly,
-        evented: !isObjSel,
+        selectable: !readOnly && !isHand,
+        evented: !isObjSel && !isHand,
         lockMovementX: lockAll,
         lockMovementY: lockAll,
         lockScalingX: lockAll,
@@ -1461,13 +1466,44 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   }, [marqueeLocalPath, marqueeTargetId, activeTool, objectSelectionMode, elements]);
 
   const showSelectionPopup = !!marqueeLocalPath && (activeTool === 'object-selection' || activeTool === 'direct');
+  const isPanningActive = activeTool === 'hand' || isSpacePanning;
 
   return (
     <div
       ref={viewportRef}
       className={`h-full min-h-0 w-full min-w-0 flex-1 ${isCompact ? 'overflow-hidden' : 'overflow-auto'}`}
-      style={{ touchAction: isCompact ? 'none' : 'auto' }}
+      style={{
+        touchAction: isCompact ? 'none' : 'auto',
+        cursor: isPanningActive ? 'grab' : 'auto',
+      }}
       title="Ctrl+Scroll to zoom toward cursor"
+      onPointerDown={(e) => {
+        if (!isPanningActive) return;
+        const v = viewportRef.current;
+        if (!v) return;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const startPanX = canvasPan.x;
+        const startPanY = canvasPan.y;
+        v.setPointerCapture(e.pointerId);
+        v.style.cursor = 'grabbing';
+
+        const onPointerMove = (moveEvent: PointerEvent) => {
+          const dx = moveEvent.clientX - startX;
+          const dy = moveEvent.clientY - startY;
+          setCanvasPan({ x: startPanX + dx, y: startPanY + dy });
+        };
+
+        const onPointerUp = () => {
+          v.releasePointerCapture(e.pointerId);
+          v.style.cursor = '';
+          window.removeEventListener('pointermove', onPointerMove);
+          window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+      }}
     >
       <div
         className="relative"
