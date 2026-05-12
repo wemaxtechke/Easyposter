@@ -33,7 +33,7 @@ function normalizeBackground(bg: CanvasBackground | string | undefined): CanvasB
   };
 }
 export type CanvasPan = { x: number; y: number };
-export type PosterTool = 'select' | 'direct' | 'pen' | 'text' | 'shape' | 'object-selection';
+export type PosterTool = 'select' | 'direct' | 'pen' | 'text' | 'shape' | 'object-selection' | 'magic-brush';
 export type ObjectSelectionMode = 'rectangle' | 'lasso' | 'magnetic' | 'ai';
 export type PathToolMode = 'pen' | 'pen-straight' | 'pen-curve' | 'direct' | 'convert';
 export type PathNodeSelection = { elementId: string; nodeIndex: number };

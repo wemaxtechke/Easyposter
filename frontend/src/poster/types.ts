@@ -10,7 +10,8 @@ export type PosterElementType =
   | 'ellipse'
   | 'line'
   | 'polygon'
-  | 'path';
+  | 'path'
+  | 'magic-layer';
 
 /** Shadow applied to any poster element via Fabric.js Shadow. */
 export interface PosterShadow {
@@ -302,12 +303,78 @@ export interface PosterPathElement extends PosterElementBase {
   closed?: boolean;
 }
 
+export interface MagicLayer {
+  id: string;
+  sourceObjectId: string;
+  sourceImageData: ImageData;
+  isolatedCanvas: HTMLCanvasElement;
+  alphaMask: Uint8ClampedArray;
+  contourPath: PosterPathPoint[];
+  islands?: PosterPathPoint[][];
+  transform: {
+    x: number;
+    y: number;
+    scaleX: number;
+    scaleY: number;
+    rotation: number;
+  };
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  featherRadius?: number;
+  editable: boolean;
+  visible: boolean;
+  locked: boolean;
+  blendMode?: GlobalCompositeOperation;
+  createdAt: number;
+}
+
+export interface MagicLayerStore {
+  magicLayers: MagicLayer[];
+  activeMagicLayerId: string | null;
+  brushSettings: {
+    radius: number;
+    hardness: number;
+    strength: number;
+    mode: 'add' | 'subtract';
+  };
+  setBrushSettings(settings: Partial<MagicLayerStore['brushSettings']>): void;
+  createMagicLayerFromSelection(): Promise<void>;
+  updateMagicLayerMask(id: string, mask: Uint8ClampedArray): void;
+  refineMagicLayer(id: string): void;
+  deleteMagicLayer(id: string): void;
+  duplicateMagicLayer(id: string): void;
+  reorderMagicLayer(id: string, newIndex: number): void;
+  commitMagicLayer(id: string): void;
+  toggleMagicLayerVisibility(id: string): void;
+  setActiveMagicLayer(id: string | null): void;
+  registerMagicLayer(layer: MagicLayer): void;
+}
+
+export interface MagicLayerElement extends PosterElementBase {
+  type: 'magic-layer';
+  sourceObjectId: string;
+  /** Base64 or URL to the extracted canvas. */
+  isolatedSrc: string;
+  /** Original source image data for non-destructive edits (stored as URL/Blob). */
+  sourceSrc: string;
+  alphaMask?: Uint8ClampedArray;
+  contourPath: PosterPathPoint[];
+  islands?: PosterPathPoint[][];
+  featherRadius?: number;
+  blendMode?: GlobalCompositeOperation;
+}
+
 export type PosterElement =
   | PosterImageElement
   | PosterTextElement
   | Poster3DTextElement
   | PosterShapeElement
-  | PosterPathElement;
+  | PosterPathElement
+  | MagicLayerElement;
 
 export type CanvasBackground =
   | { type: 'solid'; color: string }

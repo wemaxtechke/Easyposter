@@ -36,6 +36,160 @@ interface PosterRightSidebarProps {
   onOpenEdit3D?: (id: string) => void;
 }
 
+function MagicLayerControls({
+  layer,
+  updateElement,
+}: {
+  layer: MagicLayerElement;
+  updateElement: (id: string, updates: Partial<PosterElement>) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const activeTool = usePosterStore((s) => s.activeTool);
+  const setActiveTool = usePosterStore((s) => s.setActiveTool);
+  const { brushSettings, setBrushSettings, activeMagicLayerId, setActiveMagicLayer } = useMagicLayerStore();
+
+  const isBrushing = activeTool === 'magic-brush' && activeMagicLayerId === layer.id;
+
+  const handleRefine = async (action: 'feather' | 'expand' | 'contract' | 'smooth') => {
+    setBusy(true);
+    try {
+      const { useMagicLayerStore } = await import('../store/magicLayerStore');
+      const { DetectionEngine } = await import('../selection/DetectionEngine');
+      const magicStore = useMagicLayerStore.getState();
+      const magicLayer = magicStore.magicLayers.find(l => l.id === layer.id);
+      if (!magicLayer) return;
+
+      let newMask = magicLayer.alphaMask;
+
+      if (action === 'feather') {
+        newMask = await DetectionEngine.applyFeatherToMask(newMask, magicLayer.bounds.width, magicLayer.bounds.height, 5);
+      } else if (action === 'expand') {
+        newMask = await DetectionEngine.expandContractMask(newMask, magicLayer.bounds.width, magicLayer.bounds.height, 10);
+      } else if (action === 'contract') {
+        newMask = await DetectionEngine.expandContractMask(newMask, magicLayer.bounds.width, magicLayer.bounds.height, -10);
+      } else if (action === 'smooth') {
+        newMask = await DetectionEngine.smoothMask(newMask, magicLayer.bounds.width, magicLayer.bounds.height, 2);
+      }
+
+      await magicStore.updateMagicLayerMask(layer.id, newMask);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Magic Layer Refinement</p>
+        <button
+          onClick={() => useMagicLayerStore.getState().commitMagicLayer(layer.id, true)}
+          className="text-[10px] text-red-500 hover:text-red-700"
+          title="Permanently remove these pixels from the background layer"
+        >
+          Subtract from Bg
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-700">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-medium">Refine Brush</span>
+          <button
+            type="button"
+            onClick={() => {
+              if (isBrushing) {
+                setActiveTool('select');
+                setActiveMagicLayer(null);
+              } else {
+                setActiveTool('magic-brush');
+                setActiveMagicLayer(layer.id);
+              }
+            }}
+            className={`${toggleBtn} ${isBrushing ? toggleBtnOn : toggleBtnOff}`}
+          >
+            {isBrushing ? 'Active' : 'Brush'}
+          </button>
+        </div>
+        {isBrushing && (
+          <div className="flex flex-col gap-2 pt-1">
+            <div className="flex gap-1">
+              {(['add', 'subtract'] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setBrushSettings({ mode: m })}
+                  className={`flex-1 rounded px-1 py-1 text-[10px] uppercase font-bold ${
+                    brushSettings.mode === m
+                      ? 'bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                      : 'border border-zinc-200 text-zinc-600 dark:border-zinc-700'
+                  }`}
+                >
+                  {m === 'add' ? 'Paint' : 'Erase'}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-zinc-500">Size ({brushSettings.radius}px)</label>
+              <input
+                type="range"
+                min={1}
+                max={200}
+                value={brushSettings.radius}
+                onChange={(e) => setBrushSettings({ radius: parseInt(e.target.value) })}
+                className="w-full"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-zinc-500">Hardness ({Math.round(brushSettings.hardness * 100)}%)</label>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={brushSettings.hardness}
+                onChange={(e) => setBrushSettings({ hardness: parseFloat(e.target.value) })}
+                className="w-full"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          onClick={() => handleRefine('feather')}
+          disabled={busy}
+          className="rounded border border-zinc-200 px-2 py-1.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 disabled:opacity-50"
+        >
+          Feather
+        </button>
+        <button
+          onClick={() => handleRefine('smooth')}
+          disabled={busy}
+          className="rounded border border-zinc-200 px-2 py-1.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 disabled:opacity-50"
+        >
+          Smooth
+        </button>
+        <button
+          onClick={() => handleRefine('expand')}
+          disabled={busy}
+          className="rounded border border-zinc-200 px-2 py-1.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 disabled:opacity-50"
+        >
+          Expand
+        </button>
+        <button
+          onClick={() => handleRefine('contract')}
+          disabled={busy}
+          className="rounded border border-zinc-200 px-2 py-1.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 disabled:opacity-50"
+        >
+          Contract
+        </button>
+      </div>
+      <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+        Non-destructive refinement using actual source pixels.
+      </p>
+    </div>
+  );
+}
+
 function GradientStopsEditor({
   stops,
   onChange,
@@ -2246,10 +2400,17 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
             />
           )}
 
-          {(single.type === 'image' || single.type === '3d-text') && (
+          {(single.type === 'image' || single.type === '3d-text' || single.type === 'magic-layer') && (
             <ImageAdjustmentControls
               elementId={single.id}
               adj={single as ImageAdjustments}
+              updateElement={updateElement}
+            />
+          )}
+
+          {single.type === 'magic-layer' && (
+            <MagicLayerControls
+              layer={single as MagicLayerElement}
               updateElement={updateElement}
             />
           )}
