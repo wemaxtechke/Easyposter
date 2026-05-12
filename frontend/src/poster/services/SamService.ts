@@ -46,6 +46,11 @@ export class SamService {
   public async generateMasks(imageElement: HTMLImageElement | HTMLCanvasElement): Promise<SamMask[]> {
     const { model, processor } = await this.loadModelAndProcessor();
 
+    // Set willReadFrequently to true for better performance if it's a canvas
+    if (imageElement instanceof HTMLCanvasElement) {
+      imageElement.getContext('2d', { willReadFrequently: true });
+    }
+
     const image = await RawImage.fromCanvas(imageElement);
     const inputs = await processor(image);
 
@@ -68,8 +73,10 @@ export class SamService {
 
     // 3. Run decoder for each point prompt
     for (const point of points) {
-      const input_points = new Tensor('float32', new Float32Array(point), [1, 1, 2]);
-      const input_labels = new Tensor('int64', new BigInt64Array([1n]), [1, 1]);
+      // Transformers.js v4+ SAM expects [batch_size, num_queries, num_points, 2] for input_points
+      // and [batch_size, num_queries, num_points] for input_labels.
+      const input_points = new Tensor('float32', new Float32Array(point), [1, 1, 1, 2]);
+      const input_labels = new Tensor('int64', new BigInt64Array([1n]), [1, 1, 1]);
 
       const output = await model({
         ...inputs,
