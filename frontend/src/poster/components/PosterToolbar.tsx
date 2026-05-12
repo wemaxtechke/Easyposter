@@ -141,18 +141,6 @@ export const PosterToolbar = memo(function PosterToolbar() {
               >
                 Invert
               </button>
-              <div className="w-[1px] h-4 bg-zinc-200 dark:bg-zinc-800 mx-1 self-center" />
-              <button
-                type="button"
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  const { useMagicLayerStore } = await import('../store/magicLayerStore');
-                  await useMagicLayerStore.getState().createMagicLayerFromSelection();
-                }}
-                className="px-2 py-1 text-[10px] uppercase tracking-wider font-bold text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded"
-              >
-                Magic Layer
-              </button>
             </div>
           )}
 
