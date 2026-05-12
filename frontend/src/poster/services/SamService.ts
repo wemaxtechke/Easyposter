@@ -1,4 +1,4 @@
-import { pipeline, env } from '@xenova/transformers';
+import { pipeline, env } from '@huggingface/transformers';
 
 // Configuration for Transformers.js
 env.allowLocalModels = false;
@@ -27,7 +27,7 @@ export class SamService {
 
   private async loadPipeline() {
     if (!samPipeline) {
-      samPipeline = await pipeline('mask-generation', this.model);
+      samPipeline = await pipeline('image-segmentation', this.model);
     }
     return samPipeline;
   }
@@ -38,80 +38,34 @@ export class SamService {
   public async generateMasks(imageElement: HTMLImageElement | HTMLCanvasElement): Promise<SamMask[]> {
     const pipe = await this.loadPipeline();
 
-    const maxDim = 1024;
-    let processCanvas = imageElement;
-    let scaleFactor = 1;
-
-    if (imageElement.width > maxDim || imageElement.height > maxDim) {
-      scaleFactor = maxDim / Math.max(imageElement.width, imageElement.height);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(imageElement.width * scaleFactor);
-      canvas.height = Math.round(imageElement.height * scaleFactor);
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(imageElement, 0, 0, canvas.width, canvas.height);
-        processCanvas = canvas;
-      }
-    }
-
-    // Transformers.js 'mask-generation' pipeline
-    const output = await pipe(processCanvas);
-
-    const rawMasks = output.masks;
-    const scores = output.scores;
+    // Transformers.js 'image-segmentation' pipeline (the replacement for SAM in v3/v4)
+    // The pipeline handles resizing internally if needed.
+    const output = await pipe(imageElement);
 
     const masks: SamMask[] = [];
-    for (let i = 0; i < rawMasks.length; i++) {
-      const m = rawMasks[i];
+    for (const item of output) {
+      // 'image-segmentation' returns an array of { label: string|null, score: number|null, mask: RawImage }
+      const { score, mask } = item;
 
-      // Rescale mask back to original image dimensions if needed
-      let maskData: Uint8ClampedArray;
-      let maskWidth = imageElement.width;
-      let maskHeight = imageElement.height;
+      // Ensure mask is single-channel grayscale for our SamMask format
+      const grayscaleMask = mask.channels === 1 ? mask : mask.clone().grayscale();
 
-      if (m.width !== maskWidth || m.height !== maskHeight) {
-        // Use an OffscreenCanvas to rescale the mask data
-        const tempCanvas = new OffscreenCanvas(m.width, m.height);
-        const tempCtx = tempCanvas.getContext('2d');
-        if (tempCtx) {
-          const imgData = tempCtx.createImageData(m.width, m.height);
-          for (let j = 0; j < m.data.length; j++) {
-            const val = m.data[j] > 0.5 ? 255 : 0;
-            imgData.data[j * 4] = val;
-            imgData.data[j * 4 + 1] = val;
-            imgData.data[j * 4 + 2] = val;
-            imgData.data[j * 4 + 3] = 255;
-          }
-          tempCtx.putImageData(imgData, 0, 0);
+      // The mask from the pipeline is already scaled to the input image size by default,
+      // but we should ensure it matches our expectations.
+      const maskWidth = grayscaleMask.width;
+      const maskHeight = grayscaleMask.height;
 
-          const finalCanvas = new OffscreenCanvas(maskWidth, maskHeight);
-          const finalCtx = finalCanvas.getContext('2d');
-          if (finalCtx) {
-            finalCtx.imageSmoothingEnabled = false;
-            finalCtx.drawImage(tempCanvas, 0, 0, maskWidth, maskHeight);
-            const finalData = finalCtx.getImageData(0, 0, maskWidth, maskHeight);
-            maskData = new Uint8ClampedArray(maskWidth * maskHeight);
-            for (let j = 0; j < finalData.data.length; j += 4) {
-              maskData[j / 4] = finalData.data[j] > 127 ? 255 : 0;
-            }
-          } else {
-            maskData = new Uint8ClampedArray(maskWidth * maskHeight); // fallback
-          }
-        } else {
-          maskData = new Uint8ClampedArray(maskWidth * maskHeight); // fallback
-        }
-      } else {
-        maskData = new Uint8ClampedArray(m.width * m.height);
-        for (let j = 0; j < m.data.length; j++) {
-          maskData[j] = m.data[j] > 0.5 ? 255 : 0;
-        }
+      // Convert RawImage data to our expected Uint8ClampedArray (binary 0 or 255)
+      const maskData = new Uint8ClampedArray(maskWidth * maskHeight);
+      for (let i = 0; i < grayscaleMask.data.length; i++) {
+        maskData[i] = grayscaleMask.data[i] > 127 ? 255 : 0;
       }
 
       masks.push({
         data: maskData,
         width: maskWidth,
         height: maskHeight,
-        score: scores[i] || 1.0,
+        score: score || 1.0,
       });
     }
 
