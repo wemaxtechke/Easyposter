@@ -201,4 +201,90 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
       return { magicLayers: [...state.magicLayers, layer] };
     });
   },
+
+  createMagicLayersFromSam: async (elementId: string) => {
+    const { elements } = usePosterStore.getState();
+    const sourceElement = elements.find(e => e.id === elementId);
+    if (!sourceElement || (sourceElement.type !== 'image' && sourceElement.type !== '3d-text')) return;
+
+    const { getFabricCanvasRef } = await import('../canvasRef');
+    const fabricCanvas = getFabricCanvasRef();
+    if (!fabricCanvas) return;
+
+    const fabricObj = fabricCanvas.getObjects().find((o: any) => o.data?.posterId === elementId);
+    if (!fabricObj) return;
+
+    let sourceCanvas: HTMLCanvasElement;
+    if (typeof (fabricObj as any).toCanvasElement === 'function') {
+      sourceCanvas = (fabricObj as any).toCanvasElement({ multiplier: 1, enableRetinaScaling: false });
+    } else {
+      return;
+    }
+
+    const { SamService } = await import('../services/SamService');
+    const samService = SamService.getInstance();
+    const samMasks = await samService.generateMasks(sourceCanvas);
+
+    const { DetectionEngine } = await import('../selection/DetectionEngine');
+
+    const sourceCtx = sourceCanvas.getContext('2d');
+    const sourceImageData = sourceCtx!.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+
+    for (const samMask of samMasks) {
+      const id = generateElementId();
+      const alphaMask = samMask.data;
+      const isolatedCanvas = await DetectionEngine.extractPixels(sourceCanvas, alphaMask);
+
+      const contours = DetectionEngine.traceContoursFromMask(alphaMask, samMask.width, samMask.height);
+      if (contours.length === 0) continue;
+
+      const newLayer: MagicLayer = {
+        id,
+        sourceObjectId: elementId,
+        sourceImageData,
+        isolatedCanvas,
+        alphaMask,
+        contourPath: contours[0] || [],
+        islands: contours.length > 1 ? contours : undefined,
+        transform: {
+          x: sourceElement.left,
+          y: sourceElement.top,
+          scaleX: sourceElement.scaleX,
+          scaleY: sourceElement.scaleY,
+          rotation: sourceElement.angle,
+        },
+        bounds: {
+          x: 0,
+          y: 0,
+          width: sourceCanvas.width,
+          height: sourceCanvas.height,
+        },
+        editable: true,
+        visible: true,
+        locked: false,
+        createdAt: Date.now(),
+        createdFrom: 'sam',
+      };
+
+      set(state => ({
+        magicLayers: [...state.magicLayers, newLayer],
+      }));
+
+      usePosterStore.getState().addElement({
+        type: 'magic-layer',
+        id,
+        left: sourceElement.left,
+        top: sourceElement.top,
+        scaleX: sourceElement.scaleX,
+        scaleY: sourceElement.scaleY,
+        angle: sourceElement.angle,
+        opacity: 1,
+        sourceObjectId: elementId,
+        isolatedSrc: isolatedCanvas.toDataURL('image/png'),
+        sourceSrc: sourceCanvas.toDataURL('image/png'),
+        contourPath: contours[0] || [],
+        islands: contours.length > 1 ? contours : undefined,
+      } as MagicLayerElement);
+    }
+  },
 }));

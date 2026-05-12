@@ -30,6 +30,7 @@ import { usePosterFontOptions } from '../usePosterFontOptions';
 import { MaskEditorModal } from './MaskEditorModal';
 import { BUILT_IN_TEXTURES } from '../posterTextures';
 import { removeBackgroundFromElementPreservingLayout } from '../services/removeBackgroundApi';
+import { useMagicLayerStore } from '../store/magicLayerStore';
 
 interface PosterRightSidebarProps {
   readOnly?: boolean;
@@ -1147,6 +1148,7 @@ function PosterImageAppearanceControls({
 }) {
   const [maskEditorOpen, setMaskEditorOpen] = useState(false);
   const [removeBgBusy, setRemoveBgBusy] = useState(false);
+  const [samBusy, setSamBusy] = useState(false);
   const [removeBgError, setRemoveBgError] = useState<string | null>(null);
   const imageCropTargetId = usePosterStore((s) => s.imageCropTargetId);
   const setImageCropTargetId = usePosterStore((s) => s.setImageCropTargetId);
@@ -1195,6 +1197,20 @@ function PosterImageAppearanceControls({
     }
   };
 
+  const handleMagicLayers = async () => {
+    if (readOnly || raster.locked) return;
+    setSamBusy(true);
+    try {
+      pushHistory();
+      const { createMagicLayersFromSam } = useMagicLayerStore.getState();
+      await createMagicLayersFromSam(raster.id);
+    } catch (err) {
+      console.error('SAM processing failed', err);
+    } finally {
+      setSamBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
       <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Image appearance</p>
@@ -1211,6 +1227,20 @@ function PosterImageAppearanceControls({
         {removeBgError && (
           <p className="text-xs text-red-600 dark:text-red-400">{removeBgError}</p>
         )}
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-600 dark:bg-zinc-800/50">
+        <button
+          type="button"
+          onClick={handleMagicLayers}
+          disabled={readOnly || !!raster.locked || samBusy}
+          className="rounded-lg bg-zinc-800 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+        >
+          {samBusy ? 'Detecting objects…' : 'Magic Layers (SAM)'}
+        </button>
+        <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+          Auto-segment image into independent editable layers.
+        </p>
       </div>
 
       {(raster.type === 'image' || raster.type === '3d-text') && (
