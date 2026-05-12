@@ -526,61 +526,20 @@ export class DetectionEngine {
       const height = canvas.height;
 
       // Alpha-aware threshold mask
-      // Instead of a hard threshold, we can use edge strength estimation
       const mask = new Uint8Array(width * height);
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           const idx = (y * width + x) * 4;
           const alpha = data[idx + 3];
-
-          // Basic alpha threshold
           if (alpha > 10) {
             mask[y * width + x] = 1;
           } else {
-            // Check for semi-transparent edges if needed
-            // For Moore Neighborhood, we still need a binary mask.
             mask[y * width + x] = 0;
           }
         }
       }
 
-      // Moore Neighborhood Tracing implementation
-      const allContours: Point[][] = [];
-      const visited = new Uint8Array(width * height);
-
-      // Find all islands and holes
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          // Find any boundary (external or internal)
-          if (mask[y * width + x] && !visited[y * width + x]) {
-            // Check if it's a boundary pixel
-            if (this.isBoundary(x, y, mask, width, height)) {
-              const contour = this.traceContour(x, y, mask, width, height, visited);
-              // To avoid small noise islands, set a minimum size.
-              // A 2x2 square has a perimeter of 4 pixels.
-              if (contour.length >= 4) {
-                // Simplified each contour
-                const simplified = this.simplifyPath(contour, 1.5);
-                // Ensure the simplified path is still a valid polygon
-                // For very small islands that simplify to 2 points, they are likely noise
-                if (simplified.length >= 3) {
-                  allContours.push(simplified);
-                }
-              }
-            } else {
-              // Internal pixel, mark as visited so we don't check neighbors repeatedly
-              // Although Moore tracing marks its path, it doesn't mark the INSIDE.
-              // We use a flood fill or just rely on the fact that we only start from boundaries.
-              // For robustness, if we found a non-boundary mask pixel, we could mark it visited
-              // but we need to be careful not to skip real islands.
-            }
-          }
-        }
-      }
-
-      if (allContours.length === 0) return null;
-
-      return allContours;
+      return DetectionEngine.traceContoursFromMask(mask, width, height);
 
     } catch (e) {
       console.error('Failed to get contour points', e);
@@ -588,7 +547,33 @@ export class DetectionEngine {
     }
   }
 
-  private isBoundary(x: number, y: number, mask: Uint8Array, width: number, height: number): boolean {
+  /**
+   * Traces contours from a binary mask (1 for object, 0 for background).
+   */
+  public static traceContoursFromMask(mask: Uint8Array | Uint8ClampedArray, width: number, height: number): Point[][] {
+    const allContours: Point[][] = [];
+    const visited = new Uint8Array(width * height);
+
+    // Find all islands and holes
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (mask[y * width + x] && !visited[y * width + x]) {
+          if (this.isBoundary(x, y, mask, width, height)) {
+            const contour = this.traceContour(x, y, mask, width, height, visited);
+            if (contour.length >= 4) {
+              const simplified = this.simplifyPath(contour, 1.5);
+              if (simplified.length >= 3) {
+                allContours.push(simplified);
+              }
+            }
+          }
+        }
+      }
+    }
+    return allContours;
+  }
+
+  private static isBoundary(x: number, y: number, mask: Uint8Array | Uint8ClampedArray, width: number, height: number): boolean {
     if (!mask[y * width + x]) return false;
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
@@ -603,7 +588,7 @@ export class DetectionEngine {
     return false;
   }
 
-  private traceContour(startX: number, startY: number, mask: Uint8Array, width: number, height: number, visited: Uint8Array): Point[] {
+  private static traceContour(startX: number, startY: number, mask: Uint8Array | Uint8ClampedArray, width: number, height: number, visited: Uint8Array): Point[] {
     const contour: Point[] = [];
     let currX = startX;
     let currY = startY;
@@ -664,7 +649,7 @@ export class DetectionEngine {
     return contour;
   }
 
-  private simplifyPath(points: Point[], tolerance: number): Point[] {
+  private static simplifyPath(points: Point[], tolerance: number): Point[] {
     if (points.length <= 2) return points;
 
     // Ramer-Douglas-Peucker algorithm
@@ -695,7 +680,7 @@ export class DetectionEngine {
     return indices.map(idx => points[idx]);
   }
 
-  private getSqSegDist(p: Point, p1: Point, p2: Point): number {
+  private static getSqSegDist(p: Point, p1: Point, p2: Point): number {
     let x = p1.x;
     let y = p1.y;
     let dx = p2.x - x;

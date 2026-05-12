@@ -18,8 +18,8 @@ describe('DetectionEngine Contour Tracing', () => {
     const width = 3;
     const height = 3;
 
-    expect((engine as any).isBoundary(1, 1, mask, width, height)).toBe(true);
-    expect((engine as any).isBoundary(0, 0, mask, width, height)).toBe(false);
+    expect((DetectionEngine as any).isBoundary(1, 1, mask, width, height)).toBe(true);
+    expect((DetectionEngine as any).isBoundary(0, 0, mask, width, height)).toBe(false);
   });
 
   it('traceContour traces a simple square correctly', () => {
@@ -34,7 +34,7 @@ describe('DetectionEngine Contour Tracing', () => {
     const height = 4;
     const visited = new Uint8Array(width * height);
 
-    const result = (engine as any).traceContour(1, 1, mask, width, height, visited);
+    const result = (DetectionEngine as any).traceContour(1, 1, mask, width, height, visited);
 
     // Moore tracing should find 4 points for a 2x2 square
     expect(result.length).toBe(4);
@@ -94,7 +94,7 @@ describe('DetectionEngine Contour Tracing', () => {
       { x: 0, y: 0 }
     ];
 
-    const simplified = (engine as any).simplifyPath(points, 1);
+    const simplified = (DetectionEngine as any).simplifyPath(points, 1);
 
     // The point at (5, 0.1) should be removed as it's within tolerance of the line (0,0)-(10,0)
     expect(simplified.length).toBe(5);

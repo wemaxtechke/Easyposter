@@ -330,6 +330,7 @@ export interface MagicLayer {
   locked: boolean;
   blendMode?: GlobalCompositeOperation;
   createdAt: number;
+  createdFrom?: 'sam' | 'manual';
 }
 
 export interface MagicLayerStore {
@@ -352,6 +353,7 @@ export interface MagicLayerStore {
   toggleMagicLayerVisibility(id: string): void;
   setActiveMagicLayer(id: string | null): void;
   registerMagicLayer(layer: MagicLayer): void;
+  createMagicLayersFromSam(elementId: string): Promise<void>;
 }
 
 export interface MagicLayerElement extends PosterElementBase {
