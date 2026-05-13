@@ -106,7 +106,7 @@ export const PosterToolbar = memo(function PosterToolbar() {
 
           {/* Sub-menu for Object Selection */}
           {tool.id === 'object-selection' && activeTool === 'object-selection' && (
-            <div className="absolute bottom-full mb-2 right-auto left-1/2 -translate-x-1/2 lg:bottom-auto lg:mb-0 lg:right-full lg:mr-4 lg:left-auto lg:translate-x-0 flex gap-1 p-1 bg-white/95 dark:bg-zinc-900/95 border border-zinc-200 dark:border-zinc-800 rounded-md shadow-lg backdrop-blur-sm">
+            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 lg:bottom-auto lg:top-0 lg:mb-0 lg:right-full lg:mr-4 lg:left-auto lg:translate-x-0 flex flex-wrap justify-center items-center w-max max-w-[calc(100vw-2rem)] gap-1 p-1 bg-white/95 dark:bg-zinc-900/95 border border-zinc-200 dark:border-zinc-800 rounded-md shadow-lg backdrop-blur-sm z-50">
               {(['rectangle', 'lasso', 'magnetic', 'ai'] as const).map((mode) => (
                 <button
                   key={mode}
@@ -115,7 +115,7 @@ export const PosterToolbar = memo(function PosterToolbar() {
                     e.stopPropagation();
                     setObjectSelectionMode(mode);
                   }}
-                  className={`px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded ${
+                  className={`px-1.5 py-1 sm:px-2 text-[9px] sm:text-[10px] uppercase tracking-wider font-bold rounded ${
                     objectSelectionMode === mode
                       ? 'bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-900'
                       : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
@@ -131,7 +131,7 @@ export const PosterToolbar = memo(function PosterToolbar() {
                   e.stopPropagation();
                   usePosterStore.getState().invertSelection();
                 }}
-                className="px-2 py-1 text-[10px] uppercase tracking-wider font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded"
+                className="px-1.5 py-1 sm:px-2 text-[9px] sm:text-[10px] uppercase tracking-wider font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded"
               >
                 Invert
               </button>
