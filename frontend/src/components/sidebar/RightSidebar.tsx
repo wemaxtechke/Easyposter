@@ -95,7 +95,7 @@ const Slider = memo(function Slider({
         step={step ?? 1}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 dark:bg-zinc-700 accent-zinc-700 dark:accent-zinc-400"
+        className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 dark:bg-zinc-700 accent-zinc-700 dark:accent-zinc-400 touch-pan-y"
       />
     </div>
   );
