@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PosterElement, PosterImageElement, Poster3DTextElement, PosterImageMask } from '../types';
 import { posterRasterSrc } from '../posterRaster';
 import { bakeMaskedImage } from '../utils/bakeMaskedImage';
+import { useIntentionalSliderDrag } from '../../hooks/useIntentionalSliderDrag';
 
 interface MaskEditorModalProps {
   open: boolean;
@@ -45,6 +46,16 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
     w: typeof window !== 'undefined' ? window.innerWidth : 1200,
     h: typeof window !== 'undefined' ? window.innerHeight : 900,
   });
+
+  const { sliderRef: cornerSliderRef, handleInputChange: handleCornerChange } =
+    useIntentionalSliderDrag(setCornerRadius);
+
+  const { sliderRef: zoomSliderRef, handleInputChange: handleZoomChange } = useIntentionalSliderDrag(
+    (v) => setZoom(v / 100)
+  );
+
+  const { sliderRef: maskScaleSliderRef, handleInputChange: handleMaskScaleChange } =
+    useIntentionalSliderDrag((v) => setMaskScale(v / 100));
 
   const previewSrc = target.originalSrc ?? posterRasterSrc(target);
 
@@ -265,12 +276,13 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                   Corner roundness ({Math.round(cornerRadius * 100)}%)
                 </label>
                 <input
+                  ref={cornerSliderRef}
                   type="range"
                   min={0.02}
                   max={0.45}
                   step={0.01}
                   value={cornerRadius}
-                  onChange={(e) => setCornerRadius(parseFloat(e.target.value))}
+                  onChange={handleCornerChange}
                   className="w-full min-w-0 touch-pan-y"
                 />
               </div>
@@ -280,12 +292,13 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                 Image size ({Math.round(zoom * 100)}%)
               </label>
               <input
+                ref={zoomSliderRef}
                 type="range"
                 min={60}
                 max={300}
                 step={5}
                 value={Math.round(zoom * 100)}
-                onChange={(e) => setZoom(parseInt(e.target.value, 10) / 100)}
+                onChange={handleZoomChange}
                 className="w-full min-w-0 touch-pan-y"
               />
             </div>
@@ -295,12 +308,13 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                   Mask size ({Math.round(maskScale * 100)}%)
                 </label>
                 <input
+                  ref={maskScaleSliderRef}
                   type="range"
                   min={50}
                   max={150}
                   step={5}
                   value={Math.round(maskScale * 100)}
-                  onChange={(e) => setMaskScale(parseInt(e.target.value, 10) / 100)}
+                  onChange={handleMaskScaleChange}
                   className="w-full min-w-0 touch-pan-y"
                 />
               </div>

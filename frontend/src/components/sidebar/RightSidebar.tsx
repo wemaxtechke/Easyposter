@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import opentype from 'opentype.js';
 import { ColorPickerPopover } from '../ColorPickerPopover';
 import { useEditorStore } from '../../store/editorStore';
+import { useIntentionalSliderDrag } from '../../hooks/useIntentionalSliderDrag';
 import type { ShapeLayerKind } from '../../core/types';
 import { DEFAULT_RING_HOLE_RATIO } from '../../core/types';
 import { isShapeLayer } from '../../core/types';
@@ -82,6 +83,8 @@ const Slider = memo(function Slider({
   step?: number;
   onChange: (v: number) => void;
 }) {
+  const { sliderRef, handleInputChange } = useIntentionalSliderDrag(onChange);
+
   return (
     <div className="flex flex-col gap-1">
       <div className="flex justify-between text-xs">
@@ -89,12 +92,13 @@ const Slider = memo(function Slider({
         <span className="font-mono text-zinc-500 dark:text-zinc-500">{value}</span>
       </div>
       <input
+        ref={sliderRef}
         type="range"
         min={min}
         max={max}
         step={step ?? 1}
         value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
+        onChange={handleInputChange}
         className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 dark:bg-zinc-700 accent-zinc-700 dark:accent-zinc-400 touch-pan-y"
       />
     </div>

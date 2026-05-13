@@ -4,10 +4,10 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { usePosterStore } from '../store/posterStore';
+import { useIntentionalSliderDrag } from '../../hooks/useIntentionalSliderDrag';
 import type { PosterElement } from '../types';
 
 const MIN_P = 5;
@@ -121,16 +121,26 @@ export function PosterMobileScaleFader({ readOnly }: Props) {
     });
   }, []);
 
+  const { sliderRef, handleInputChange } = useIntentionalSliderDrag(
+    (v) => {
+      bumpInteracting();
+      setLocalPercent(v);
+      scheduleApply(v);
+    },
+    {
+      onDragStart: () => {
+        bumpInteracting();
+        draggingRef.current = true;
+      },
+      onDragEnd: () => {
+        endDrag();
+      },
+    }
+  );
+
   if (readOnly || selectedIds.length === 0 || unlocked.length === 0) return null;
 
   const sliderValue = localPercent ?? storeSliderPercent;
-
-  const handleInput = (e: ChangeEvent<HTMLInputElement>) => {
-    bumpInteracting();
-    const p = parseFloat(e.target.value);
-    setLocalPercent(p);
-    scheduleApply(p);
-  };
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLInputElement>) => {
     bumpInteracting();
@@ -171,25 +181,25 @@ export function PosterMobileScaleFader({ readOnly }: Props) {
     >
       <div
         className="pointer-events-auto relative flex h-10 w-[min(80vw,14rem)] items-center justify-center rounded-full bg-zinc-100/85 px-1 shadow-lg shadow-zinc-900/10 backdrop-blur-sm lg:h-[min(46vh,14rem)] lg:w-10 dark:bg-zinc-900/85 dark:shadow-black/30"
-        style={{ touchAction: 'none' }}
+        style={{ touchAction: 'pan-y' }}
         onPointerDown={bumpInteracting}
       >
         <label htmlFor="poster-mobile-scale-fader" className="sr-only">
           Scale selected elements
         </label>
         <input
+          ref={sliderRef}
           id="poster-mobile-scale-fader"
           type="range"
           min={MIN_P}
           max={MAX_P}
           step={STEP}
           value={sliderValue}
-          onChange={handleInput}
+          onChange={handleInputChange}
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
-          onTouchStart={bumpInteracting}
-          className="absolute h-9 w-full max-w-[200px] cursor-grab touch-none accent-amber-500 transition-[filter] duration-150 ease-out active:cursor-grabbing active:brightness-110 lg:w-[min(42vh,12.5rem)] lg:-rotate-90 dark:accent-amber-400"
+          className="absolute h-9 w-full max-w-[200px] cursor-grab touch-pan-y accent-amber-500 transition-[filter] duration-150 ease-out active:cursor-grabbing active:brightness-110 lg:w-[min(42vh,12.5rem)] lg:-rotate-90 dark:accent-amber-400"
         />
       </div>
       <span className="pointer-events-none text-[10px] font-medium tabular-nums text-zinc-500 transition-[opacity] duration-300 ease-out dark:text-zinc-400">
