@@ -164,13 +164,13 @@ export function PosterMobileScaleFader({ readOnly }: Props) {
   return (
     <div
       className={[
-        'pointer-events-none fixed left-[max(0.5rem,env(safe-area-inset-left))] top-1/2 z-[42] flex -translate-y-1/2 flex-col items-center gap-0.5 lg:pointer-events-auto lg:absolute lg:left-2 lg:top-1/2',
+        'pointer-events-none fixed top-[calc(env(safe-area-inset-top,0px)+3.5rem)] left-1/2 z-[42] flex -translate-x-1/2 flex-row items-center gap-2 lg:pointer-events-auto lg:absolute lg:left-2 lg:top-1/2 lg:-translate-y-1/2 lg:translate-x-0 lg:flex-col lg:gap-0.5',
         interacting ? 'opacity-100' : 'opacity-[0.35] hover:opacity-90',
         'transition-[opacity] duration-700 ease-in-out',
       ].join(' ')}
     >
       <div
-        className="pointer-events-auto relative flex h-[min(46vh,14rem)] w-10 items-center justify-center rounded-full bg-zinc-100/85 px-1 shadow-lg shadow-zinc-900/10 backdrop-blur-sm dark:bg-zinc-900/85 dark:shadow-black/30"
+        className="pointer-events-auto relative flex h-10 w-[min(80vw,14rem)] items-center justify-center rounded-full bg-zinc-100/85 px-1 shadow-lg shadow-zinc-900/10 backdrop-blur-sm lg:h-[min(46vh,14rem)] lg:w-10 dark:bg-zinc-900/85 dark:shadow-black/30"
         style={{ touchAction: 'none' }}
         onPointerDown={bumpInteracting}
       >
@@ -189,7 +189,7 @@ export function PosterMobileScaleFader({ readOnly }: Props) {
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
           onTouchStart={bumpInteracting}
-          className="absolute h-9 w-[min(42vh,12.5rem)] max-w-[200px] -rotate-90 cursor-grab touch-none accent-amber-500 transition-[filter] duration-150 ease-out active:cursor-grabbing active:brightness-110 dark:accent-amber-400"
+          className="absolute h-9 w-full max-w-[200px] cursor-grab touch-none accent-amber-500 transition-[filter] duration-150 ease-out active:cursor-grabbing active:brightness-110 lg:w-[min(42vh,12.5rem)] lg:-rotate-90 dark:accent-amber-400"
         />
       </div>
       <span className="pointer-events-none text-[10px] font-medium tabular-nums text-zinc-500 transition-[opacity] duration-300 ease-out dark:text-zinc-400">
