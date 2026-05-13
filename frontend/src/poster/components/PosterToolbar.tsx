@@ -89,13 +89,13 @@ export const PosterToolbar = memo(function PosterToolbar() {
   };
 
   return (
-    <div className="absolute right-4 top-1/2 -translate-y-1/2 z-40 flex flex-col gap-1 p-1 bg-white/90 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-xl backdrop-blur-md">
+    <div className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+3.75rem)] left-1/2 -translate-x-1/2 z-40 flex flex-row lg:absolute lg:right-4 lg:top-1/2 lg:-translate-y-1/2 lg:bottom-auto lg:left-auto lg:translate-x-0 lg:flex-col gap-1 p-1 bg-white/90 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-xl backdrop-blur-md">
       {TOOLS.map((tool) => (
         <button
           key={tool.id}
           type="button"
           onClick={() => handleToolClick(tool.id)}
-          className={`group relative flex items-center justify-center w-10 h-10 rounded-md transition-colors ${
+          className={`group relative flex items-center justify-center w-9 h-9 lg:w-10 lg:h-10 rounded-md transition-colors ${
             activeTool === tool.id
               ? 'bg-[#1b7340] text-white shadow-inner'
               : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
@@ -106,7 +106,7 @@ export const PosterToolbar = memo(function PosterToolbar() {
 
           {/* Sub-menu for Object Selection */}
           {tool.id === 'object-selection' && activeTool === 'object-selection' && (
-            <div className="absolute right-full mr-4 flex gap-1 p-1 bg-white/95 dark:bg-zinc-900/95 border border-zinc-200 dark:border-zinc-800 rounded-md shadow-lg backdrop-blur-sm">
+            <div className="absolute bottom-full mb-2 right-auto left-1/2 -translate-x-1/2 lg:bottom-auto lg:mb-0 lg:right-full lg:mr-4 lg:left-auto lg:translate-x-0 flex gap-1 p-1 bg-white/95 dark:bg-zinc-900/95 border border-zinc-200 dark:border-zinc-800 rounded-md shadow-lg backdrop-blur-sm">
               {(['rectangle', 'lasso', 'magnetic', 'ai'] as const).map((mode) => (
                 <button
                   key={mode}
@@ -139,7 +139,7 @@ export const PosterToolbar = memo(function PosterToolbar() {
           )}
 
           {/* Tooltip */}
-          <div className="absolute right-full mr-2 px-2 py-1 bg-zinc-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 flex items-center">
+          <div className="hidden lg:flex absolute right-full mr-2 px-2 py-1 bg-zinc-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 items-center">
             {tool.label} <span className="text-zinc-400 ml-2 bg-zinc-800 px-1 rounded">{tool.shortcut}</span>
           </div>
         </button>
