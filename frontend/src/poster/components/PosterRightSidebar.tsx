@@ -36,6 +36,43 @@ interface PosterRightSidebarProps {
   onOpenEdit3D?: (id: string) => void;
 }
 
+function PosterSlider({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  onChange,
+  className = 'w-full',
+}: {
+  label?: React.ReactNode;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  onChange: (val: number) => void;
+  className?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      {label && (
+        <label className="text-xs text-zinc-600 dark:text-zinc-400">
+          {label}
+        </label>
+      )}
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className={`${className} touch-pan-y`}
+      />
+    </div>
+  );
+}
+
 function GradientStopsEditor({
   stops,
   onChange,
@@ -418,40 +455,31 @@ function PathStyleControls({
           onChange={(c) => updateElement(path.id, { stroke: c, strokeWidth: path.strokeWidth ?? 2 })}
         />
       </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-zinc-600 dark:text-zinc-400">Stroke width ({path.strokeWidth ?? 0}px)</label>
-        <input
-          type="range"
-          min={0}
-          max={24}
-          step={1}
-          value={path.strokeWidth ?? 0}
-          onChange={(e) => {
-            const v = parseInt(e.target.value, 10) || 0;
-            updateElement(path.id, {
-              strokeWidth: v,
-              stroke: v > 0 ? (path.stroke || '#0f172a') : undefined,
-            });
-          }}
-          className="w-full"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-zinc-600 dark:text-zinc-400">Fill opacity ({Math.round((path.fillOpacity ?? 1) * 100)}%)</label>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={5}
-          value={Math.round((path.fillOpacity ?? 1) * 100)}
-          onChange={(e) =>
-            updateElement(path.id, {
-              fillOpacity: Math.max(0, Math.min(1, (parseInt(e.target.value, 10) || 0) / 100)),
-            })
-          }
-          className="w-full"
-        />
-      </div>
+      <PosterSlider
+        label={`Stroke width (${path.strokeWidth ?? 0}px)`}
+        min={0}
+        max={24}
+        step={1}
+        value={path.strokeWidth ?? 0}
+        onChange={(v) => {
+          updateElement(path.id, {
+            strokeWidth: v,
+            stroke: v > 0 ? (path.stroke || '#0f172a') : undefined,
+          });
+        }}
+      />
+      <PosterSlider
+        label={`Fill opacity (${Math.round((path.fillOpacity ?? 1) * 100)}%)`}
+        min={0}
+        max={100}
+        step={5}
+        value={Math.round((path.fillOpacity ?? 1) * 100)}
+        onChange={(v) =>
+          updateElement(path.id, {
+            fillOpacity: Math.max(0, Math.min(1, v / 100)),
+          })
+        }
+      />
       <div className="flex flex-col gap-1">
         <button
           type="button"
@@ -519,41 +547,25 @@ function ShapeFillAndRoundnessControls({
       )}
 
       {shape.type === 'rect' && !rectHasPerCornerRadii(shape) && (
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-zinc-600 dark:text-zinc-400">
-            Corner roundness ({rx}px)
-          </label>
-          <input
-            type="range"
-            min={0}
-            max={maxRound}
-            step={1}
-            value={rx}
-            onChange={(e) =>
-              updateElement(shape.id, { rx: parseInt(e.target.value, 10) || 0 })
-            }
-            className="w-full"
-          />
-        </div>
+        <PosterSlider
+          label={`Corner roundness (${rx}px)`}
+          min={0}
+          max={maxRound}
+          step={1}
+          value={rx}
+          onChange={(v) => updateElement(shape.id, { rx: v })}
+        />
       )}
 
       {shape.type === 'line' && (
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-zinc-600 dark:text-zinc-400">
-            Stroke width ({shape.strokeWidth ?? 4}px)
-          </label>
-          <input
-            type="range"
-            min={1}
-            max={48}
-            step={1}
-            value={shape.strokeWidth ?? 4}
-            onChange={(e) =>
-              updateElement(shape.id, { strokeWidth: parseInt(e.target.value, 10) || 4 })
-            }
-            className="w-full"
-          />
-        </div>
+        <PosterSlider
+          label={`Stroke width (${shape.strokeWidth ?? 4}px)`}
+          min={1}
+          max={48}
+          step={1}
+          value={shape.strokeWidth ?? 4}
+          onChange={(v) => updateElement(shape.id, { strokeWidth: v })}
+        />
       )}
 
       {(shape.type === 'rect' ||
@@ -580,21 +592,18 @@ function ShapeFillAndRoundnessControls({
               }
             />
             <div className="flex-1">
-              <label className="text-[10px] text-zinc-500">Width ({(shape.strokeWidth ?? 0) || 0}px)</label>
-              <input
-                type="range"
+              <PosterSlider
+                label={`Width (${(shape.strokeWidth ?? 0) || 0}px)`}
                 min={0}
                 max={24}
                 step={1}
                 value={(shape.strokeWidth ?? 0) || 0}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10) || 0;
+                onChange={(v) => {
                   updateElement(shape.id, {
                     strokeWidth: v,
                     stroke: v > 0 ? (shape.stroke && /^#[0-9A-Fa-f]{6}$/i.test(shape.stroke) ? shape.stroke : '#000000') : undefined,
                   });
                 }}
-                className="w-full"
               />
             </div>
           </div>
@@ -609,24 +618,18 @@ function ShapeFillAndRoundnessControls({
         shape.type === 'triangle' ||
         shape.type === 'ellipse' ||
         shape.type === 'polygon') && (
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-zinc-600 dark:text-zinc-400">
-            Fill opacity ({Math.round((shape.fillOpacity ?? 1) * 100)}%)
-          </label>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={5}
-            value={Math.round((shape.fillOpacity ?? 1) * 100)}
-            onChange={(e) =>
-              updateElement(shape.id, {
-                fillOpacity: Math.max(0, Math.min(1, (parseInt(e.target.value, 10) || 0) / 100)),
-              })
-            }
-            className="w-full"
-          />
-        </div>
+        <PosterSlider
+          label={`Fill opacity (${Math.round((shape.fillOpacity ?? 1) * 100)}%)`}
+          min={0}
+          max={100}
+          step={5}
+          value={Math.round((shape.fillOpacity ?? 1) * 100)}
+          onChange={(v) =>
+            updateElement(shape.id, {
+              fillOpacity: Math.max(0, Math.min(1, v / 100)),
+            })
+          }
+        />
       )}
 
       <div className="flex flex-col gap-2">
@@ -687,22 +690,16 @@ function ShapeFillAndRoundnessControls({
                 />
               ))}
             </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-zinc-500">
-                Scale ({((fillNorm.scale ?? 1) * 100).toFixed(0)}%)
-              </label>
-              <input
-                type="range"
-                min={25}
-                max={200}
-                step={5}
-                value={((fillNorm.scale ?? 1) * 100)}
-                onChange={(e) =>
-                  setFill({ ...fillNorm, scale: parseInt(e.target.value, 10) / 100 })
-                }
-                className="w-full"
-              />
-            </div>
+            <PosterSlider
+              label={`Scale (${((fillNorm.scale ?? 1) * 100).toFixed(0)}%)`}
+              min={25}
+              max={200}
+              step={5}
+              value={((fillNorm.scale ?? 1) * 100)}
+              onChange={(v) =>
+                setFill({ ...fillNorm, scale: v / 100 })
+              }
+            />
           </>
         )}
 
@@ -851,86 +848,46 @@ function ImageAdjustmentControls({
           </button>
         )}
       </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-zinc-600 dark:text-zinc-400">
-          Brightness ({brightness})
-        </label>
-        <input
-          type="range"
-          min={-100}
-          max={100}
-          step={1}
-          value={brightness}
-          onChange={(e) =>
-            updateElement(elementId, { adjustBrightness: parseInt(e.target.value, 10) })
-          }
-          className="w-full"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-zinc-600 dark:text-zinc-400">
-          Contrast ({contrast})
-        </label>
-        <input
-          type="range"
-          min={-100}
-          max={100}
-          step={1}
-          value={contrast}
-          onChange={(e) =>
-            updateElement(elementId, { adjustContrast: parseInt(e.target.value, 10) })
-          }
-          className="w-full"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-zinc-600 dark:text-zinc-400">
-          Hue ({hue}°)
-        </label>
-        <input
-          type="range"
-          min={-180}
-          max={180}
-          step={1}
-          value={hue}
-          onChange={(e) =>
-            updateElement(elementId, { adjustHue: parseInt(e.target.value, 10) })
-          }
-          className="w-full"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-zinc-600 dark:text-zinc-400">
-          Saturation ({saturation})
-        </label>
-        <input
-          type="range"
-          min={-100}
-          max={100}
-          step={1}
-          value={saturation}
-          onChange={(e) =>
-            updateElement(elementId, { adjustSaturation: parseInt(e.target.value, 10) })
-          }
-          className="w-full"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-zinc-600 dark:text-zinc-400">
-          Sharpness ({sharpness})
-        </label>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          value={sharpness}
-          onChange={(e) =>
-            updateElement(elementId, { adjustSharpness: parseInt(e.target.value, 10) })
-          }
-          className="w-full"
-        />
-      </div>
+      <PosterSlider
+        label={`Brightness (${brightness})`}
+        min={-100}
+        max={100}
+        step={1}
+        value={brightness}
+        onChange={(v) => updateElement(elementId, { adjustBrightness: v })}
+      />
+      <PosterSlider
+        label={`Contrast (${contrast})`}
+        min={-100}
+        max={100}
+        step={1}
+        value={contrast}
+        onChange={(v) => updateElement(elementId, { adjustContrast: v })}
+      />
+      <PosterSlider
+        label={`Hue (${hue}°)`}
+        min={-180}
+        max={180}
+        step={1}
+        value={hue}
+        onChange={(v) => updateElement(elementId, { adjustHue: v })}
+      />
+      <PosterSlider
+        label={`Saturation (${saturation})`}
+        min={-100}
+        max={100}
+        step={1}
+        value={saturation}
+        onChange={(v) => updateElement(elementId, { adjustSaturation: v })}
+      />
+      <PosterSlider
+        label={`Sharpness (${sharpness})`}
+        min={0}
+        max={100}
+        step={1}
+        value={sharpness}
+        onChange={(v) => updateElement(elementId, { adjustSharpness: v })}
+      />
       <div className="flex flex-col gap-2">
         <span className="text-xs text-zinc-600 dark:text-zinc-400">Tint</span>
         <div className="flex flex-wrap items-center gap-2">
@@ -941,22 +898,14 @@ function ImageAdjustmentControls({
           />
           <span className="text-[10px] text-zinc-500 dark:text-zinc-400">Color</span>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-zinc-600 dark:text-zinc-400">
-            Tint amount ({tintAmount})
-          </label>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={1}
-            value={tintAmount}
-            onChange={(e) =>
-              updateElement(elementId, { adjustTintAmount: parseInt(e.target.value, 10) })
-            }
-            className="w-full"
-          />
-        </div>
+        <PosterSlider
+          label={`Tint amount (${tintAmount})`}
+          min={0}
+          max={100}
+          step={1}
+          value={tintAmount}
+          onChange={(v) => updateElement(elementId, { adjustTintAmount: v })}
+        />
       </div>
     </div>
   );
@@ -1155,27 +1104,21 @@ function PosterImageAppearanceControls({
           ))}
         </div>
         {raster.textureOverlay && (
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-500">
-              Opacity ({Math.round((raster.textureOverlay.opacity ?? 0.5) * 100)}%)
-            </label>
-            <input
-              type="range"
-              min={5}
-              max={95}
-              step={5}
-              value={(raster.textureOverlay.opacity ?? 0.5) * 100}
-              onChange={(e) =>
-                updateElement(raster.id, {
-                  textureOverlay: {
-                    ...raster.textureOverlay!,
-                    opacity: parseInt(e.target.value, 10) / 100,
-                  },
-                })
-              }
-              className="w-full"
-            />
-          </div>
+          <PosterSlider
+            label={`Opacity (${Math.round((raster.textureOverlay.opacity ?? 0.5) * 100)}%)`}
+            min={5}
+            max={95}
+            step={5}
+            value={(raster.textureOverlay.opacity ?? 0.5) * 100}
+            onChange={(v) =>
+              updateElement(raster.id, {
+                textureOverlay: {
+                  ...raster.textureOverlay!,
+                  opacity: v / 100,
+                },
+              })
+            }
+          />
         )}
       </div>
 
@@ -1232,38 +1175,30 @@ function PosterImageAppearanceControls({
       {edgeUsesFade && (
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-600 dark:text-zinc-400">
-              Fade reach ({Math.round(fadeAmount * 100)}%)
-            </label>
-            <input
-              type="range"
+            <PosterSlider
+              label={`Fade reach (${Math.round(fadeAmount * 100)}%)`}
               min={0.05}
               max={0.95}
               step={0.05}
               value={fadeAmount}
-              onChange={(e) =>
-                updateElement(raster.id, { edgeFadeAmount: parseFloat(e.target.value) })
+              onChange={(v) =>
+                updateElement(raster.id, { edgeFadeAmount: v })
               }
-              className="w-full"
             />
             <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
               Higher = fade reaches further inward from the edge or bottom band.
             </p>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-600 dark:text-zinc-400">
-              Outer edge opacity ({Math.round(fadeMinOpacity * 100)}%)
-            </label>
-            <input
-              type="range"
+            <PosterSlider
+              label={`Outer edge opacity (${Math.round(fadeMinOpacity * 100)}%)`}
               min={0}
               max={1}
               step={0.05}
               value={fadeMinOpacity}
-              onChange={(e) =>
-                updateElement(raster.id, { edgeFadeMinOpacity: parseFloat(e.target.value) })
+              onChange={(v) =>
+                updateElement(raster.id, { edgeFadeMinOpacity: v })
               }
-              className="w-full"
             />
             <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
               How opaque the outer faded region stays. Raise this to avoid harsh, fully transparent
@@ -1507,22 +1442,20 @@ function PosterTextControls({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-zinc-600 dark:text-zinc-400">
-          Letter spacing{' '}
-          <span className="font-normal text-zinc-400">
-            ({((text.charSpacing ?? 0) / 1000).toFixed(2)} em)
-          </span>
-        </label>
-        <input
-          type="range"
+        <PosterSlider
+          label={
+            <>
+              Letter spacing{' '}
+              <span className="font-normal text-zinc-400">
+                ({((text.charSpacing ?? 0) / 1000).toFixed(2)} em)
+              </span>
+            </>
+          }
           min={-150}
           max={400}
           step={5}
           value={text.charSpacing ?? 0}
-          onChange={(e) =>
-            updateElement(text.id, { charSpacing: parseInt(e.target.value, 10) || 0 })
-          }
-          className="w-full"
+          onChange={(v) => updateElement(text.id, { charSpacing: v })}
         />
         <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
           Tighter ← → wider. Scales with font size (same as CSS letter-spacing in em).
@@ -1530,22 +1463,20 @@ function PosterTextControls({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-zinc-600 dark:text-zinc-400">
-          Row spacing{' '}
-          <span className="font-normal text-zinc-400">
-            ({(text.lineHeight ?? 1.16).toFixed(2)}x)
-          </span>
-        </label>
-        <input
-          type="range"
+        <PosterSlider
+          label={
+            <>
+              Row spacing{' '}
+              <span className="font-normal text-zinc-400">
+                ({(text.lineHeight ?? 1.16).toFixed(2)}x)
+              </span>
+            </>
+          }
           min={0.8}
           max={2}
           step={0.01}
           value={text.lineHeight ?? 1.16}
-          onChange={(e) =>
-            updateElement(text.id, { lineHeight: parseFloat(e.target.value) || 1.16 })
-          }
-          className="w-full"
+          onChange={(v) => updateElement(text.id, { lineHeight: v })}
         />
         <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
           Controls spacing between lines in multi-line text.
@@ -1734,44 +1665,36 @@ function PosterTextControls({
                 />
               ))}
             </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-zinc-500">Scale (%)</label>
-              <input
-                type="range"
-                min={25}
-                max={200}
-                step={5}
-                value={(text.fillPattern.scale ?? 1) * 100}
-                onChange={(e) =>
-                  updateElement(text.id, {
-                    fillPattern: {
-                      ...text.fillPattern!,
-                      scale: parseInt(e.target.value, 10) / 100,
-                    },
-                  })
-                }
-                className="w-full"
-              />
-            </div>
+            <PosterSlider
+              label="Scale (%)"
+              min={25}
+              max={200}
+              step={5}
+              value={(text.fillPattern.scale ?? 1) * 100}
+              onChange={(v) =>
+                updateElement(text.id, {
+                  fillPattern: {
+                    ...text.fillPattern!,
+                    scale: v / 100,
+                  },
+                })
+              }
+            />
           </>
         )}
 
         <div className="flex flex-col gap-1 border-t border-zinc-200 pt-3 dark:border-zinc-700">
-          <label className="text-xs text-zinc-600 dark:text-zinc-400">
-            Fill opacity ({Math.round((text.fillOpacity ?? 1) * 100)}%)
-          </label>
-          <input
-            type="range"
+          <PosterSlider
+            label={`Fill opacity (${Math.round((text.fillOpacity ?? 1) * 100)}%)`}
             min={0}
             max={100}
             step={5}
             value={Math.round((text.fillOpacity ?? 1) * 100)}
-            onChange={(e) =>
+            onChange={(v) =>
               updateElement(text.id, {
-                fillOpacity: parseInt(e.target.value, 10) / 100,
+                fillOpacity: v / 100,
               })
             }
-            className="w-full"
           />
           <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
             0% = outline only.
@@ -1810,26 +1733,26 @@ function PosterTextControls({
                     })
                   }
                 />
-                <div className="flex flex-1 flex-col gap-0.5">
-                  <label className="text-[10px] text-zinc-500">
-                    Width ({(() => {
-                      const w = text.strokeWidth ?? 2;
-                      return w === Math.round(w) ? String(w) : w.toFixed(2);
-                    })()}px)
-                  </label>
-                  <input
-                    type="range"
+                <div className="flex-1">
+                  <PosterSlider
+                    label={
+                      <span className="text-[10px] text-zinc-500">
+                        Width ({(() => {
+                          const w = text.strokeWidth ?? 2;
+                          return w === Math.round(w) ? String(w) : w.toFixed(2);
+                        })()}px)
+                      </span>
+                    }
                     min={0.25}
                     max={24}
                     step={0.25}
                     value={text.strokeWidth ?? 2}
-                    onChange={(e) =>
+                    onChange={(v) =>
                       updateElement(text.id, {
-                        strokeWidth: Math.max(0.25, parseFloat(e.target.value) || 0.5),
+                        strokeWidth: Math.max(0.25, v),
                         stroke: (text.stroke && /^#[0-9A-Fa-f]{6}$/i.test(text.stroke)) ? text.stroke : '#000000',
                       })
                     }
-                    className="w-full"
                   />
                 </div>
               </div>
@@ -1883,47 +1806,39 @@ function ShadowControls({
               }
             />
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-600 dark:text-zinc-400">Blur ({s.blur})</label>
-            <input
-              type="range"
-              min={0}
-              max={60}
-              step={1}
-              value={s.blur}
-              onChange={(e) =>
-                updateElement(elementId, { shadow: { ...s, blur: parseInt(e.target.value, 10) } })
-              }
-              className="w-full"
-            />
-          </div>
+          <PosterSlider
+            label={`Blur (${s.blur})`}
+            min={0}
+            max={60}
+            step={1}
+            value={s.blur}
+            onChange={(v) =>
+              updateElement(elementId, { shadow: { ...s, blur: v } })
+            }
+          />
           <div className="flex gap-2">
-            <div className="flex flex-1 flex-col gap-1">
-              <label className="text-xs text-zinc-600 dark:text-zinc-400">X ({s.offsetX})</label>
-              <input
-                type="range"
+            <div className="flex-1">
+              <PosterSlider
+                label={`X (${s.offsetX})`}
                 min={-40}
                 max={40}
                 step={1}
                 value={s.offsetX}
-                onChange={(e) =>
-                  updateElement(elementId, { shadow: { ...s, offsetX: parseInt(e.target.value, 10) } })
+                onChange={(v) =>
+                  updateElement(elementId, { shadow: { ...s, offsetX: v } })
                 }
-                className="w-full"
               />
             </div>
-            <div className="flex flex-1 flex-col gap-1">
-              <label className="text-xs text-zinc-600 dark:text-zinc-400">Y ({s.offsetY})</label>
-              <input
-                type="range"
+            <div className="flex-1">
+              <PosterSlider
+                label={`Y (${s.offsetY})`}
                 min={-40}
                 max={40}
                 step={1}
                 value={s.offsetY}
-                onChange={(e) =>
-                  updateElement(elementId, { shadow: { ...s, offsetY: parseInt(e.target.value, 10) } })
+                onChange={(v) =>
+                  updateElement(elementId, { shadow: { ...s, offsetY: v } })
                 }
-                className="w-full"
               />
             </div>
           </div>
@@ -2204,20 +2119,14 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
               className="w-20 rounded border border-zinc-200 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800"
             />
           </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-xs text-zinc-600 dark:text-zinc-400">Opacity</label>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={single.opacity}
-              onChange={(e) =>
-                updateElement(single.id, { opacity: parseFloat(e.target.value) })
-              }
-              className="w-full"
-            />
-          </div>
+          <PosterSlider
+            label="Opacity"
+            min={0}
+            max={1}
+            step={0.01}
+            value={single.opacity}
+            onChange={(v) => updateElement(single.id, { opacity: v })}
+          />
 
           {(single.type === 'image' || single.type === '3d-text') && (
             <PosterImageAppearanceControls

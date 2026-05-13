@@ -271,7 +271,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                   step={0.01}
                   value={cornerRadius}
                   onChange={(e) => setCornerRadius(parseFloat(e.target.value))}
-                  className="w-full min-w-0"
+                  className="w-full min-w-0 touch-pan-y"
                 />
               </div>
             )}
@@ -286,7 +286,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                 step={5}
                 value={Math.round(zoom * 100)}
                 onChange={(e) => setZoom(parseInt(e.target.value, 10) / 100)}
-                className="w-full min-w-0"
+                className="w-full min-w-0 touch-pan-y"
               />
             </div>
             {hasMask && (
@@ -301,7 +301,7 @@ export function MaskEditorModal({ open, target, onClose, onApply }: MaskEditorMo
                   step={5}
                   value={Math.round(maskScale * 100)}
                   onChange={(e) => setMaskScale(parseInt(e.target.value, 10) / 100)}
-                  className="w-full min-w-0"
+                  className="w-full min-w-0 touch-pan-y"
                 />
               </div>
             )}
