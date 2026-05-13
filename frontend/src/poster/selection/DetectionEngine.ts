@@ -64,25 +64,6 @@ export class DetectionEngine {
     return newPath;
   }
 
-  public invertSelection(paths: Point[][], canvasWidth: number, canvasHeight: number): Point[] {
-    // Create a path that covers the whole canvas but has holes for the selection
-    let result = [
-      { x: 0, y: 0 },
-      { x: canvasWidth, y: 0 },
-      { x: canvasWidth, y: canvasHeight },
-      { x: 0, y: canvasHeight },
-      { x: 0, y: 0 }
-    ];
-
-    paths.forEach(path => {
-      if (path.length > 0) {
-        result = [...result, ...path, path[0]];
-      }
-    });
-
-    return result;
-  }
-
   /**
    * Detects the dominant object within the given path.
    * For simplicity in this implementation, it finds the object with the largest intersection with the path.
