@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ColorPickerPopover } from '../../components/ColorPickerPopover';
 import { usePosterStore } from '../store/posterStore';
+import { useIntentionalSliderDrag } from '../../hooks/useIntentionalSliderDrag';
 import type {
   PosterElement,
   PosterTextElement,
@@ -53,6 +54,8 @@ function PosterSlider({
   onChange: (val: number) => void;
   className?: string;
 }) {
+  const { sliderRef, handleInputChange } = useIntentionalSliderDrag(onChange);
+
   return (
     <div className="flex flex-col gap-1">
       {label && (
@@ -61,12 +64,13 @@ function PosterSlider({
         </label>
       )}
       <input
+        ref={sliderRef}
         type="range"
         min={min}
         max={max}
         step={step}
         value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
+        onChange={handleInputChange}
         className={`${className} touch-pan-y`}
       />
     </div>
