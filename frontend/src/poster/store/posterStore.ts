@@ -70,7 +70,6 @@ interface PosterStore {
   updateMarqueePoint: (pathIndex: number, pointIndex: number, updates: Partial<PosterPathPoint>) => void;
   featherSelection: (amount: number) => void;
   expandContractSelection: (amount: number) => void;
-  invertSelection: () => void;
   confirmSelectionAsVector: () => void;
   pathToolMode: PathToolMode;
   setPathToolMode: (mode: PathToolMode) => void;
@@ -198,18 +197,6 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
       return points.map(p => ({ x: p.x, y: p.y }));
     });
     set({ marqueeLocalPath: nextPaths });
-  },
-  invertSelection: async () => {
-    const { marqueeLocalPath, canvasWidth, canvasHeight } = get();
-    if (!marqueeLocalPath || marqueeLocalPath.length === 0) return;
-    const { DetectionEngine } = await import('../selection/DetectionEngine');
-    const engine = new DetectionEngine(null as any);
-    // Invert currently only works in scene space because it uses canvas dimensions.
-    // For now we skip or we would need to un-transform the canvas bounds to local space.
-    // Let's assume for now marqueePath is scene space for inversion.
-    // Actually, let's just use first island.
-    const points = engine.invertSelection(marqueeLocalPath as any, canvasWidth, canvasHeight);
-    set({ marqueeLocalPath: [points.map(p => ({ x: p.x, y: p.y }))] });
   },
   confirmSelectionAsVector: async () => {
     const { marqueeLocalPath, marqueeTargetId, elements } = get();
