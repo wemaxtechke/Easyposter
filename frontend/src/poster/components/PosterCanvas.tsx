@@ -1514,29 +1514,6 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           minHeight: viewportHeight,
         }}
       >
-        {!readOnly && (
-          <div className="absolute left-3 top-3 z-40 flex items-center gap-1 rounded-md border border-zinc-300 bg-white/90 p-1 text-[11px] shadow dark:border-zinc-700 dark:bg-zinc-900/90">
-            {([
-              ['pen-straight', 'Straight Pen (P)'],
-              ['pen-curve', 'Curve Pen (Shift+P)'],
-              ['direct', 'Direct (A)'],
-              ['convert', 'Convert (C)'],
-            ] as const).map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setPathToolMode(mode)}
-                className={`rounded px-2 py-1 ${
-                  pathToolMode === mode
-                    ? 'bg-amber-500 text-white'
-                    : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
         <div
           ref={zoomWrapperRef}
           className="absolute shadow-xl ring-1 ring-zinc-200 dark:ring-zinc-700"
