@@ -15,33 +15,99 @@ export function resolveSegmentControls(prev: PosterPathPoint, cur: PosterPathPoi
   return [b0, b1, b2, b3];
 }
 
+function isStraight(prev: PosterPathPoint, cur: PosterPathPoint): boolean {
+  const [b0, b1, b2, b3] = resolveSegmentControls(prev, cur);
+  const eps = 1e-4;
+  const h1Straight = Math.abs(b1.x - b0.x) < eps && Math.abs(b1.y - b0.y) < eps;
+  const h2Straight = Math.abs(b2.x - b3.x) < eps && Math.abs(b2.y - b3.y) < eps;
+  return h1Straight && h2Straight;
+}
+
+function fmt(n: number): string {
+  return parseFloat(n.toFixed(3)).toString();
+}
+
 /**
- * Photoshop-style SVG path: every span is a cubic `C`. Missing handles collapse
- * to anchors so that side of the segment is straight.
- * Supports multiple sub-paths (islands).
+ * Calculates the signed area of a path using its anchor points (Shoelace formula).
+ * Positive = Clockwise in Y-down coordinate systems (like SVG/Canvas).
+ */
+export function getSignedArea(points: PosterPathPoint[]): number {
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p1 = points[i]!;
+    const p2 = points[(i + 1) % points.length]!;
+    area += (p2.x - p1.x) * (p2.y + p1.y);
+  }
+  return -area;
+}
+
+/** Reverses path points and swaps in/out handles. */
+export function reversePath(points: PosterPathPoint[]): PosterPathPoint[] {
+  return points
+    .map((p) => ({
+      ...p,
+      inX: p.outX,
+      inY: p.outY,
+      outX: p.inX,
+      outY: p.inY,
+    }))
+    .reverse();
+}
+
+/**
+ * Photoshop-style SVG path: emits `L` for straight spans and `C` for curved spans.
+ * Missing handles collapse to anchors so that side of the segment is straight.
+ * Supports multiple sub-paths (islands) and enforces winding:
+ * - Main path: Clockwise (signed area > 0)
+ * - Islands: Counter-Clockwise (signed area < 0)
  */
 export function pathPointsToPathD(points: PosterPathPoint[], closed: boolean, islands?: PosterPathPoint[][]): string {
-  const allSubPaths = [points, ...(islands ?? [])];
+  if (!points.length) return 'M 0 0';
+
+  const normalizeWinding = (pts: PosterPathPoint[], shouldBeCW: boolean): PosterPathPoint[] => {
+    if (pts.length < 3) return pts;
+    const area = getSignedArea(pts);
+    const isCW = area > 0;
+    if (isCW !== shouldBeCW && Math.abs(area) > 1e-6) {
+      return reversePath(pts);
+    }
+    return pts;
+  };
+
+  const normalizedMain = normalizeWinding(points, true);
+  const normalizedIslands = (islands ?? []).map((isl) => normalizeWinding(isl, false));
+
+  const allSubPaths = [normalizedMain, ...normalizedIslands];
   const allCmds: string[] = [];
 
-  allSubPaths.forEach((subPoints) => {
+  allSubPaths.forEach((subPoints, subIdx) => {
     if (!subPoints.length) return;
     const p0 = subPoints[0]!;
-    const cmds: string[] = [`M ${p0.x} ${p0.y}`];
+    const cmds: string[] = [`M ${fmt(p0.x)} ${fmt(p0.y)}`];
 
     const emit = (prev: PosterPathPoint, cur: PosterPathPoint) => {
-      const [b0, b1, b2, b3] = resolveSegmentControls(prev, cur);
-      cmds.push(`C ${b1.x} ${b1.y} ${b2.x} ${b2.y} ${b3.x} ${b3.y}`);
+      if (isStraight(prev, cur)) {
+        cmds.push(`L ${fmt(cur.x)} ${fmt(cur.y)}`);
+      } else {
+        const [, b1, b2, b3] = resolveSegmentControls(prev, cur);
+        cmds.push(`C ${fmt(b1.x)} ${fmt(b1.y)}, ${fmt(b2.x)} ${fmt(b2.y)}, ${fmt(b3.x)} ${fmt(b3.y)}`);
+      }
     };
 
     for (let i = 1; i < subPoints.length; i++) {
       emit(subPoints[i - 1]!, subPoints[i]!);
     }
 
-    if (closed && subPoints.length > 1) {
+    // Islands are always forced closed for 3D extrusion compatibility
+    const shouldClose = closed || subIdx > 0;
+    if (shouldClose && subPoints.length > 1) {
       const last = subPoints[subPoints.length - 1]!;
       const first = subPoints[0]!;
-      emit(last, first);
+      // If the closing segment is curved, we must emit it explicitly before Z.
+      // If it's straight, Z will handle it automatically.
+      if (!isStraight(last, first)) {
+        emit(last, first);
+      }
       cmds.push('Z');
     }
     allCmds.push(cmds.join(' '));
@@ -309,7 +375,8 @@ export function pathPointsToSvgPathElement(
   const fill = attrs.fill ?? '#000000';
   const stroke = attrs.stroke ?? 'none';
   const sw = attrs.strokeWidth ?? 0;
-  const fr = attrs.fillRule ? ` fill-rule="${attrs.fillRule}"` : '';
+  const fillRule = attrs.fillRule ?? (attrs.islands?.length ? 'evenodd' : 'nonzero');
+  const fr = ` fill-rule="${fillRule}"`;
   const fo = attrs.fillOpacity != null && attrs.fillOpacity < 1 ? ` fill-opacity="${attrs.fillOpacity}"` : '';
   return `<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"${fr}${fo} />`;
 }
