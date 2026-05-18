@@ -485,6 +485,7 @@ export function applyImageAdjustmentFilters(
     | typeof FabricFilters.Contrast
     | typeof FabricFilters.HueRotation
     | typeof FabricFilters.Saturation
+    | typeof FabricFilters.Blur
     | typeof FabricFilters.Convolute
     | typeof FabricFilters.BlendColor
   >[] = [];
@@ -495,12 +496,14 @@ export function applyImageAdjustmentFilters(
   const hueRot = Math.max(-1, Math.min(1, hueDeg / 180));
   const s = (adj.adjustSaturation ?? 0) / 100;
   const sh = (adj.adjustSharpness ?? 0) / 100;
+  const bl = (adj.adjustBlur ?? 0) / 100;
   const tintAmt = Math.max(0, Math.min(100, adj.adjustTintAmount ?? 0));
 
   if (b !== 0) pipeline.push(new FabricFilters.Brightness({ brightness: b }));
   if (c !== 0) pipeline.push(new FabricFilters.Contrast({ contrast: c }));
   if (hueRot !== 0) pipeline.push(new FabricFilters.HueRotation({ rotation: hueRot }));
   if (s !== 0) pipeline.push(new FabricFilters.Saturation({ saturation: s }));
+  if (bl > 0) pipeline.push(new FabricFilters.Blur({ blur: bl }));
   if (sh > 0) {
     const blended = SHARPEN_KERNEL.map((v) => {
       if (v === 5) return 1 + (5 - 1) * sh;
