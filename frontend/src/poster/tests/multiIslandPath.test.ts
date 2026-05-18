@@ -48,4 +48,53 @@ describe('Multi-island path conversion', () => {
     expect(pathEl.islands[0]).toHaveLength(4);
     expect(pathEl.fillRule).toBe('evenodd');
   });
+
+  it('combinePaths merges two separate path elements into one with an island', async () => {
+    usePosterStore.setState({
+      elements: [
+        {
+          id: 'path-1',
+          type: 'path',
+          left: 0,
+          top: 0,
+          scaleX: 1,
+          scaleY: 1,
+          angle: 0,
+          opacity: 1,
+          zIndex: 1,
+          pathPoints: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }],
+          closed: true,
+          fill: '#ff0000'
+        },
+        {
+          id: 'path-2',
+          type: 'path',
+          left: 25,
+          top: 25,
+          scaleX: 1,
+          scaleY: 1,
+          angle: 0,
+          opacity: 1,
+          zIndex: 2,
+          pathPoints: [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 50 }, { x: 0, y: 50 }],
+          closed: true,
+          fill: '#00ff00'
+        }
+      ]
+    });
+
+    usePosterStore.getState().combinePaths(['path-1', 'path-2']);
+
+    const elements = usePosterStore.getState().elements;
+    expect(elements).toHaveLength(1);
+
+    const merged = elements[0] as any;
+    expect(merged.id).toBe('path-1');
+    expect(merged.islands).toHaveLength(1);
+    // path-2 points transformed to path-1 local space.
+    // path-2 was at (25,25) in scene. path-1 was at (0,0).
+    // So transformed points should be offset by +25.
+    expect(merged.islands[0][0]).toMatchObject({ x: 25, y: 25 });
+    expect(merged.fillRule).toBe('evenodd');
+  });
 });

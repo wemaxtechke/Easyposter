@@ -1886,6 +1886,7 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
   const duplicateElements = usePosterStore((s) => s.duplicateElements);
   const bringForward = usePosterStore((s) => s.bringForward);
   const sendBackward = usePosterStore((s) => s.sendBackward);
+  const combinePaths = usePosterStore((s) => s.combinePaths);
   const pushHistory = usePosterStore((s) => s.pushHistory);
   const pathEditTargetId = usePosterStore((s) => s.pathEditTargetId);
   const setPathEditTargetId = usePosterStore((s) => s.setPathEditTargetId);
@@ -1894,6 +1895,10 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
 
   const selected = elements.filter((e) => selectedIds.includes(e.id));
   const single = selected.length === 1 ? selected[0] : null;
+
+  const canCombine = selected.length >= 2 && selected.every(e =>
+    e.type === 'path' || e.type === 'polygon' || e.type === 'rect' || e.type === 'circle' || e.type === 'triangle' || e.type === 'ellipse'
+  );
 
   useEffect(() => {
     if (!single) {
@@ -2248,6 +2253,15 @@ export function PosterRightSidebar({ readOnly = false, onOpenEdit3D }: PosterRig
           </button>
         </div>
       </div>
+
+      {canCombine && (
+        <button
+          onClick={() => combinePaths(selectedIds)}
+          className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+        >
+          Combine Paths (Create holes)
+        </button>
+      )}
 
       <div className="flex gap-2">
         <button

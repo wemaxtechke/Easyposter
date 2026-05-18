@@ -100,6 +100,8 @@ interface PosterStore {
   sendBackward: (ids: string[]) => void;
   bringToFront: (ids: string[]) => void;
   sendToBack: (ids: string[]) => void;
+  /** Merges multiple paths into one by making the smaller/top ones "islands" of the primary one. */
+  combinePaths: (ids: string[]) => void;
   /** `orderedIds` is front-to-back (first = top/front). Must list every element id exactly once. */
   reorderLayersFrontToBack: (orderedIds: string[]) => void;
   setCanvasSize: (width: number, height: number) => void;
@@ -440,6 +442,159 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
       elements: s.elements.map((e) =>
         idsSet.has(e.id) ? { ...e, zIndex: nextZ-- } : e
       ),
+    }));
+  },
+
+  combinePaths: (ids) => {
+    if (ids.length < 2) return;
+    const { elements } = get();
+    const targets = elements.filter(e => ids.includes(e.id)).sort((a, b) => a.zIndex - b.zIndex);
+    if (targets.length < 2) return;
+
+    const primary = targets[0];
+    const others = targets.slice(1);
+
+    // Filter to only path-like elements
+    const validOthers = others.filter(o => o.type === 'path' || o.type === 'polygon' || o.type === 'rect' || o.type === 'circle' || o.type === 'triangle' || o.type === 'ellipse');
+    if (validOthers.length === 0) return;
+
+    get().pushHistory();
+
+    const getLocalPoints = (el: any): PosterPathPoint[] => {
+      if (el.type === 'path') return el.pathPoints;
+      if (el.type === 'polygon') return (el.polygonPoints ?? []).map((p: any) => ({ x: p.x, y: p.y }));
+      if (el.type === 'rect') {
+        const w = el.width ?? 100;
+        const h = el.height ?? 80;
+        return [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }];
+      }
+      if (el.type === 'circle') {
+        const r = el.radius ?? 50;
+        const pts: PosterPathPoint[] = [];
+        for (let i = 0; i < 360; i += 10) {
+          const rad = (i * Math.PI) / 180;
+          pts.push({ x: r + r * Math.cos(rad), y: r + r * Math.sin(rad) });
+        }
+        return pts;
+      }
+      if (el.type === 'ellipse') {
+        const rx = el.rx ?? 60;
+        const ry = el.ry ?? 40;
+        const pts: PosterPathPoint[] = [];
+        for (let i = 0; i < 360; i += 10) {
+          const rad = (i * Math.PI) / 180;
+          pts.push({ x: rx + rx * Math.cos(rad), y: ry + ry * Math.sin(rad) });
+        }
+        return pts;
+      }
+      if (el.type === 'triangle') {
+        const w = el.width ?? 100;
+        const h = el.height ?? 100;
+        return [{ x: w / 2, y: 0 }, { x: w, y: h }, { x: 0, y: h }];
+      }
+      return [];
+    };
+
+    const toScene = (p: { x: number; y: number }, el: any) => {
+      const angleRad = (el.angle * Math.PI) / 180;
+      const cosA = Math.cos(angleRad);
+      const sinA = Math.sin(angleRad);
+      const xScaled = p.x * el.scaleX;
+      const yScaled = p.y * el.scaleY;
+      return {
+        x: el.left + (xScaled * cosA - yScaled * sinA),
+        y: el.top + (xScaled * sinA + yScaled * cosA)
+      };
+    };
+
+    const toPrimaryLocal = (p: { x: number; y: number }, el: any) => {
+      // 1. To scene
+      const scene = toScene(p, el);
+      // 2. To primary local
+      const dx = scene.x - primary.left;
+      const dy = scene.y - primary.top;
+      const angleRad = (primary.angle * Math.PI) / 180;
+      const cosA = Math.cos(angleRad);
+      const sinA = Math.sin(angleRad);
+      const xUnrot = dx * cosA + dy * sinA;
+      const yUnrot = -dx * sinA + dy * cosA;
+      return {
+        x: xUnrot / (primary.scaleX || 1),
+        y: yUnrot / (primary.scaleY || 1)
+      };
+    };
+
+    const newIslands = (primary as any).islands ? [...(primary as any).islands] : [];
+
+    validOthers.forEach(o => {
+      const pts = getLocalPoints(o);
+      const transformed = pts.map(p => {
+        const lp = toPrimaryLocal(p, o);
+        const updated: PosterPathPoint = { x: lp.x, y: lp.y };
+        if (p.inX != null && p.inY != null) {
+          const inL = toPrimaryLocal({ x: p.inX, y: p.inY }, o);
+          updated.inX = inL.x;
+          updated.inY = inL.y;
+        }
+        if (p.outX != null && p.outY != null) {
+          const outL = toPrimaryLocal({ x: p.outX, y: p.outY }, o);
+          updated.outX = outL.x;
+          updated.outY = outL.y;
+        }
+        return updated;
+      });
+      newIslands.push(transformed);
+
+      // If the other path had its own islands, bring them too
+      if ((o as any).islands) {
+        (o as any).islands.forEach((island: PosterPathPoint[]) => {
+          newIslands.push(island.map(p => {
+             const lp = toPrimaryLocal(p, o);
+             const updated: PosterPathPoint = { x: lp.x, y: lp.y };
+             if (p.inX != null && p.inY != null) {
+               const inL = toPrimaryLocal({ x: p.inX, y: p.inY }, o);
+               updated.inX = inL.x;
+               updated.inY = inL.y;
+             }
+             if (p.outX != null && p.outY != null) {
+               const outL = toPrimaryLocal({ x: p.outX, y: p.outY }, o);
+               updated.outX = outL.x;
+               updated.outY = outL.y;
+             }
+             return updated;
+          }));
+        });
+      }
+    });
+
+    const otherIds = new Set(validOthers.map(o => o.id));
+
+    set(s => ({
+      elements: s.elements
+        .filter(e => !otherIds.has(e.id))
+        .map(e => {
+          if (e.id === primary.id) {
+            // Ensure primary is a 'path' if it was something else
+            const base: any = {
+              ...e,
+              type: 'path',
+              islands: newIslands,
+              fillRule: 'evenodd',
+              closed: true
+            };
+            if (e.type !== 'path') {
+              base.pathPoints = getLocalPoints(e);
+              // Clean up shape-specific props
+              delete base.width; delete base.height; delete base.radius;
+              delete base.rx; delete base.ry; delete base.x1; delete base.y1;
+              delete base.x2; delete base.y2; delete base.curveControl;
+              delete base.polygonPoints;
+            }
+            return base;
+          }
+          return e;
+        }),
+      selectedIds: [primary.id]
     }));
   },
 
