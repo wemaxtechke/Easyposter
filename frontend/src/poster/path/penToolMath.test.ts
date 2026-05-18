@@ -6,6 +6,7 @@ import {
   hitTestPathSegments,
   insertPathAnchorOnSegment,
   pathPointsToPathD,
+  pathPointsToSvgPathElement,
   pathSegmentCount,
   removePathAnchorAt,
   resolveSegmentControls,
@@ -153,5 +154,34 @@ describe('appendCornerAnchor / appendSmoothAnchor', () => {
     expect(n[0]!.outX).toBeDefined();
     expect(n[0]!.inX).toBeDefined();
     expect(n[0]!.x).toBe(10);
+  });
+});
+
+describe('pathPointsToSvgPathElement', () => {
+  it('includes islands, fill-rule, and fill-opacity', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }];
+    const islands = [[{ x: 2, y: 2 }, { x: 4, y: 2 }, { x: 2, y: 4 }]];
+    const svg = pathPointsToSvgPathElement(pts, true, {
+      fill: '#ff0000',
+      islands,
+      fillRule: 'evenodd',
+      fillOpacity: 0.5,
+    });
+
+    expect(svg).toContain('M 0 0');
+    expect(svg).toContain('M 2 2');
+    expect(svg).toContain('fill="#ff0000"');
+    expect(svg).toContain('fill-rule="evenodd"');
+    expect(svg).toContain('fill-opacity="0.5"');
+    expect(svg).toContain('Z');
+  });
+
+  it('omits fill-opacity if 1 or null', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
+    const svg1 = pathPointsToSvgPathElement(pts, false, { fillOpacity: 1 });
+    expect(svg1).not.toContain('fill-opacity');
+
+    const svgNull = pathPointsToSvgPathElement(pts, false, { fillOpacity: undefined });
+    expect(svgNull).not.toContain('fill-opacity');
   });
 });
