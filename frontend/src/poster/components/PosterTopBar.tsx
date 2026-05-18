@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { UserMenu } from '../../auth/UserMenu';
@@ -63,35 +63,44 @@ export function PosterTopBar({
   const canRedo = historyIndex < history.length - 1;
 
   const [exporting, setExporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
-  const handleExport = useCallback(async () => {
+  useEffect(() => {
+    if (!exportOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [exportOpen]);
+
+  const handleExport = useCallback(async (scale: number = 2) => {
     setExporting(true);
+    setExportOpen(false);
     try {
       const fabricCanvas = getFabricCanvasRef();
       if (!fabricCanvas) return;
-      const scale = 2;
       const w = canvasWidth * scale;
       const h = canvasHeight * scale;
-
-      if (isSolidBackground(canvasBackground)) {
-        const dataUrl = fabricCanvas.toDataURL({
-          format: 'png',
-          multiplier: scale,
-          quality: 1,
-        });
-        if (!dataUrl) return;
-        const a = document.createElement('a');
-        a.href = dataUrl;
-        a.download = `poster-${Date.now()}.png`;
-        a.click();
-        return;
-      }
 
       const fabricDataUrl = fabricCanvas.toDataURL({
         format: 'png',
         multiplier: scale,
         quality: 1,
       });
+
+      if (isSolidBackground(canvasBackground)) {
+        if (!fabricDataUrl) return;
+        const a = document.createElement('a');
+        a.href = fabricDataUrl;
+        a.download = `poster-${Date.now()}-${scale}x.png`;
+        a.click();
+        return;
+      }
+
       const temp = document.createElement('canvas');
       temp.width = w;
       temp.height = h;
@@ -109,7 +118,7 @@ export function PosterTopBar({
       });
       const a = document.createElement('a');
       a.href = temp.toDataURL('image/png');
-      a.download = `poster-${Date.now()}.png`;
+      a.download = `poster-${Date.now()}-${scale}x.png`;
       a.click();
     } finally {
       setExporting(false);
@@ -378,13 +387,52 @@ export function PosterTopBar({
       <div className="hidden sm:block"><UserMenu compact /></div>
       <ThemeToggle size="md" />
 
-      <button
-        onClick={guard(handleExport)}
-        disabled={exporting}
-        className="rounded bg-accent-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50 sm:px-4 sm:text-sm"
-      >
-        {exporting ? 'Exporting…' : 'Export PNG'}
-      </button>
+      <div className="relative" ref={exportMenuRef}>
+        <button
+          onClick={guard(() => setExportOpen((o) => !o))}
+          disabled={exporting}
+          className="flex items-center gap-1 rounded bg-accent-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50 sm:px-4 sm:text-sm"
+        >
+          {exporting ? 'Exporting…' : 'Export PNG'}
+          <svg
+            className={`h-4 w-4 transition-transform ${exportOpen ? 'rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {exportOpen && (
+          <div className="absolute right-0 top-full z-50 mt-2 w-56 rounded-lg border border-zinc-200 bg-white py-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+            <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              Export Resolution
+            </div>
+            <button
+              onClick={guard(() => handleExport(2))}
+              className="flex w-full flex-col px-4 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-700"
+            >
+              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Standard</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">2x scale - Good for web & social</span>
+            </button>
+            <button
+              onClick={guard(() => handleExport(4))}
+              className="flex w-full flex-col px-4 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-700"
+            >
+              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">High Resolution</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">4x scale - Good for printing</span>
+            </button>
+            <button
+              onClick={guard(() => handleExport(8))}
+              className="flex w-full flex-col px-4 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-700"
+            >
+              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Billboard Quality</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">8x scale - Ultra high quality</span>
+            </button>
+          </div>
+        )}
+      </div>
 
     </header>
   );

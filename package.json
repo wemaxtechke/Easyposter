@@ -9,5 +9,8 @@
     "lint": "cd frontend && npm run lint",
     "preview": "cd frontend && npm run preview",
     "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
   }
 }
