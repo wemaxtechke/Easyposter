@@ -18,29 +18,36 @@ export function resolveSegmentControls(prev: PosterPathPoint, cur: PosterPathPoi
 /**
  * Photoshop-style SVG path: every span is a cubic `C`. Missing handles collapse
  * to anchors so that side of the segment is straight.
+ * Supports multiple sub-paths (islands).
  */
-export function pathPointsToPathD(points: PosterPathPoint[], closed: boolean): string {
-  if (!points.length) return 'M 0 0';
-  const p0 = points[0]!;
-  const cmds: string[] = [`M ${p0.x} ${p0.y}`];
+export function pathPointsToPathD(points: PosterPathPoint[], closed: boolean, islands?: PosterPathPoint[][]): string {
+  const allSubPaths = [points, ...(islands ?? [])];
+  const allCmds: string[] = [];
 
-  const emit = (prev: PosterPathPoint, cur: PosterPathPoint) => {
-    const [b0, b1, b2, b3] = resolveSegmentControls(prev, cur);
-    cmds.push(`C ${b1.x} ${b1.y} ${b2.x} ${b2.y} ${b3.x} ${b3.y}`);
-  };
+  allSubPaths.forEach((subPoints) => {
+    if (!subPoints.length) return;
+    const p0 = subPoints[0]!;
+    const cmds: string[] = [`M ${p0.x} ${p0.y}`];
 
-  for (let i = 1; i < points.length; i++) {
-    emit(points[i - 1]!, points[i]!);
-  }
+    const emit = (prev: PosterPathPoint, cur: PosterPathPoint) => {
+      const [b0, b1, b2, b3] = resolveSegmentControls(prev, cur);
+      cmds.push(`C ${b1.x} ${b1.y} ${b2.x} ${b2.y} ${b3.x} ${b3.y}`);
+    };
 
-  if (closed && points.length > 1) {
-    const last = points[points.length - 1]!;
-    const first = points[0]!;
-    emit(last, first);
-    cmds.push('Z');
-  }
+    for (let i = 1; i < subPoints.length; i++) {
+      emit(subPoints[i - 1]!, subPoints[i]!);
+    }
 
-  return cmds.join(' ');
+    if (closed && subPoints.length > 1) {
+      const last = subPoints[subPoints.length - 1]!;
+      const first = subPoints[0]!;
+      emit(last, first);
+      cmds.push('Z');
+    }
+    allCmds.push(cmds.join(' '));
+  });
+
+  return allCmds.length > 0 ? allCmds.join(' ') : 'M 0 0';
 }
 
 function lerp(a: Vec2, b: Vec2, t: number): Vec2 {
@@ -289,11 +296,12 @@ export function appendSmoothAnchor(
 export function pathPointsToSvgPathElement(
   points: PosterPathPoint[],
   closed: boolean,
-  attrs: { fill?: string; stroke?: string; strokeWidth?: number } = {},
+  attrs: { fill?: string; stroke?: string; strokeWidth?: number; islands?: PosterPathPoint[][]; fillRule?: 'nonzero' | 'evenodd' } = {},
 ): string {
-  const d = pathPointsToPathD(points, closed);
+  const d = pathPointsToPathD(points, closed, attrs.islands);
   const fill = attrs.fill ?? '#000000';
   const stroke = attrs.stroke ?? 'none';
   const sw = attrs.strokeWidth ?? 0;
-  return `<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" />`;
+  const fr = attrs.fillRule ? ` fill-rule="${attrs.fillRule}"` : '';
+  return `<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"${fr} />`;
 }

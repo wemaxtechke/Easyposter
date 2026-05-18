@@ -302,6 +302,10 @@ export interface PosterPathElement extends PosterElementBase {
   fillOpacity?: number;
   /** Anchor points in local shape coordinates. */
   pathPoints: PosterPathPoint[];
+  /** Optional additional sub-paths (islands/holes). */
+  islands?: PosterPathPoint[][];
+  /** SVG fill rule for multiple paths (holes). */
+  fillRule?: 'nonzero' | 'evenodd';
   /** Closed path when true. */
   closed?: boolean;
 }
