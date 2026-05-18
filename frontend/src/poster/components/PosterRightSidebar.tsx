@@ -218,6 +218,8 @@ function PathEditingControls({
   const setSelectedPathNode = usePosterStore((s) => s.setSelectedPathNode);
   const pathToolMode = usePosterStore((s) => s.pathToolMode);
   const setPathToolMode = usePosterStore((s) => s.setPathToolMode);
+  const pathPointSize = usePosterStore((s) => s.pathPointSize);
+  const setPathPointSize = usePosterStore((s) => s.setPathPointSize);
   const isPath = element.type === 'path';
   const points: PosterPathPoint[] = isPath
     ? (element as PosterPathElement).pathPoints
@@ -308,6 +310,16 @@ function PathEditingControls({
           <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
             Drag anchors/handles on canvas. Direct (A): click a segment to add a point. Press Esc to exit.
           </p>
+          <div className="flex flex-col gap-1 border-y border-zinc-100 py-2 dark:border-zinc-800">
+            <PosterSlider
+              label={`Anchor size (${pathPointSize}px)`}
+              min={4}
+              max={40}
+              step={1}
+              value={pathPointSize}
+              onChange={(v) => setPathPointSize(v)}
+            />
+          </div>
           {points.length > 0 && (
             <>
               <div className="flex flex-col gap-1">
