@@ -214,12 +214,16 @@ function PathEditingControls({
   updateElement: (id: string, updates: Partial<PosterElement>) => void;
 }) {
   const [selectedNode, setSelectedNode] = useState(0);
+  const [selectedIsland, setSelectedIsland] = useState<number | undefined>(undefined);
   const storeSelectedPathNode = usePosterStore((s) => s.selectedPathNode);
   const setSelectedPathNode = usePosterStore((s) => s.setSelectedPathNode);
   const pathToolMode = usePosterStore((s) => s.pathToolMode);
   const setPathToolMode = usePosterStore((s) => s.setPathToolMode);
   const pathPointSize = usePosterStore((s) => s.pathPointSize);
   const setPathPointSize = usePosterStore((s) => s.setPathPointSize);
+  const setActiveTool = usePosterStore((s) => s.setActiveTool);
+  const setActivePathId = usePosterStore((s) => s.setActivePathId);
+  const setActiveIslandIndex = usePosterStore((s) => s.setActiveIslandIndex);
   const isPath = element.type === 'path';
   const points: PosterPathPoint[] = isPath
     ? (element as PosterPathElement).pathPoints
@@ -242,30 +246,38 @@ function PathEditingControls({
     if (
       storeSelectedPathNode &&
       storeSelectedPathNode.elementId === element.id &&
-      storeSelectedPathNode.nodeIndex >= 0 &&
-      storeSelectedPathNode.nodeIndex < points.length
+      storeSelectedPathNode.nodeIndex >= 0
     ) {
       setSelectedNode(storeSelectedPathNode.nodeIndex);
+      setSelectedIsland(storeSelectedPathNode.islandIndex);
     }
-  }, [storeSelectedPathNode, element.id, points.length]);
-
-  useEffect(() => {
-    setSelectedNode((prev) => Math.max(0, Math.min(prev, Math.max(0, points.length - 1))));
-  }, [points.length]);
+  }, [storeSelectedPathNode, element.id]);
 
   if (!canEdit) return null;
 
-  const current = points[selectedNode];
+  const islands = (element as PosterPathElement).islands ?? [];
+  const currentPoints = selectedIsland === undefined ? points : (islands[selectedIsland] ?? []);
+  const currentNode = currentPoints[selectedNode];
 
-  const setPathPoints = (next: PosterPathPoint[]) => {
-    if (element.type === 'path') {
-      updateElement(element.id, { pathPoints: next });
-    } else if (element.type === 'polygon') {
-      updateElement(element.id, { polygonPoints: next.map((p) => ({ x: p.x, y: p.y })) });
-    } else if (element.type === 'line') {
-      const start = next[0] ?? { x: element.x1 ?? 0, y: element.y1 ?? 0 };
-      const end = next[1] ?? { x: element.x2 ?? 120, y: element.y2 ?? 80 };
-      updateElement(element.id, { x1: start.x, y1: start.y, x2: end.x, y2: end.y });
+  const updateCurrentNode = (updates: Partial<PosterPathPoint>) => {
+    if (selectedIsland === undefined) {
+      const next = [...points];
+      next[selectedNode] = { ...next[selectedNode], ...updates };
+      if (element.type === 'path') {
+        updateElement(element.id, { pathPoints: next });
+      } else if (element.type === 'polygon') {
+        updateElement(element.id, { polygonPoints: next.map((p) => ({ x: p.x, y: p.y })) });
+      } else if (element.type === 'line') {
+        const start = next[0] ?? { x: element.x1 ?? 0, y: element.y1 ?? 0 };
+        const end = next[1] ?? { x: element.x2 ?? 120, y: element.y2 ?? 80 };
+        updateElement(element.id, { x1: start.x, y1: start.y, x2: end.x, y2: end.y });
+      }
+    } else {
+      const nextIslands = [...islands];
+      const nextPts = [...nextIslands[selectedIsland]];
+      nextPts[selectedNode] = { ...nextPts[selectedNode], ...updates };
+      nextIslands[selectedIsland] = nextPts;
+      updateElement(element.id, { islands: nextIslands });
     }
   };
 
@@ -320,38 +332,57 @@ function PathEditingControls({
               onChange={(v) => setPathPointSize(v)}
             />
           </div>
-          {points.length > 0 && (
+          {(points.length > 0 || islands.some(isl => isl.length > 0)) && (
             <>
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-zinc-600 dark:text-zinc-400">Node</label>
                 <select
-                  value={selectedNode}
+                  value={selectedIsland === undefined ? `m-${selectedNode}` : `i-${selectedIsland}-${selectedNode}`}
                   onChange={(e) => {
-                    const idx = parseInt(e.target.value, 10) || 0;
-                    setSelectedNode(idx);
-                    setSelectedPathNode({ elementId: element.id, nodeIndex: idx });
+                    const val = e.target.value;
+                    if (val.startsWith('m-')) {
+                      const idx = parseInt(val.replace('m-', ''), 10);
+                      setSelectedNode(idx);
+                      setSelectedIsland(undefined);
+                      setSelectedPathNode({ elementId: element.id, nodeIndex: idx, islandIndex: undefined });
+                    } else {
+                      const parts = val.replace('i-', '').split('-');
+                      const iIdx = parseInt(parts[0], 10);
+                      const nIdx = parseInt(parts[1], 10);
+                      setSelectedNode(nIdx);
+                      setSelectedIsland(iIdx);
+                      setSelectedPathNode({ elementId: element.id, nodeIndex: nIdx, islandIndex: iIdx });
+                    }
                   }}
                   className="rounded border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
                 >
-                  {points.map((_, idx) => (
-                    <option key={idx} value={idx}>
-                      {`Node ${idx + 1}`}
-                    </option>
+                  <optgroup label="Main Path">
+                    {points.map((_, idx) => (
+                      <option key={`m-${idx}`} value={`m-${idx}`}>
+                        {`Node ${idx + 1}`}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {islands.map((isl, iIdx) => (
+                    <optgroup key={`isl-${iIdx}`} label={`Hole ${iIdx + 1}`}>
+                      {isl.map((_, idx) => (
+                        <option key={`i-${iIdx}-${idx}`} value={`i-${iIdx}-${idx}`}>
+                          {`Node ${idx + 1}`}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </div>
-              {current && (
+              {currentNode && (
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] text-zinc-500">X</label>
                     <input
                       type="number"
-                      value={Math.round(current.x)}
+                      value={Math.round(currentNode.x)}
                       onChange={(e) => {
-                        const v = parseFloat(e.target.value) || 0;
-                        const next = [...points];
-                        next[selectedNode] = { ...next[selectedNode], x: v };
-                        setPathPoints(next);
+                        updateCurrentNode({ x: parseFloat(e.target.value) || 0 });
                       }}
                       className="w-full rounded border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
                     />
@@ -360,12 +391,9 @@ function PathEditingControls({
                     <label className="text-[10px] text-zinc-500">Y</label>
                     <input
                       type="number"
-                      value={Math.round(current.y)}
+                      value={Math.round(currentNode.y)}
                       onChange={(e) => {
-                        const v = parseFloat(e.target.value) || 0;
-                        const next = [...points];
-                        next[selectedNode] = { ...next[selectedNode], y: v };
-                        setPathPoints(next);
+                        updateCurrentNode({ y: parseFloat(e.target.value) || 0 });
                       }}
                       className="w-full rounded border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
                     />
@@ -380,11 +408,20 @@ function PathEditingControls({
                 <button
                   type="button"
                   onClick={() => {
-                    const p = points[selectedNode] ?? { x: 50, y: 50 };
-                    const next = [...points];
-                    next.splice(selectedNode + 1, 0, { x: p.x + 20, y: p.y + 20 });
-                    updateElement(element.id, { pathPoints: next });
-                    setSelectedNode((selectedNode + 1) % next.length);
+                    const p = currentNode ?? { x: 50, y: 50 };
+                    const newNode = { x: p.x + 20, y: p.y + 20 };
+                    if (selectedIsland === undefined) {
+                      const next = [...points];
+                      next.splice(selectedNode + 1, 0, newNode);
+                      updateElement(element.id, { pathPoints: next });
+                    } else {
+                      const nextIslands = [...islands];
+                      const nextPts = [...nextIslands[selectedIsland]];
+                      nextPts.splice(selectedNode + 1, 0, newNode);
+                      nextIslands[selectedIsland] = nextPts;
+                      updateElement(element.id, { islands: nextIslands });
+                    }
+                    setSelectedNode(selectedNode + 1);
                   }}
                   className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-700"
                 >
@@ -392,12 +429,18 @@ function PathEditingControls({
                 </button>
                 <button
                   type="button"
-                  disabled={points.length <= 2}
+                  disabled={currentPoints.length <= 2}
                   onClick={() => {
-                    if (points.length <= 2) return;
-                    const next = points.filter((_, idx) => idx !== selectedNode);
-                    updateElement(element.id, { pathPoints: next });
-                    setSelectedNode((prev) => Math.max(0, Math.min(prev, next.length - 1)));
+                    if (currentPoints.length <= 2) return;
+                    const nextPts = currentPoints.filter((_, idx) => idx !== selectedNode);
+                    if (selectedIsland === undefined) {
+                      updateElement(element.id, { pathPoints: nextPts });
+                    } else {
+                      const nextIslands = [...islands];
+                      nextIslands[selectedIsland] = nextPts;
+                      updateElement(element.id, { islands: nextIslands });
+                    }
+                    setSelectedNode((prev) => Math.max(0, Math.min(prev, nextPts.length - 1)));
                   }}
                   className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-700"
                 >
@@ -417,24 +460,44 @@ function PathEditingControls({
                 <button
                   type="button"
                   onClick={() => {
-                    const p = points[selectedNode];
+                    const p = currentNode;
                     if (!p) return;
                     const hasHandle = p.inX != null || p.outX != null;
-                    const next = [...points];
-                    next[selectedNode] = hasHandle
-                      ? { x: p.x, y: p.y }
+                    const updates = hasHandle
+                      ? { x: p.x, y: p.y, inX: undefined, inY: undefined, outX: undefined, outY: undefined }
                       : {
-                          ...p,
                           inX: p.x - 20,
                           inY: p.y,
                           outX: p.x + 20,
                           outY: p.y,
                         };
-                    updateElement(element.id, { pathPoints: next });
+                    updateCurrentNode(updates);
                   }}
                   className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-700"
                 >
                   Toggle handles
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const p = element as PosterPathElement;
+                    const nextIslands = [...(p.islands ?? [])];
+                    const newIdx = nextIslands.length;
+                    nextIslands.push([]); // Start empty island
+                    updateElement(p.id, {
+                      islands: nextIslands,
+                      fillRule: 'evenodd',
+                    });
+                    // Set path first, then island index to avoid race/reset
+                    setActivePathId(p.id);
+                    setActiveIslandIndex(newIdx);
+                    setActiveTool('pen');
+                    setPathToolMode('pen-straight');
+                    setSelectedPathNode(null);
+                  }}
+                  className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-700"
+                >
+                  Add hole
                 </button>
               </div>
             </>

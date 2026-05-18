@@ -170,6 +170,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const pushHistory = usePosterStore((s) => s.pushHistory);
   const pathEditTargetId = usePosterStore((s) => s.pathEditTargetId);
   const setPathEditTargetId = usePosterStore((s) => s.setPathEditTargetId);
+  const activeIslandIndex = usePosterStore((s) => s.activeIslandIndex);
+  const setActiveIslandIndex = usePosterStore((s) => s.setActiveIslandIndex);
   const pathToolMode = usePosterStore((s) => s.pathToolMode);
   const setPathToolMode = usePosterStore((s) => s.setPathToolMode);
   const activePathId = usePosterStore((s) => s.activePathId);
@@ -1735,11 +1737,14 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                 if (idx == null || !id) {
                   setSelectedPathNode(null);
                   setSelectedPathHandle(null);
+                  setActiveIslandIndex(null);
                   return;
                 }
                 setSelectedPathNode({ elementId: id, nodeIndex: idx, islandIndex: islandIdx });
                 setSelectedPathHandle(null);
+                setActiveIslandIndex(islandIdx ?? null);
               }}
+              activeIslandIndex={activeIslandIndex}
               fabricPathTransform={fabricPathTransform}
               fabricCanvasRef={canvasRef}
               pathPointSize={pathPointSize}
@@ -1809,6 +1814,7 @@ type PathEditOverlayProps = {
     opts?: { smoothFromLocal?: { x: number; y: number } },
   ) => void;
   onSelectPathNode: (nodeIndex: number | null, islandIndex?: number) => void;
+  activeIslandIndex: number | null;
   fabricPathTransform?: FabricPathXform;
   /** Use Fabric scene space for clicks — matches path `calcTransformMatrix` (fixes drift vs hand-divided coords). */
   fabricCanvasRef: RefObject<Canvas | null>;
@@ -1825,6 +1831,7 @@ function PathEditOverlay({
   activePath,
   onCreatePathAt,
   onSelectPathNode,
+  activeIslandIndex,
   fabricPathTransform,
   fabricCanvasRef,
   pathPointSize,
@@ -1862,6 +1869,13 @@ function PathEditOverlay({
   if (!target && !isPenMode) return null;
 
   const coordSource = target ?? (isPenMode ? activePath : null);
+  const activeSubPts = (() => {
+    if (activeIslandIndex != null && coordSource?.type === 'path') {
+      return (coordSource as PosterPathElement).islands?.[activeIslandIndex] ?? [];
+    }
+    return coordSource?.type === 'path' ? (coordSource as PosterPathElement).pathPoints : [];
+  })();
+
   const polygonPts =
     target?.type === 'polygon' ? (target.polygonPoints ?? []).map((p) => ({ x: p.x, y: p.y })) : [];
   const pathPts = target?.type === 'path' ? target.pathPoints : [];
@@ -2035,6 +2049,22 @@ function PathEditOverlay({
     const dyCanvas = endCanvas.y - anchorCanvas.y;
     const dragged = Math.hypot(dxCanvas, dyCanvas) > 2 / scale;
     const smooth = isCurvePenMode || dragged;
+
+    if (activePath && activeIslandIndex != null) {
+      const anchorL = toLocal(anchorCanvas);
+      const endL = toLocal(endCanvas);
+      const smoothEndL = dragged ? endL : { x: anchorL.x + Math.max(12 / scale, 8), y: anchorL.y };
+      const islands = [...(activePath.islands ?? [])];
+      const pts = islands[activeIslandIndex] ?? [];
+      const nextPts = smooth
+        ? appendSmoothAnchor(pts, anchorL, smoothEndL)
+        : appendCornerAnchor(pts, anchorL.x, anchorL.y);
+      islands[activeIslandIndex] = nextPts;
+      onChange({ islands });
+      onSelectPathNode(nextPts.length - 1, activeIslandIndex);
+      return;
+    }
+
     if (!activePath) {
       if (smooth) {
         const vec = dragged
@@ -2060,6 +2090,7 @@ function PathEditOverlay({
       ? appendSmoothAnchor(activePath.pathPoints, anchorL, smoothEndL)
       : appendCornerAnchor(activePath.pathPoints, anchorL.x, anchorL.y);
     onChange({ pathPoints: nextPts, closed: false });
+    onSelectPathNode(nextPts.length - 1);
   };
 
   const anchors: Array<{ key: string; x: number; y: number; idx: number; islandIdx?: number }> = (() => {
@@ -2095,11 +2126,20 @@ function PathEditOverlay({
     }
     // Pen with path edit Off: still show existing vertices on the active path.
     if (isPenMode && activePath) {
-      return activePath.pathPoints.map((p, idx) => ({
+      const main = activePath.pathPoints.map((p, idx) => ({
         key: `node-${idx}`,
         idx,
         ...toCanvas(p),
       }));
+      const islands = (activePath.islands ?? []).flatMap((island, iIdx) =>
+        island.map((p, idx) => ({
+          key: `island-${iIdx}-node-${idx}`,
+          idx,
+          islandIdx: iIdx,
+          ...toCanvas(p),
+        }))
+      );
+      return [...main, ...islands];
     }
     return [];
   })();
@@ -2112,15 +2152,18 @@ function PathEditOverlay({
           const pt = getLocalPoint(e);
           const pathForPenClose = target?.type === 'path' ? target : activePath;
 
-          if (isPenMode && pathForPenClose && pathForPenClose.pathPoints.length >= 3) {
-            const firstPt = pathForPenClose.pathPoints[0]!;
-            const first = toCanvas({ x: firstPt.x, y: firstPt.y });
-            const dist = Math.hypot(pt.x - first.x, pt.y - first.y);
-            if (dist <= 8 / scale) {
-              onChange({ closed: true });
-              onCommit();
-              setPenRubber(null);
-              return;
+          if (isPenMode && pathForPenClose) {
+            const subPts = activeIslandIndex != null ? (pathForPenClose.islands?.[activeIslandIndex] ?? []) : pathForPenClose.pathPoints;
+            if (subPts.length >= 3) {
+              const firstPt = subPts[0]!;
+              const first = toCanvas({ x: firstPt.x, y: firstPt.y });
+              const dist = Math.hypot(pt.x - first.x, pt.y - first.y);
+              if (dist <= 8 / scale) {
+                onCommit();
+                setPenRubber(null);
+                onSelectPathNode(null);
+                return;
+              }
             }
           }
 
@@ -2185,7 +2228,9 @@ function PathEditOverlay({
           }
           const [kind, idxRaw, handleKind, islandIdxRaw] = dragging.split(':');
           const idx = parseInt(idxRaw ?? '0', 10) || 0;
-          const islandIdx = islandIdxRaw != null ? parseInt(islandIdxRaw, 10) : undefined;
+          const rawIslandIdx = (islandIdxRaw && islandIdxRaw !== '') ? parseInt(islandIdxRaw, 10) : undefined;
+          const islandIdx = isNaN(rawIslandIdx as number) ? undefined : rawIslandIdx;
+
           if (kind === 'node') applyNode(idx, local, islandIdx);
           if (kind === 'handle') applyHandle(idx, handleKind === 'in' ? 'in' : 'out', local, e.altKey, islandIdx);
           if (kind === 'convert' && target?.type === 'path') {
@@ -2239,15 +2284,21 @@ function PathEditOverlay({
             className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
             aria-hidden
           >
-            <line
-              x1={penRubber.ax}
-              y1={penRubber.ay}
-              x2={penRubber.px}
-              y2={penRubber.py}
-              stroke="rgb(245 158 11)"
-              strokeWidth={Math.max(0.5, 1 / scale)}
-              strokeDasharray={`${4 / scale} ${4 / scale}`}
-            />
+            {(() => {
+              const lastNode = selectedPathNode && selectedPathNode.nodeIndex >= 0 ? activeSubPts[selectedPathNode.nodeIndex] : null;
+              const start = lastNode ? toCanvas(lastNode) : { x: penRubber.ax, y: penRubber.ay };
+              return (
+                <line
+                  x1={start.x}
+                  y1={start.y}
+                  x2={penRubber.px}
+                  y2={penRubber.py}
+                  stroke="rgb(245 158 11)"
+                  strokeWidth={Math.max(0.5, 1 / scale)}
+                  strokeDasharray={`${4 / scale} ${4 / scale}`}
+                />
+              );
+            })()}
           </svg>
         )}
         {anchors.map((a) => (
@@ -2266,42 +2317,42 @@ function PathEditOverlay({
               e.preventDefault();
               e.stopPropagation();
               if (toolMode === 'direct') {
-                if (target?.type === 'path') onSelectPathNode(a.idx, a.islandIdx);
+                onSelectPathNode(a.idx, a.islandIdx);
                 dragStartRef.current = { x: a.x, y: a.y };
                 setDragging(`node:${a.idx}:main:${a.islandIdx ?? ''}`);
                 return;
               }
               if (toolMode === 'convert') {
-                if (target?.type === 'path') {
-                  const pTarget = target as PosterPathElement;
+                const p = (target?.type === 'path' ? target : activePath) as PosterPathElement;
+                if (p) {
                   onSelectPathNode(a.idx, a.islandIdx);
-                  const next = [...pathPts];
-                  const n = next[a.idx];
+                  const isMain = a.islandIdx == null;
+                  const pts = isMain ? p.pathPoints : (p.islands?.[a.islandIdx!] ?? []);
+                  const n = pts[a.idx];
                   if (!n) return;
+
                   const has = n.inX != null || n.outX != null;
                   if (has && e.altKey) {
-                    if (a.islandIdx != null && pTarget.islands && pTarget.islands[a.islandIdx]) {
-                      const nextIslands = [...pTarget.islands];
-                      const nextPts = [...nextIslands[a.islandIdx]];
-                      nextPts[a.idx] = { x: n.x, y: n.y };
-                      nextIslands[a.islandIdx] = nextPts;
-                      onChange({ islands: nextIslands });
+                    const nextPts = [...pts];
+                    nextPts[a.idx] = { x: n.x, y: n.y };
+                    if (isMain) {
+                      onChange({ pathPoints: nextPts });
                     } else {
-                      next[a.idx] = { x: n.x, y: n.y };
-                      onChange({ pathPoints: next });
+                      const nextIslands = [...(p.islands ?? [])];
+                      nextIslands[a.islandIdx!] = nextPts;
+                      onChange({ islands: nextIslands });
                     }
                     onCommit();
                   } else {
                     if (!has) {
-                      if (a.islandIdx != null && pTarget.islands && pTarget.islands[a.islandIdx]) {
-                        const nextIslands = [...pTarget.islands];
-                        const nextPts = [...nextIslands[a.islandIdx]];
-                        nextPts[a.idx] = { ...n, inX: n.x - 20, inY: n.y, outX: n.x + 20, outY: n.y };
-                        nextIslands[a.islandIdx] = nextPts;
-                        onChange({ islands: nextIslands });
+                      const nextPts = [...pts];
+                      nextPts[a.idx] = { ...n, inX: n.x - 20, inY: n.y, outX: n.x + 20, outY: n.y };
+                      if (isMain) {
+                        onChange({ pathPoints: nextPts });
                       } else {
-                        next[a.idx] = { ...n, inX: n.x - 20, inY: n.y, outX: n.x + 20, outY: n.y };
-                        onChange({ pathPoints: next });
+                        const nextIslands = [...(p.islands ?? [])];
+                        nextIslands[a.islandIdx!] = nextPts;
+                        onChange({ islands: nextIslands });
                       }
                     }
                     dragStartRef.current = { x: a.x, y: a.y };
@@ -2310,9 +2361,17 @@ function PathEditOverlay({
                 }
                 return;
               }
-              if (isPenMode && (target?.type === 'path' || activePath) && a.idx === 0 && anchors.length >= 3) {
-                onChange({ closed: true });
-                onCommit();
+              if (isPenMode && (target?.type === 'path' || activePath)) {
+                const p = (target?.type === 'path' ? target : activePath) as PosterPathElement;
+                const subPts = a.islandIdx != null ? (p.islands?.[a.islandIdx] ?? []) : p.pathPoints;
+                if (a.idx === 0 && subPts.length >= 3) {
+                  onChange({ closed: true });
+                  onCommit();
+                  setDragging(null);
+                  setPenRubber(null);
+                  onSelectPathNode(null);
+                  return;
+                }
               }
             }}
             aria-label="Path anchor"

@@ -75,6 +75,8 @@ interface PosterStore {
   setPathToolMode: (mode: PathToolMode) => void;
   activePathId: string | null;
   setActivePathId: (id: string | null) => void;
+  activeIslandIndex: number | null;
+  setActiveIslandIndex: (index: number | null) => void;
   selectedPathNode: PathNodeSelection | null;
   setSelectedPathNode: (sel: PathNodeSelection | null) => void;
   selectedPathHandle: PathHandleSelection | null;
@@ -156,6 +158,10 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
 
     if (tool !== 'pen' && tool !== 'direct') {
       updates.pathEditTargetId = null;
+    }
+
+    if (tool !== 'pen') {
+      updates.activeIslandIndex = null;
     }
 
     if (tool !== 'object-selection' && tool !== 'direct') {
@@ -256,7 +262,12 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
     set(updates);
   },
   activePathId: null,
-  setActivePathId: (id) => set({ activePathId: id }),
+  setActivePathId: (id) => set((s) => ({
+    activePathId: id,
+    activeIslandIndex: s.activePathId === id ? s.activeIslandIndex : null
+  })),
+  activeIslandIndex: null,
+  setActiveIslandIndex: (index) => set({ activeIslandIndex: index }),
   selectedPathNode: null,
   setSelectedPathNode: (sel) => set({ selectedPathNode: sel }),
   selectedPathHandle: null,
@@ -523,6 +534,7 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
       imageCropTargetId: null,
       pathEditTargetId: null,
       activePathId: null,
+      activeIslandIndex: null,
       selectedPathNode: null,
       selectedPathHandle: null,
     }));
