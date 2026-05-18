@@ -36,7 +36,7 @@ export type CanvasPan = { x: number; y: number };
 export type PosterTool = 'select' | 'direct' | 'pen' | 'text' | 'shape' | 'object-selection' | 'magic-brush' | 'hand';
 export type ObjectSelectionMode = 'rectangle' | 'lasso' | 'magnetic' | 'ai';
 export type PathToolMode = 'pen' | 'pen-straight' | 'pen-curve' | 'direct' | 'convert';
-export type PathNodeSelection = { elementId: string; nodeIndex: number };
+export type PathNodeSelection = { elementId: string; nodeIndex: number; islandIndex?: number };
 export type PathHandleSelection = PathNodeSelection & { kind: 'in' | 'out' };
 
 interface PosterStore {
@@ -211,27 +211,28 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
     const scaleY = target?.scaleY ?? 1;
     const angle = target?.angle ?? 0;
 
-    // To properly support multi-island paths in the existing 'path' element,
-    // we would need to update the PosterPathElement type.
-    // For now, we create a separate path element for each island/hole.
-    // We must transform local points to scene space if we want a single shared 'left/top'.
-    // Or we keep them relative to target's top-left.
-    marqueeLocalPath.forEach(path => {
-      get().addElement({
-        type: 'path',
-        left: baseLeft,
-        top: baseTop,
-        scaleX,
-        scaleY,
-        angle,
-        fill: { type: 'solid', color: '#1b7340' },
-        stroke: '#0f172a',
-        strokeWidth: 0,
-        opacity: 0.5,
-        pathPoints: path.map(p => ({ x: p.x, y: p.y })),
-        closed: true,
-      } as any);
-    });
+    // Merges all islands into a single path element with evenodd fill rule for holes.
+    const pathPoints = marqueeLocalPath[0]?.map(p => ({ x: p.x, y: p.y })) ?? [];
+    const islands = marqueeLocalPath.slice(1).map(island => island.map(p => ({ x: p.x, y: p.y })));
+
+    if (pathPoints.length === 0) return;
+
+    get().addElement({
+      type: 'path',
+      left: baseLeft,
+      top: baseTop,
+      scaleX,
+      scaleY,
+      angle,
+      fill: { type: 'solid', color: '#1b7340' },
+      stroke: '#0f172a',
+      strokeWidth: 0,
+      opacity: 0.5,
+      pathPoints,
+      islands: islands.length > 0 ? islands : undefined,
+      fillRule: islands.length > 0 ? 'evenodd' : 'nonzero',
+      closed: true,
+    } as any);
 
     set({ marqueeLocalPath: null, marqueeTargetId: null });
   },
