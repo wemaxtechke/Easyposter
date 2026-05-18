@@ -829,6 +829,7 @@ function ImageAdjustmentControls({
   const contrast = adj.adjustContrast ?? 0;
   const saturation = adj.adjustSaturation ?? 0;
   const sharpness = adj.adjustSharpness ?? 0;
+  const blur = adj.adjustBlur ?? 0;
   const hue = adj.adjustHue ?? 0;
   const tintAmount = adj.adjustTintAmount ?? 0;
   const tintColor = adj.adjustTintColor ?? '#ffffff';
@@ -837,6 +838,7 @@ function ImageAdjustmentControls({
     contrast === 0 &&
     saturation === 0 &&
     sharpness === 0 &&
+    blur === 0 &&
     hue === 0 &&
     tintAmount === 0;
 
@@ -853,6 +855,7 @@ function ImageAdjustmentControls({
                 adjustContrast: 0,
                 adjustSaturation: 0,
                 adjustSharpness: 0,
+                adjustBlur: 0,
                 adjustHue: 0,
                 adjustTintAmount: 0,
                 adjustTintColor: undefined,
@@ -903,6 +906,14 @@ function ImageAdjustmentControls({
         step={1}
         value={sharpness}
         onChange={(v) => updateElement(elementId, { adjustSharpness: v })}
+      />
+      <PosterSlider
+        label={`Blur (${blur})`}
+        min={0}
+        max={100}
+        step={1}
+        value={blur}
+        onChange={(v) => updateElement(elementId, { adjustBlur: v })}
       />
       <div className="flex flex-col gap-2">
         <span className="text-xs text-zinc-600 dark:text-zinc-400">Tint</span>

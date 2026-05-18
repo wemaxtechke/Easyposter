@@ -47,6 +47,7 @@ export interface ImageAdjustments {
   adjustContrast?: number;
   adjustSaturation?: number;
   adjustSharpness?: number;
+  adjustBlur?: number;
   /** Hue shift in degrees (-180..180). 0 = no change. */
   adjustHue?: number;
   /** Tint color `#RRGGBB`; meaningful when adjustTintAmount > 0. */
@@ -62,6 +63,7 @@ export function getImageAdjustmentsKey(el: ImageAdjustments): string {
     el.adjustContrast ?? 0,
     el.adjustSaturation ?? 0,
     el.adjustSharpness ?? 0,
+    el.adjustBlur ?? 0,
     el.adjustHue ?? 0,
     tint,
     el.adjustTintAmount ?? 0,
@@ -74,6 +76,7 @@ export function hasNonDefaultAdjustments(el: ImageAdjustments): boolean {
     (el.adjustContrast ?? 0) !== 0 ||
     (el.adjustSaturation ?? 0) !== 0 ||
     (el.adjustSharpness ?? 0) !== 0 ||
+    (el.adjustBlur ?? 0) !== 0 ||
     (el.adjustHue ?? 0) !== 0 ||
     (el.adjustTintAmount ?? 0) !== 0
   );
