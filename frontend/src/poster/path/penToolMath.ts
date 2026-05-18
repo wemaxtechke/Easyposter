@@ -296,12 +296,20 @@ export function appendSmoothAnchor(
 export function pathPointsToSvgPathElement(
   points: PosterPathPoint[],
   closed: boolean,
-  attrs: { fill?: string; stroke?: string; strokeWidth?: number; islands?: PosterPathPoint[][]; fillRule?: 'nonzero' | 'evenodd' } = {},
+  attrs: {
+    fill?: string;
+    stroke?: string;
+    strokeWidth?: number;
+    islands?: PosterPathPoint[][];
+    fillRule?: 'nonzero' | 'evenodd';
+    fillOpacity?: number;
+  } = {},
 ): string {
   const d = pathPointsToPathD(points, closed, attrs.islands);
   const fill = attrs.fill ?? '#000000';
   const stroke = attrs.stroke ?? 'none';
   const sw = attrs.strokeWidth ?? 0;
   const fr = attrs.fillRule ? ` fill-rule="${attrs.fillRule}"` : '';
-  return `<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"${fr} />`;
+  const fo = attrs.fillOpacity != null && attrs.fillOpacity < 1 ? ` fill-opacity="${attrs.fillOpacity}"` : '';
+  return `<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"${fr}${fo} />`;
 }

@@ -569,6 +569,9 @@ function PathStyleControls({
               fill: fillColor,
               stroke,
               strokeWidth: path.strokeWidth ?? 0,
+              islands: path.islands,
+              fillRule: path.fillRule,
+              fillOpacity: path.fillOpacity,
             });
             void navigator.clipboard?.writeText(svg);
           }}
