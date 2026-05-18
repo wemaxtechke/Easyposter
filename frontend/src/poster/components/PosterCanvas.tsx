@@ -14,7 +14,7 @@ import {
   ActiveSelection,
   util,
 } from 'fabric';
-import { usePosterStore } from '../store/posterStore';
+import { usePosterStore, type PathNodeSelection } from '../store/posterStore';
 import { useMagicLayerStore } from '../store/magicLayerStore';
 import { setFabricCanvasRef } from '../canvasRef';
 import { ObjectSelectionEngine } from '../selection/ObjectSelectionEngine';
@@ -174,6 +174,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const setPathToolMode = usePosterStore((s) => s.setPathToolMode);
   const activePathId = usePosterStore((s) => s.activePathId);
   const setActivePathId = usePosterStore((s) => s.setActivePathId);
+  const selectedPathNode = usePosterStore((s) => s.selectedPathNode);
   const setSelectedPathNode = usePosterStore((s) => s.setSelectedPathNode);
   const setSelectedPathHandle = usePosterStore((s) => s.setSelectedPathHandle);
   const setMarqueePath = usePosterStore((s) => s.setMarqueePath);
@@ -1739,6 +1740,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
               fabricPathTransform={fabricPathTransform}
               fabricCanvasRef={canvasRef}
               pathPointSize={pathPointSize}
+              selectedPathNode={selectedPathNode}
             />
           )}
         </div>
@@ -1807,6 +1809,7 @@ type PathEditOverlayProps = {
   /** Use Fabric scene space for clicks — matches path `calcTransformMatrix` (fixes drift vs hand-divided coords). */
   fabricCanvasRef: RefObject<Canvas | null>;
   pathPointSize: number;
+  selectedPathNode: PathNodeSelection | null;
 };
 
 function PathEditOverlay({
@@ -1821,6 +1824,7 @@ function PathEditOverlay({
   fabricPathTransform,
   fabricCanvasRef,
   pathPointSize,
+  selectedPathNode,
 }: PathEditOverlayProps) {
   const [dragging, setDragging] = useState<string | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -1920,8 +1924,20 @@ function PathEditOverlay({
     }
     if (target.type === 'path') {
       const next = [...pathPts];
-      if (!next[idx]) return;
-      next[idx] = { ...next[idx], x: local.x, y: local.y };
+      const node = next[idx];
+      if (!node) return;
+      const dx = local.x - node.x;
+      const dy = local.y - node.y;
+      const updated: PosterPathPoint = { ...node, x: local.x, y: local.y };
+      if (node.inX != null && node.inY != null) {
+        updated.inX = node.inX + dx;
+        updated.inY = node.inY + dy;
+      }
+      if (node.outX != null && node.outY != null) {
+        updated.outX = node.outX + dx;
+        updated.outY = node.outY + dy;
+      }
+      next[idx] = updated;
       onChange({ pathPoints: next });
     }
   };
@@ -2223,52 +2239,57 @@ function PathEditOverlay({
           />
         )}
         {target?.type === 'path' &&
-          pathPts.map((p, idx) => (
-            <div key={`handles-${idx}`}>
-              {p.inX != null && p.inY != null && (
-                <button
-                  type="button"
-                  className="absolute rounded-full border border-white bg-cyan-500 shadow"
-                  style={{
-                    left: toCanvas({ x: p.inX, y: p.inY }).x,
-                    top: toCanvas({ x: p.inX, y: p.inY }).y,
-                    width: pathPointSize * 0.8,
-                    height: pathPointSize * 0.8,
-                    transform: 'translate(-50%, -50%)',
-                  }}
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onSelectPathNode(idx);
-                    if (toolMode === 'direct' || toolMode === 'convert') setDragging(`handle:${idx}:in`);
-                    dragStartRef.current = toCanvas({ x: p.inX!, y: p.inY! });
-                  }}
-                  aria-label="In handle"
-                />
-              )}
-              {p.outX != null && p.outY != null && (
-                <button
-                  type="button"
-                  className="absolute rounded-full border border-white bg-cyan-500 shadow"
-                  style={{
-                    left: toCanvas({ x: p.outX, y: p.outY }).x,
-                    top: toCanvas({ x: p.outX, y: p.outY }).y,
-                    width: pathPointSize * 0.8,
-                    height: pathPointSize * 0.8,
-                    transform: 'translate(-50%, -50%)',
-                  }}
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onSelectPathNode(idx);
-                    if (toolMode === 'direct' || toolMode === 'convert') setDragging(`handle:${idx}:out`);
-                    dragStartRef.current = toCanvas({ x: p.outX!, y: p.outY! });
-                  }}
-                  aria-label="Out handle"
-                />
-              )}
-            </div>
-          ))}
+          pathPts.map((p, idx) => {
+            const isSelected =
+              selectedPathNode && selectedPathNode.elementId === target.id && selectedPathNode.nodeIndex === idx;
+            if (!isSelected) return null;
+            return (
+              <div key={`handles-${idx}`}>
+                {p.inX != null && p.inY != null && (
+                  <button
+                    type="button"
+                    className="absolute rounded-full border border-white bg-cyan-500 shadow"
+                    style={{
+                      left: toCanvas({ x: p.inX, y: p.inY }).x,
+                      top: toCanvas({ x: p.inX, y: p.inY }).y,
+                      width: pathPointSize * 0.8,
+                      height: pathPointSize * 0.8,
+                      transform: 'translate(-50%, -50%)',
+                    }}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onSelectPathNode(idx);
+                      if (toolMode === 'direct' || toolMode === 'convert') setDragging(`handle:${idx}:in`);
+                      dragStartRef.current = toCanvas({ x: p.inX!, y: p.inY! });
+                    }}
+                    aria-label="In handle"
+                  />
+                )}
+                {p.outX != null && p.outY != null && (
+                  <button
+                    type="button"
+                    className="absolute rounded-full border border-white bg-cyan-500 shadow"
+                    style={{
+                      left: toCanvas({ x: p.outX, y: p.outY }).x,
+                      top: toCanvas({ x: p.outX, y: p.outY }).y,
+                      width: pathPointSize * 0.8,
+                      height: pathPointSize * 0.8,
+                      transform: 'translate(-50%, -50%)',
+                    }}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onSelectPathNode(idx);
+                      if (toolMode === 'direct' || toolMode === 'convert') setDragging(`handle:${idx}:out`);
+                      dragStartRef.current = toCanvas({ x: p.outX!, y: p.outY! });
+                    }}
+                    aria-label="Out handle"
+                  />
+                )}
+              </div>
+            );
+          })}
       </div>
     </div>
   );
