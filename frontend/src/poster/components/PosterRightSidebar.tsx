@@ -271,7 +271,7 @@ function PathEditingControls({
     <div className="flex flex-col gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
       <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-700">
         <p className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">Path tools</p>
-        <div className="flex gap-1">
+        <div className="grid grid-cols-2 gap-1">
           {([
             ['pen-straight', 'Pen Straight'],
             ['pen-curve', 'Pen Curve'],
