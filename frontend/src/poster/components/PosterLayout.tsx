@@ -574,6 +574,11 @@ export function PosterLayout() {
         setActiveTool('object-selection');
         return;
       }
+      if (!ctrl && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        setActiveTool('blur-brush');
+        return;
+      }
       if (!ctrl && (e.key === 'h' || e.key === 'H')) {
         e.preventDefault();
         setActiveTool('hand');

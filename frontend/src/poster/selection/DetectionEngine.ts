@@ -283,6 +283,31 @@ export class DetectionEngine {
     return outputCanvas;
   }
 
+  public static async applyBlurToImageData(
+    imageData: ImageData,
+    blurAmount: number
+  ): Promise<HTMLCanvasElement> {
+    const { width, height } = imageData;
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return document.createElement('canvas'); // Fallback
+
+    ctx.putImageData(imageData, 0, 0);
+
+    const blurCanvas = new OffscreenCanvas(width, height);
+    const blurCtx = blurCanvas.getContext('2d', { willReadFrequently: true });
+    if (!blurCtx) return document.createElement('canvas'); // Fallback
+
+    blurCtx.filter = `blur(${blurAmount}px)`;
+    blurCtx.drawImage(canvas, 0, 0);
+
+    const out = document.createElement('canvas');
+    out.width = width;
+    out.height = height;
+    out.getContext('2d')?.drawImage(blurCanvas, 0, 0);
+    return out;
+  }
+
   public static async applyFeatherToMask(
     mask: Uint8ClampedArray,
     width: number,

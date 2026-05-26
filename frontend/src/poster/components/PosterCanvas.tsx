@@ -252,7 +252,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
     canvas.on('mouse:move', (opt) => {
       const { activeTool: tool } = usePosterStore.getState();
-      if (tool === 'magic-brush' && opt.e.buttons === 1) {
+      if ((tool === 'magic-brush' || tool === 'blur-brush') && opt.e.buttons === 1) {
         const { activeMagicLayerId, brushSettings, magicLayers, updateMagicLayerMask } = useMagicLayerStore.getState();
         if (!activeMagicLayerId) return;
         const layer = magicLayers.find(l => l.id === activeMagicLayerId);
@@ -282,13 +282,33 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
     canvas.on('mouse:down', (opt) => {
       const { activeTool: tool } = usePosterStore.getState();
-      if (tool === 'magic-brush') {
-        const { activeMagicLayerId, brushSettings, magicLayers, updateMagicLayerMask } = useMagicLayerStore.getState();
-        if (!activeMagicLayerId) return;
-        const layer = magicLayers.find(l => l.id === activeMagicLayerId);
+      if (tool === 'magic-brush' || tool === 'blur-brush') {
+        const { activeMagicLayerId, brushSettings, magicLayers, updateMagicLayerMask, createBlurLayer } = useMagicLayerStore.getState();
+        const { selectedIds, elements } = usePosterStore.getState();
+
+        let targetId = activeMagicLayerId;
+
+        if (tool === 'blur-brush' && !targetId && selectedIds.length === 1) {
+          const el = elements.find(e => e.id === selectedIds[0]);
+          if (el && (el.type === 'image' || el.type === '3d-text')) {
+             // Search if a blur layer already exists for this object
+             const existingBlur = magicLayers.find(l => l.sourceObjectId === el.id && l.isBlurLayer);
+             if (existingBlur) {
+               targetId = existingBlur.id;
+               useMagicLayerStore.getState().setActiveMagicLayer(targetId);
+             } else {
+               // Async create - first stroke might be lost or we can wait
+               void createBlurLayer(el.id, brushSettings.blurAmount);
+               return;
+             }
+          }
+        }
+
+        if (!targetId) return;
+        const layer = magicLayers.find(l => l.id === targetId);
         if (!layer) return;
 
-        const obj = canvas.getObjects().find((o: any) => o.data?.posterId === activeMagicLayerId);
+        const obj = canvas.getObjects().find((o: any) => o.data?.posterId === targetId);
         if (!obj) return;
 
         const pointer = obj.getLocalPointer(opt.e);
@@ -307,7 +327,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           layer.bounds.width,
           layer.bounds.height
         );
-        if (newMask) updateMagicLayerMask(activeMagicLayerId, newMask);
+        if (newMask) updateMagicLayerMask(targetId, newMask);
         return;
       }
       if (tool === 'text' && !opt.target) {
