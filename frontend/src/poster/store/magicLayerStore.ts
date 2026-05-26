@@ -146,7 +146,7 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
     } as Partial<MagicLayerElement>);
   },
 
-  createBlurLayer: async (elementId, blurAmount) => {
+  createBlurLayer: async (elementId, blurAmount, initialPos) => {
     const { elements } = usePosterStore.getState();
     const sourceElement = elements.find(e => e.id === elementId);
     if (!sourceElement) return;
@@ -170,7 +170,23 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
     const sourceImageData = sourceCtx!.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
 
     const id = generateElementId();
-    const alphaMask = new Uint8ClampedArray(sourceCanvas.width * sourceCanvas.height).fill(0);
+    let alphaMask = new Uint8ClampedArray(sourceCanvas.width * sourceCanvas.height).fill(0);
+
+    if (initialPos) {
+      const { brushSettings } = get();
+      alphaMask = DetectionEngine.applyBrushToMask(
+        alphaMask,
+        initialPos.x,
+        initialPos.y,
+        brushSettings.radius,
+        brushSettings.hardness,
+        brushSettings.strength,
+        brushSettings.mode,
+        sourceCanvas.width,
+        sourceCanvas.height
+      );
+    }
+
     const blurredCanvas = await DetectionEngine.applyBlurToImageData(sourceImageData, blurAmount);
     const isolatedCanvas = await DetectionEngine.extractPixels(blurredCanvas, alphaMask);
 
