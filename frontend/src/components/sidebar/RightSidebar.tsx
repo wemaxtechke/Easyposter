@@ -309,7 +309,7 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
   const deleteCloudTexture = async (id: string, mapUrl: string) => {
     setCloudMsg(null);
     try {
-      const res = await apiFetch(apiUrl(`/api/textures/${encodeURIComponent(id)}`), { method: 'DELETE' });
+      const res = await apiFetch(`/api/textures/${encodeURIComponent(id)}`, { method: 'DELETE' });
       const j = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(j.error || res.statusText);
       setCloudTextures((prev) => prev.filter((x) => x.id !== id));
@@ -345,7 +345,7 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
     setCloudUploading(true);
     setCloudMsg(null);
     try {
-      const res = await apiFetch(apiUrl('/api/textures/upload'), { method: 'POST', body: fd });
+      const res = await apiFetch('/api/textures/upload', { method: 'POST', body: fd });
       const j = (await res.json()) as CloudTextureEntry & { error?: string };
       if (!res.ok) throw new Error(j.error || res.statusText);
       setCloudTextures((prev) => [j, ...prev.filter((x) => x.id !== j.id)]);
@@ -515,7 +515,7 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
   const deleteSavedFont = async (entry: SavedFontEntry) => {
     setFontLibMsg(null);
     try {
-      const res = await apiFetch(apiUrl(`/api/fonts/${encodeURIComponent(entry.id)}`), { method: 'DELETE' });
+      const res = await apiFetch(`/api/fonts/${encodeURIComponent(entry.id)}`, { method: 'DELETE' });
       const j = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(j.error || res.statusText);
       setSavedFonts((prev) => prev.filter((f) => f.id !== entry.id));
@@ -553,7 +553,7 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
     setFontLibUploading(true);
     setFontLibMsg(null);
     try {
-      const res = await apiFetch(apiUrl('/api/fonts/upload'), { method: 'POST', body: fd });
+      const res = await apiFetch('/api/fonts/upload', { method: 'POST', body: fd });
       const j = (await res.json()) as SavedFontEntry & { error?: string };
       if (!res.ok) throw new Error(j.error || res.statusText);
       setSavedFonts((prev) => [j, ...prev.filter((f) => f.id !== j.id)]);
