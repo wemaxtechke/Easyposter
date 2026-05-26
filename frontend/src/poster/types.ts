@@ -340,6 +340,8 @@ export interface MagicLayer {
   createdFrom?: 'sam' | 'manual';
   isBlurLayer?: boolean;
   blurAmount?: number;
+  /** Cached blurred source for performance */
+  blurredSource?: HTMLCanvasElement | OffscreenCanvas | string;
 }
 
 export interface MagicLayerStore {
@@ -382,6 +384,7 @@ export interface MagicLayerElement extends PosterElementBase {
   blendMode?: GlobalCompositeOperation;
   isBlurLayer?: boolean;
   blurAmount?: number;
+  blurredSource?: string;
 }
 
 export type PosterElement =

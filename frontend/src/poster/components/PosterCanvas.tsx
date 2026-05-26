@@ -263,7 +263,10 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
         const layer = magicLayers.find(l => l.id === activeMagicLayerId);
         if (!layer) return;
 
-        const obj = canvas.getObjects().find((o: any) => o.data?.posterId === activeMagicLayerId);
+        let obj = canvas.getObjects().find((o: any) => o.data?.posterId === activeMagicLayerId);
+        if (!obj && layer.sourceObjectId) {
+          obj = canvas.getObjects().find((o: any) => o.data?.posterId === layer.sourceObjectId);
+        }
         if (!obj) return;
 
         const pointer = obj.getLocalPointer(opt.e);
@@ -315,7 +318,10 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
         const layer = magicLayers.find(l => l.id === targetId);
         if (!layer) return;
 
-        const obj = canvas.getObjects().find((o: any) => o.data?.posterId === targetId);
+        let obj = canvas.getObjects().find((o: any) => o.data?.posterId === targetId);
+        if (!obj && layer.sourceObjectId) {
+          obj = canvas.getObjects().find((o: any) => o.data?.posterId === layer.sourceObjectId);
+        }
         if (!obj) return;
 
         const pointer = obj.getLocalPointer(opt.e);

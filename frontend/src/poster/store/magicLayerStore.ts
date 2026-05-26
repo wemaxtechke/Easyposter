@@ -84,6 +84,7 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
     }));
 
     usePosterStore.getState().addElement({
+      id,
       type: 'magic-layer',
       left: sourceElement.left,
       top: sourceElement.top,
@@ -111,12 +112,19 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
     const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
     sourceCtx!.putImageData(layer.sourceImageData, 0, 0);
 
-    let processedSource: HTMLCanvasElement | OffscreenCanvas = sourceCanvas;
+    let processedSource: HTMLCanvasElement | OffscreenCanvas | string = sourceCanvas;
     if (layer.isBlurLayer && layer.blurAmount != null) {
-      processedSource = await DetectionEngine.applyBlurToImageData(layer.sourceImageData, layer.blurAmount);
+      if (layer.blurredSource) {
+        processedSource = layer.blurredSource;
+      } else {
+        processedSource = await DetectionEngine.applyBlurToImageData(layer.sourceImageData, layer.blurAmount);
+        set(state => ({
+          magicLayers: state.magicLayers.map(l => l.id === id ? { ...l, blurredSource: processedSource as HTMLCanvasElement } : l)
+        }));
+      }
     }
 
-    const isolatedCanvas = await DetectionEngine.extractPixels(processedSource, mask);
+    const isolatedCanvas = await DetectionEngine.extractPixels(processedSource as HTMLCanvasElement | OffscreenCanvas, mask);
 
     set(state => ({
       magicLayers: state.magicLayers.map(l => l.id === id ? { ...l, alphaMask: mask, isolatedCanvas } : l)
@@ -137,7 +145,7 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
     const isolatedCanvas = await DetectionEngine.extractPixels(blurredCanvas, layer.alphaMask);
 
     set(state => ({
-      magicLayers: state.magicLayers.map(l => l.id === id ? { ...l, blurAmount: amount, isolatedCanvas } : l)
+      magicLayers: state.magicLayers.map(l => l.id === id ? { ...l, blurAmount: amount, isolatedCanvas, blurredSource: blurredCanvas } : l)
     }));
 
     usePosterStore.getState().updateElement(id, {
@@ -216,6 +224,7 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
       createdAt: Date.now(),
       isBlurLayer: true,
       blurAmount,
+      blurredSource: blurredCanvas,
     };
 
     set(state => ({
