@@ -33,7 +33,7 @@ function normalizeBackground(bg: CanvasBackground | string | undefined): CanvasB
   };
 }
 export type CanvasPan = { x: number; y: number };
-export type PosterTool = 'select' | 'direct' | 'pen' | 'text' | 'shape' | 'object-selection' | 'magic-brush' | 'hand';
+export type PosterTool = 'select' | 'direct' | 'pen' | 'text' | 'shape' | 'object-selection' | 'magic-brush' | 'blur-brush' | 'hand';
 export type ObjectSelectionMode = 'rectangle' | 'lasso' | 'magnetic' | 'ai';
 export type PathToolMode = 'pen' | 'pen-straight' | 'pen-curve' | 'direct' | 'convert';
 export type PathNodeSelection = { elementId: string; nodeIndex: number; islandIndex?: number };
@@ -167,6 +167,11 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
     if (tool !== 'object-selection' && tool !== 'direct') {
       updates.marqueeLocalPath = null;
       updates.marqueeTargetId = null;
+    }
+
+    if (tool !== 'blur-brush' && tool !== 'magic-brush') {
+      const { setActiveMagicLayer } = useMagicLayerStore.getState();
+      setActiveMagicLayer(null);
     }
 
     set(updates);

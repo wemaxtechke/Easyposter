@@ -11,6 +11,7 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
     hardness: 0.5,
     strength: 1.0,
     mode: 'add',
+    blurAmount: 10,
   },
 
   setBrushSettings: (settings) => {
@@ -110,7 +111,12 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
     const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
     sourceCtx!.putImageData(layer.sourceImageData, 0, 0);
 
-    const isolatedCanvas = await DetectionEngine.extractPixels(sourceCanvas, mask);
+    let processedSource: HTMLCanvasElement | OffscreenCanvas = sourceCanvas;
+    if (layer.isBlurLayer && layer.blurAmount != null) {
+      processedSource = await DetectionEngine.applyBlurToImageData(layer.sourceImageData, layer.blurAmount);
+    }
+
+    const isolatedCanvas = await DetectionEngine.extractPixels(processedSource, mask);
 
     set(state => ({
       magicLayers: state.magicLayers.map(l => l.id === id ? { ...l, alphaMask: mask, isolatedCanvas } : l)
@@ -119,6 +125,104 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
     usePosterStore.getState().updateElement(id, {
       isolatedSrc: isolatedCanvas.toDataURL('image/png'),
     } as Partial<MagicLayerElement>);
+  },
+
+  setBlurAmount: async (id, amount) => {
+    const layer = get().magicLayers.find(l => l.id === id);
+    if (!layer || !layer.isBlurLayer) return;
+
+    const { DetectionEngine } = await import('../selection/DetectionEngine');
+
+    const blurredCanvas = await DetectionEngine.applyBlurToImageData(layer.sourceImageData, amount);
+    const isolatedCanvas = await DetectionEngine.extractPixels(blurredCanvas, layer.alphaMask);
+
+    set(state => ({
+      magicLayers: state.magicLayers.map(l => l.id === id ? { ...l, blurAmount: amount, isolatedCanvas } : l)
+    }));
+
+    usePosterStore.getState().updateElement(id, {
+      isolatedSrc: isolatedCanvas.toDataURL('image/png'),
+      blurAmount: amount,
+    } as Partial<MagicLayerElement>);
+  },
+
+  createBlurLayer: async (elementId, blurAmount) => {
+    const { elements } = usePosterStore.getState();
+    const sourceElement = elements.find(e => e.id === elementId);
+    if (!sourceElement) return;
+
+    const { getFabricCanvasRef } = await import('../canvasRef');
+    const fabricCanvas = getFabricCanvasRef();
+    if (!fabricCanvas) return;
+
+    const fabricObj = fabricCanvas.getObjects().find((o: any) => o.data?.posterId === elementId);
+    if (!fabricObj) return;
+
+    let sourceCanvas: HTMLCanvasElement;
+    if (typeof (fabricObj as any).toCanvasElement === 'function') {
+      sourceCanvas = (fabricObj as any).toCanvasElement({ multiplier: 1, enableRetinaScaling: false });
+    } else {
+      return;
+    }
+
+    const { DetectionEngine } = await import('../selection/DetectionEngine');
+    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    const sourceImageData = sourceCtx!.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+
+    const id = generateElementId();
+    const alphaMask = new Uint8ClampedArray(sourceCanvas.width * sourceCanvas.height).fill(0);
+    const blurredCanvas = await DetectionEngine.applyBlurToImageData(sourceImageData, blurAmount);
+    const isolatedCanvas = await DetectionEngine.extractPixels(blurredCanvas, alphaMask);
+
+    const newLayer: MagicLayer = {
+      id,
+      sourceObjectId: elementId,
+      sourceImageData,
+      isolatedCanvas,
+      alphaMask,
+      contourPath: [],
+      transform: {
+        x: sourceElement.left,
+        y: sourceElement.top,
+        scaleX: sourceElement.scaleX,
+        scaleY: sourceElement.scaleY,
+        rotation: sourceElement.angle,
+      },
+      bounds: {
+        x: 0,
+        y: 0,
+        width: sourceCanvas.width,
+        height: sourceCanvas.height,
+      },
+      editable: true,
+      visible: true,
+      locked: false,
+      createdAt: Date.now(),
+      isBlurLayer: true,
+      blurAmount,
+    };
+
+    set(state => ({
+      magicLayers: [...state.magicLayers, newLayer],
+      activeMagicLayerId: id,
+    }));
+
+    usePosterStore.getState().addElement({
+      type: 'magic-layer',
+      id,
+      left: sourceElement.left,
+      top: sourceElement.top,
+      scaleX: sourceElement.scaleX,
+      scaleY: sourceElement.scaleY,
+      angle: sourceElement.angle,
+      opacity: 1,
+      sourceObjectId: elementId,
+      isolatedSrc: isolatedCanvas.toDataURL('image/png'),
+      sourceSrc: sourceCanvas.toDataURL('image/png'),
+      contourPath: [],
+      isBlurLayer: true,
+      blurAmount,
+    } as MagicLayerElement);
   },
 
   refineMagicLayer: (id) => {
