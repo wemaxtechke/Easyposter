@@ -4,6 +4,7 @@ import { DEFAULT_GRADIENT_STOPS } from '../types';
 import type { PosterTemplateDefinition, PosterTemplateFieldBinding } from '../templateTypes';
 import { fetchPosterTemplateById, fetchPosterTemplateList } from '../services/posterTemplatesApi';
 import { generateElementId as generateId } from '../utils/generateElementId';
+import { useMagicLayerStore } from './magicLayerStore';
 
 const DEFAULT_WIDTH = 800;
 const DEFAULT_HEIGHT = 600;
@@ -87,7 +88,7 @@ interface PosterStore {
   historyIndex: number;
   /** Field bindings from template (key/label/sourceElementId). Null when loading from file or no template. */
   fieldBindings: PosterTemplateFieldBinding[] | null;
-  addElement: (el: Omit<PosterElement, 'id' | 'zIndex'>) => void;
+  addElement: (el: Omit<PosterElement, 'id' | 'zIndex'> & { id?: string }) => void;
   /** One undo step: optional background image, cropped regions, then text layers (for Magic import). */
   batchImportMagicPoster: (payload: {
     background?: Omit<PosterElement, 'id' | 'zIndex'>;
@@ -312,7 +313,7 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
   addElement: (el) => {
     get().pushHistory();
     const maxZ = Math.max(0, ...get().elements.map((e) => e.zIndex));
-    const id = generateId();
+    const id = el.id || generateId();
     const element: PosterElement = { ...el, id, zIndex: maxZ + 1 } as PosterElement;
     set((s) => ({ elements: [...s.elements, element], selectedIds: [id] }));
   },
