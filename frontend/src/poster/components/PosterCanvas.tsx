@@ -250,9 +250,14 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       setSelected(getPosterIdsFromFabricActive(canvas));
     };
 
+    let lastBrushTime = 0;
     canvas.on('mouse:move', (opt) => {
       const { activeTool: tool } = usePosterStore.getState();
       if ((tool === 'magic-brush' || tool === 'blur-brush') && opt.e.buttons === 1) {
+        const now = Date.now();
+        if (now - lastBrushTime < 16) return; // ~60fps throttle
+        lastBrushTime = now;
+
         const { activeMagicLayerId, brushSettings, magicLayers, updateMagicLayerMask } = useMagicLayerStore.getState();
         if (!activeMagicLayerId) return;
         const layer = magicLayers.find(l => l.id === activeMagicLayerId);
@@ -298,7 +303,9 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                useMagicLayerStore.getState().setActiveMagicLayer(targetId);
              } else {
                // Async create - first stroke might be lost or we can wait
-               void createBlurLayer(el.id, brushSettings.blurAmount);
+               const obj = canvas.getObjects().find((o: any) => o.data?.posterId === el.id);
+               const initialPos = obj ? obj.getLocalPointer(opt.e) : undefined;
+               void createBlurLayer(el.id, brushSettings.blurAmount, initialPos);
                return;
              }
           }
@@ -484,6 +491,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
     const isHand = activeTool === 'hand' || isSpacePanning;
 
+    const isBrushActive = activeTool === 'magic-brush' || activeTool === 'blur-brush';
+
     for (const obj of canvas.getObjects()) {
       const id = (obj as { data?: { posterId?: string } }).data?.posterId;
       const el = id ? els.find((e) => e.id === id) : null;
@@ -491,21 +500,22 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       const lockAll = locked || readOnly || (id != null && id === pathEditTargetId);
 
       const updates: Record<string, unknown> = {
-        selectable: !readOnly && !isHand,
-        evented: !isObjSel && !isHand,
+        selectable: !readOnly && !isHand && !isBrushActive,
+        evented: !isObjSel && !isHand && !isBrushActive,
         lockMovementX: lockAll,
         lockMovementY: lockAll,
         lockScalingX: lockAll,
         lockScalingY: lockAll,
         lockRotation: lockAll,
-        hasControls: !isDirect && !lockAll,
-        hasBorders: !isDirect && !lockAll,
+        hasControls: !isDirect && !lockAll && !isBrushActive,
+        hasBorders: !isDirect && !lockAll && !isBrushActive,
       };
       if (obj instanceof Textbox) {
         updates.editable = !readOnly && (activeTool === 'text' || activeTool === 'select');
       }
       obj.set(updates);
     }
+    canvas.selection = !isBrushActive && !readOnly;
     canvas.requestRenderAll();
   }, [readOnly, elements, pathEditTargetId, activeTool]);
 
@@ -784,6 +794,24 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           !needsSrcRecreate &&
           !needsInPlaceImageEffects &&
           (data?.adjustmentsKey ?? '') !== newAdjKey;
+
+        const needsIsolatedSrcUpdate =
+          el.type === 'magic-layer' &&
+          !!existing &&
+          data?.imageSrc !== (el as MagicLayerElement).isolatedSrc;
+
+        if (existing && needsIsolatedSrcUpdate) {
+          const img = existing as FabricImage;
+          const magicEl = el as MagicLayerElement;
+          (img as { data?: Record<string, unknown> }).data = {
+            ...(img as { data?: Record<string, unknown> }).data,
+            imageSrc: magicEl.isolatedSrc,
+          };
+          img.setSrc(magicEl.isolatedSrc).then(() => {
+            canvasRef.current?.requestRenderAll();
+          });
+          // Continue to common updates below (pos, scale etc)
+        }
 
         if (existing && needsInPlaceImageEffects) {
           const img = existing as FabricImage;
@@ -1494,6 +1522,10 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
   const showSelectionPopup = !!marqueeLocalPath && (activeTool === 'object-selection' || activeTool === 'direct');
   const isPanningActive = activeTool === 'hand' || isSpacePanning;
+  const isBrushActive = activeTool === 'magic-brush' || activeTool === 'blur-brush';
+
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const brushRadius = useMagicLayerStore((s) => s.brushSettings.radius);
 
   return (
     <div
@@ -1501,8 +1533,21 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       className={`h-full min-h-0 w-full min-w-0 flex-1 ${isCompact ? 'overflow-hidden' : 'overflow-auto'}`}
       style={{
         touchAction: isCompact ? 'none' : 'auto',
-        cursor: isPanningActive ? 'grab' : 'auto',
+        cursor: isPanningActive ? 'grab' : (isBrushActive ? 'none' : 'auto'),
       }}
+      onPointerMove={(e) => {
+        if (!isBrushActive) {
+          if (mousePos) setMousePos(null);
+          return;
+        }
+        const rect = zoomWrapperRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        setMousePos({
+          x: (e.clientX - rect.left) / scale,
+          y: (e.clientY - rect.top) / scale,
+        });
+      }}
+      onPointerLeave={() => setMousePos(null)}
       title="Ctrl+Scroll to zoom toward cursor"
       onPointerDown={(e) => {
         if (!isPanningActive) return;
@@ -1686,6 +1731,19 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
               scale={scale}
               targetId={imageCropTargetId}
               readOnly={readOnly}
+            />
+          )}
+          {isBrushActive && mousePos && (
+            <div
+              className="absolute pointer-events-none z-[100] border border-white/50 rounded-full bg-white/10 mix-blend-difference"
+              style={{
+                left: mousePos.x,
+                top: mousePos.y,
+                width: brushRadius * 2,
+                height: brushRadius * 2,
+                transform: 'translate(-50%, -50%)',
+                boxShadow: '0 0 0 1px rgba(0,0,0,0.5)',
+              }}
             />
           )}
           {showSelectionPopup && (

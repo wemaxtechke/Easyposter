@@ -354,7 +354,7 @@ export interface MagicLayerStore {
   };
   setBrushSettings(settings: Partial<MagicLayerStore['brushSettings']>): void;
   createMagicLayerFromSelection(): Promise<void>;
-  createBlurLayer(elementId: string, blurAmount: number): Promise<void>;
+  createBlurLayer(elementId: string, blurAmount: number, initialPos?: { x: number; y: number }): Promise<void>;
   updateMagicLayerMask(id: string, mask: Uint8ClampedArray): void;
   setBlurAmount(id: string, amount: number): void;
   refineMagicLayer(id: string): void;
