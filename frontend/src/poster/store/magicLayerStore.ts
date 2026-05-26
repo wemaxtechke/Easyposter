@@ -39,7 +39,8 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
 
     let sourceCanvas: HTMLCanvasElement;
     if (typeof (fabricObj as any).toCanvasElement === 'function') {
-      sourceCanvas = (fabricObj as any).toCanvasElement({ multiplier: 1, enableRetinaScaling: false });
+      const multiplier = 1 / Math.max(0.01, Math.abs(fabricObj.scaleX || 1));
+      sourceCanvas = (fabricObj as any).toCanvasElement({ multiplier, enableRetinaScaling: false });
     } else {
       return;
     }
@@ -168,7 +169,8 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
 
     let sourceCanvas: HTMLCanvasElement;
     if (typeof (fabricObj as any).toCanvasElement === 'function') {
-      sourceCanvas = (fabricObj as any).toCanvasElement({ multiplier: 1, enableRetinaScaling: false });
+      const multiplier = 1 / Math.max(0.01, Math.abs(fabricObj.scaleX || 1));
+      sourceCanvas = (fabricObj as any).toCanvasElement({ multiplier, enableRetinaScaling: false });
     } else {
       return;
     }
@@ -345,7 +347,8 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
 
     let sourceCanvas: HTMLCanvasElement;
     if (typeof (fabricObj as any).toCanvasElement === 'function') {
-      sourceCanvas = (fabricObj as any).toCanvasElement({ multiplier: 1, enableRetinaScaling: false });
+      const multiplier = 1 / Math.max(0.01, Math.abs(fabricObj.scaleX || 1));
+      sourceCanvas = (fabricObj as any).toCanvasElement({ multiplier, enableRetinaScaling: false });
     } else {
       return;
     }

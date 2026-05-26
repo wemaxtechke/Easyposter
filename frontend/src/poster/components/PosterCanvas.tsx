@@ -251,6 +251,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     };
 
     let lastBrushTime = 0;
+    let brushUpdateThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+
     canvas.on('mouse:move', (opt) => {
       const { activeTool: tool } = usePosterStore.getState();
       if ((tool === 'magic-brush' || tool === 'blur-brush') && opt.e.buttons === 1) {
@@ -263,9 +265,9 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
         const layer = magicLayers.find(l => l.id === activeMagicLayerId);
         if (!layer) return;
 
-        let obj = canvas.getObjects().find((o: any) => o.data?.posterId === activeMagicLayerId);
+        let obj = canvas.getObjects().find((o: any) => o.data?.posterId === activeMagicLayerId) as FabricImage | undefined;
         if (!obj && layer.sourceObjectId) {
-          obj = canvas.getObjects().find((o: any) => o.data?.posterId === layer.sourceObjectId);
+          obj = canvas.getObjects().find((o: any) => o.data?.posterId === layer.sourceObjectId) as FabricImage | undefined;
         }
         if (!obj) return;
 
@@ -284,7 +286,60 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           layer.bounds.width,
           layer.bounds.height
         );
-        if (newMask) updateMagicLayerMask(activeMagicLayerId, newMask);
+
+        if (newMask) {
+          // 1. Immediate visual update on Fabric object bypassing store/toDataURL
+          const sourceCanvas = document.createElement('canvas');
+          sourceCanvas.width = layer.bounds.width;
+          sourceCanvas.height = layer.bounds.height;
+          const sCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+          if (sCtx) {
+            let processedSource: HTMLCanvasElement | OffscreenCanvas | string = layer.isolatedCanvas; // Fallback
+            if (layer.isBlurLayer && layer.blurredSource) {
+                processedSource = layer.blurredSource;
+            } else {
+                const temp = document.createElement('canvas');
+                temp.width = layer.sourceImageData.width;
+                temp.height = layer.sourceImageData.height;
+                temp.getContext('2d')?.putImageData(layer.sourceImageData, 0, 0);
+                processedSource = temp;
+            }
+
+            sCtx.drawImage(processedSource as HTMLCanvasElement, 0, 0);
+            sCtx.globalCompositeOperation = 'destination-in';
+
+            const maskCanvas = document.createElement('canvas');
+            maskCanvas.width = layer.bounds.width;
+            maskCanvas.height = layer.bounds.height;
+            const mCtx = maskCanvas.getContext('2d');
+            if (mCtx) {
+                const mData = mCtx.createImageData(layer.bounds.width, layer.bounds.height);
+                for (let i = 0; i < newMask.length; i++) {
+                    mData.data[i*4+3] = newMask[i];
+                }
+                mCtx.putImageData(mData, 0, 0);
+                sCtx.drawImage(maskCanvas, 0, 0);
+            }
+
+            // Directly update the image element
+            const imgElement = obj.getElement() as HTMLImageElement | HTMLCanvasElement;
+            if (imgElement instanceof HTMLCanvasElement) {
+                const ctx = imgElement.getContext('2d');
+                ctx?.clearRect(0, 0, imgElement.width, imgElement.height);
+                ctx?.drawImage(sourceCanvas, 0, 0);
+            } else {
+                obj.setElement(sourceCanvas);
+            }
+            canvas.requestRenderAll();
+          }
+
+          // 2. Throttled store update for persistence
+          if (brushUpdateThrottleTimer) clearTimeout(brushUpdateThrottleTimer);
+          brushUpdateThrottleTimer = setTimeout(() => {
+            updateMagicLayerMask(activeMagicLayerId, newMask);
+            brushUpdateThrottleTimer = null;
+          }, 100);
+        }
       }
     });
 
