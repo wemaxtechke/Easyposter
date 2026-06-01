@@ -65,17 +65,6 @@ const TOOLS: ToolButton[] = [
     ),
   },
   {
-    id: 'blur-brush',
-    label: 'Blur Brush',
-    shortcut: 'B',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="9" strokeDasharray="2 4" />
-        <path d="M12 7v10M7 12h10" opacity="0.5" />
-      </svg>
-    ),
-  },
-  {
     id: 'hand',
     label: 'Hand Tool',
     shortcut: 'H',
@@ -91,8 +80,7 @@ const TOOLS: ToolButton[] = [
 ];
 
 const BrushControls = () => {
-  const { brushSettings, setBrushSettings, activeMagicLayerId, setBlurAmount, magicLayers } = useMagicLayerStore();
-  const activeLayer = magicLayers.find(l => l.id === activeMagicLayerId);
+  const { brushSettings, setBrushSettings } = useMagicLayerStore();
 
   return (
     <div className="flex flex-col gap-3">
@@ -122,27 +110,6 @@ const BrushControls = () => {
           max="100"
           value={brushSettings.hardness * 100}
           onChange={(e) => setBrushSettings({ hardness: parseInt(e.target.value) / 100 })}
-          className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-[#1b7340]"
-        />
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-between items-center">
-          <label className="text-[10px] uppercase tracking-wider font-bold text-zinc-500">Blur</label>
-          <span className="text-[10px] font-mono text-zinc-400">{brushSettings.blurAmount}px</span>
-        </div>
-        <input
-          type="range"
-          min="1"
-          max="50"
-          value={brushSettings.blurAmount}
-          onChange={(e) => {
-            const val = parseInt(e.target.value);
-            setBrushSettings({ blurAmount: val });
-            if (activeMagicLayerId && activeLayer?.isBlurLayer) {
-              setBlurAmount(activeMagicLayerId, val);
-            }
-          }}
           className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-[#1b7340]"
         />
       </div>
@@ -211,13 +178,6 @@ export const PosterToolbar = memo(function PosterToolbar() {
                   {mode}
                 </button>
               ))}
-            </div>
-          )}
-
-          {/* Sub-menu for Blur Brush */}
-          {tool.id === 'blur-brush' && activeTool === 'blur-brush' && (
-            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 lg:bottom-auto lg:top-0 lg:mb-0 lg:right-full lg:mr-4 lg:left-auto lg:translate-x-0 flex flex-col gap-2 p-3 bg-white/95 dark:bg-zinc-900/95 border border-zinc-200 dark:border-zinc-800 rounded-md shadow-lg backdrop-blur-sm z-50 w-48">
-              <BrushControls />
             </div>
           )}
 

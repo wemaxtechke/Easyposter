@@ -255,7 +255,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
     canvas.on('mouse:move', (opt) => {
       const { activeTool: tool } = usePosterStore.getState();
-      if ((tool === 'magic-brush' || tool === 'blur-brush') && opt.e.buttons === 1) {
+      if (tool === 'magic-brush' && opt.e.buttons === 1) {
         const now = Date.now();
         if (now - lastBrushTime < 16) return; // ~60fps throttle
         lastBrushTime = now;
@@ -294,16 +294,11 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           sourceCanvas.height = layer.bounds.height;
           const sCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
           if (sCtx) {
-            let processedSource: HTMLCanvasElement | OffscreenCanvas | string = layer.isolatedCanvas; // Fallback
-            if (layer.isBlurLayer && layer.blurredSource) {
-                processedSource = layer.blurredSource;
-            } else {
-                const temp = document.createElement('canvas');
-                temp.width = layer.sourceImageData.width;
-                temp.height = layer.sourceImageData.height;
-                temp.getContext('2d')?.putImageData(layer.sourceImageData, 0, 0);
-                processedSource = temp;
-            }
+            const temp = document.createElement('canvas');
+            temp.width = layer.sourceImageData.width;
+            temp.height = layer.sourceImageData.height;
+            temp.getContext('2d')?.putImageData(layer.sourceImageData, 0, 0);
+            const processedSource = temp;
 
             sCtx.drawImage(processedSource as HTMLCanvasElement, 0, 0);
             sCtx.globalCompositeOperation = 'destination-in';
@@ -345,29 +340,11 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
     canvas.on('mouse:down', (opt) => {
       const { activeTool: tool } = usePosterStore.getState();
-      if (tool === 'magic-brush' || tool === 'blur-brush') {
-        const { activeMagicLayerId, brushSettings, magicLayers, updateMagicLayerMask, createBlurLayer } = useMagicLayerStore.getState();
+      if (tool === 'magic-brush') {
+        const { activeMagicLayerId, brushSettings, magicLayers, updateMagicLayerMask } = useMagicLayerStore.getState();
         const { selectedIds, elements } = usePosterStore.getState();
 
         let targetId = activeMagicLayerId;
-
-        if (tool === 'blur-brush' && !targetId && selectedIds.length === 1) {
-          const el = elements.find(e => e.id === selectedIds[0]);
-          if (el && (el.type === 'image' || el.type === '3d-text')) {
-             // Search if a blur layer already exists for this object
-             const existingBlur = magicLayers.find(l => l.sourceObjectId === el.id && l.isBlurLayer);
-             if (existingBlur) {
-               targetId = existingBlur.id;
-               useMagicLayerStore.getState().setActiveMagicLayer(targetId);
-             } else {
-               // Async create - first stroke might be lost or we can wait
-               const obj = canvas.getObjects().find((o: any) => o.data?.posterId === el.id);
-               const initialPos = obj ? obj.getLocalPointer(opt.e) : undefined;
-               void createBlurLayer(el.id, brushSettings.blurAmount, initialPos);
-               return;
-             }
-          }
-        }
 
         if (!targetId) return;
         const layer = magicLayers.find(l => l.id === targetId);
@@ -552,7 +529,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
     const isHand = activeTool === 'hand' || isSpacePanning;
 
-    const isBrushActive = activeTool === 'magic-brush' || activeTool === 'blur-brush';
+    const isBrushActive = activeTool === 'magic-brush';
 
     for (const obj of canvas.getObjects()) {
       const id = (obj as { data?: { posterId?: string } }).data?.posterId;
@@ -1583,7 +1560,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
   const showSelectionPopup = !!marqueeLocalPath && (activeTool === 'object-selection' || activeTool === 'direct');
   const isPanningActive = activeTool === 'hand' || isSpacePanning;
-  const isBrushActive = activeTool === 'magic-brush' || activeTool === 'blur-brush';
+  const isBrushActive = activeTool === 'magic-brush';
 
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const brushRadius = useMagicLayerStore((s) => s.brushSettings.radius);

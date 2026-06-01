@@ -338,10 +338,6 @@ export interface MagicLayer {
   blendMode?: GlobalCompositeOperation;
   createdAt: number;
   createdFrom?: 'sam' | 'manual';
-  isBlurLayer?: boolean;
-  blurAmount?: number;
-  /** Cached blurred source for performance */
-  blurredSource?: HTMLCanvasElement | OffscreenCanvas | string;
 }
 
 export interface MagicLayerStore {
@@ -352,13 +348,10 @@ export interface MagicLayerStore {
     hardness: number;
     strength: number;
     mode: 'add' | 'subtract';
-    blurAmount: number;
   };
   setBrushSettings(settings: Partial<MagicLayerStore['brushSettings']>): void;
   createMagicLayerFromSelection(): Promise<void>;
-  createBlurLayer(elementId: string, blurAmount: number, initialPos?: { x: number; y: number }): Promise<void>;
   updateMagicLayerMask(id: string, mask: Uint8ClampedArray): void;
-  setBlurAmount(id: string, amount: number): void;
   refineMagicLayer(id: string): void;
   deleteMagicLayer(id: string): void;
   duplicateMagicLayer(id: string): void;
@@ -382,9 +375,6 @@ export interface MagicLayerElement extends PosterElementBase {
   islands?: PosterPathPoint[][];
   featherRadius?: number;
   blendMode?: GlobalCompositeOperation;
-  isBlurLayer?: boolean;
-  blurAmount?: number;
-  blurredSource?: string;
 }
 
 export type PosterElement =
