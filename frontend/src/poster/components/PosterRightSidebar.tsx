@@ -559,6 +559,14 @@ function PathStyleControls({
           })
         }
       />
+      <PosterSlider
+        label={`Blur (${path.adjustBlur ?? 0})`}
+        min={0}
+        max={100}
+        step={1}
+        value={path.adjustBlur ?? 0}
+        onChange={(v) => updateElement(path.id, { adjustBlur: v })}
+      />
       <div className="flex flex-col gap-1">
         <button
           type="button"
@@ -711,6 +719,21 @@ function ShapeFillAndRoundnessControls({
               fillOpacity: Math.max(0, Math.min(1, v / 100)),
             })
           }
+        />
+      )}
+
+      {(shape.type === 'rect' ||
+        shape.type === 'circle' ||
+        shape.type === 'triangle' ||
+        shape.type === 'ellipse' ||
+        shape.type === 'polygon') && (
+        <PosterSlider
+          label={`Blur (${shape.adjustBlur ?? 0})`}
+          min={0}
+          max={100}
+          step={1}
+          value={shape.adjustBlur ?? 0}
+          onChange={(v) => updateElement(shape.id, { adjustBlur: v })}
         />
       )}
 

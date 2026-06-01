@@ -278,6 +278,8 @@ export interface PosterShapeElement extends PosterElementBase {
   stroke?: string;
   /** Fill opacity 0–1. Only affects the fill; outline (stroke) stays fully opaque. */
   fillOpacity?: number;
+  /** Optional backdrop blur intensity (0-100). */
+  adjustBlur?: number;
   /** Closed polygon vertices in local coordinates (top-left of bbox at 0,0). */
   polygonPoints?: { x: number; y: number }[];
 }
@@ -300,6 +302,8 @@ export interface PosterPathElement extends PosterElementBase {
   stroke?: string;
   strokeWidth?: number;
   fillOpacity?: number;
+  /** Optional backdrop blur intensity (0-100). */
+  adjustBlur?: number;
   /** Anchor points in local shape coordinates. */
   pathPoints: PosterPathPoint[];
   /** Optional additional sub-paths (islands/holes). */
