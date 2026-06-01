@@ -14,6 +14,7 @@ import {
   ActiveSelection,
   util,
 } from 'fabric';
+import type { TContext2D } from 'fabric';
 import { usePosterStore, type PathNodeSelection } from '../store/posterStore';
 import { useMagicLayerStore } from '../store/magicLayerStore';
 import { setFabricCanvasRef } from '../canvasRef';
@@ -66,6 +67,40 @@ import {
   exitFabricReflectSuppress,
   isFabricReflectSuppressed,
 } from '../posterFabricReflectGuard';
+
+/**
+ * Patch a Fabric object to support backdrop blur (glassmorphism).
+ */
+function setupBackdropBlur(obj: any) {
+  if (obj.__backdropBlurPatched) return;
+  obj.__backdropBlurPatched = true;
+
+  const origRender = obj._render;
+  obj._render = function (ctx: TContext2D) {
+    const blur = this.adjustBlur ?? 0;
+    if (blur > 0 && this.canvas) {
+      ctx.save();
+      // Draw the shape to clip the background blur
+      ctx.beginPath();
+      this._renderFill(ctx); // This calls the specific shape drawing logic
+      ctx.clip();
+
+      // Reset transform to draw the canvas background
+      const m = ctx.getTransform();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+      // Apply blur to the already rendered canvas content
+      // Note: This only blurs what's *already* drawn behind this object.
+      // Since we sync in z-index order, this works for elements lower in the stack.
+      ctx.filter = `blur(${blur / 2}px)`;
+      ctx.drawImage(ctx.canvas, 0, 0);
+
+      ctx.setTransform(m);
+      ctx.restore();
+    }
+    origRender.call(this, ctx);
+  };
+}
 
 /** Stable signature of text font stacks for poster font preload + Fabric sync gating. */
 function posterFontSignature(elements: PosterElement[]): string {
@@ -788,6 +823,12 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             creatingRef.current.delete(el.id);
             existing = undefined;
           }
+        }
+
+        if (existing && (el.type === 'rect' || el.type === 'circle' || el.type === 'triangle' || el.type === 'ellipse' || el.type === 'polygon' || el.type === 'path')) {
+          const shape = el as PosterShapeElement | PosterPathElement;
+          (existing as any).adjustBlur = shape.adjustBlur ?? 0;
+          existing.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
         }
 
         if (el.type === 'line' && existing) {
@@ -2669,28 +2710,34 @@ async function createFabricObject(
       const stroke = shape.stroke && (shape.strokeWidth ?? 0) > 0 ? shape.stroke : '';
       const strokeWidth = stroke ? (shape.strokeWidth ?? 2) : 0;
       const fillValue = await resolveShapeFill(shape, w, h);
+      let obj;
       if (rectHasPerCornerRadii(shape)) {
         const { tl, tr, br, bl } = perCornerRadiiFromShape(shape);
         const d = roundedRectPathD(w, h, tl, tr, br, bl);
-        return new Path(d, {
+        obj = new Path(d, {
           ...common,
           fill: fillValue,
           stroke,
           strokeWidth,
         });
+      } else {
+        const maxR = Math.min(w, h) / 2;
+        const rx = Math.min(Math.max(0, shape.rx ?? 0), maxR);
+        obj = new Rect({
+          ...common,
+          width: w,
+          height: h,
+          fill: fillValue,
+          stroke,
+          strokeWidth,
+          rx,
+          ry: rx,
+        });
       }
-      const maxR = Math.min(w, h) / 2;
-      const rx = Math.min(Math.max(0, shape.rx ?? 0), maxR);
-      return new Rect({
-        ...common,
-        width: w,
-        height: h,
-        fill: fillValue,
-        stroke,
-        strokeWidth,
-        rx,
-        ry: rx,
-      });
+      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
+      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
+      setupBackdropBlur(obj);
+      return obj;
     }
     case 'circle': {
       const shape = el as PosterShapeElement;
@@ -2699,13 +2746,17 @@ async function createFabricObject(
       const stroke = shape.stroke && (shape.strokeWidth ?? 0) > 0 ? shape.stroke : '';
       const strokeWidth = stroke ? (shape.strokeWidth ?? 2) : 0;
       const fillValue = await resolveShapeFill(shape, d, d);
-      return new Circle({
+      const obj = new Circle({
         ...common,
         radius: r,
         fill: fillValue,
         stroke,
         strokeWidth,
       });
+      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
+      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
+      setupBackdropBlur(obj);
+      return obj;
     }
     case 'triangle': {
       const shape = el as PosterShapeElement;
@@ -2714,7 +2765,7 @@ async function createFabricObject(
       const stroke = shape.stroke && (shape.strokeWidth ?? 0) > 0 ? shape.stroke : '';
       const strokeWidth = stroke ? (shape.strokeWidth ?? 2) : 0;
       const fillValue = await resolveShapeFill(shape, w, h);
-      return new Triangle({
+      const obj = new Triangle({
         ...common,
         width: w,
         height: h,
@@ -2722,6 +2773,10 @@ async function createFabricObject(
         stroke,
         strokeWidth,
       });
+      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
+      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
+      setupBackdropBlur(obj);
+      return obj;
     }
     case 'ellipse': {
       const shape = el as PosterShapeElement;
@@ -2730,7 +2785,7 @@ async function createFabricObject(
       const stroke = shape.stroke && (shape.strokeWidth ?? 0) > 0 ? shape.stroke : '';
       const strokeWidth = stroke ? (shape.strokeWidth ?? 2) : 0;
       const fillValue = await resolveShapeFill(shape, rx * 2, ry * 2);
-      return new Ellipse({
+      const obj = new Ellipse({
         ...common,
         rx,
         ry,
@@ -2738,6 +2793,10 @@ async function createFabricObject(
         stroke,
         strokeWidth,
       });
+      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
+      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
+      setupBackdropBlur(obj);
+      return obj;
     }
     case 'line': {
       const shape = el as PosterShapeElement;
@@ -2779,12 +2838,16 @@ async function createFabricObject(
       const stroke = shape.stroke && (shape.strokeWidth ?? 0) > 0 ? shape.stroke : '';
       const strokeWidth = stroke ? (shape.strokeWidth ?? 2) : 0;
       const fillValue = await resolveShapeFill(shape, w, h);
-      return new Polygon(pts, {
+      const obj = new Polygon(pts, {
         ...common,
         fill: fillValue,
         stroke,
         strokeWidth,
       });
+      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
+      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
+      setupBackdropBlur(obj);
+      return obj;
     }
     case 'path': {
       const pathEl = el as PosterPathElement;
@@ -2801,7 +2864,7 @@ async function createFabricObject(
         : posterShapeFillToFabric(fillNorm, size.w, size.h, fillOpacity);
       const stroke = pathEl.stroke && (pathEl.strokeWidth ?? 0) > 0 ? pathEl.stroke : '';
       const strokeWidth = stroke ? (pathEl.strokeWidth ?? 2) : 0;
-      return new Path(d, {
+      const obj = new Path(d, {
         ...common,
         fill: fillValue,
         stroke,
@@ -2809,6 +2872,12 @@ async function createFabricObject(
         fillRule: pathEl.fillRule ?? 'nonzero',
         objectCaching: false,
       });
+      (obj as any).adjustBlur = pathEl.adjustBlur ?? 0;
+      if ((pathEl.adjustBlur ?? 0) > 0) {
+        obj.set({ objectCaching: false });
+      }
+      setupBackdropBlur(obj);
+      return obj;
     }
     case 'text': {
       const t = el as PosterTextElement;
