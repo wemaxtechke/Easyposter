@@ -67,40 +67,7 @@ import {
   exitFabricReflectSuppress,
   isFabricReflectSuppressed,
 } from '../posterFabricReflectGuard';
-
-/**
- * Patch a Fabric object to support backdrop blur (glassmorphism).
- */
-function setupBackdropBlur(obj: any) {
-  if (obj.__backdropBlurPatched) return;
-  obj.__backdropBlurPatched = true;
-
-  const origRender = obj._render;
-  obj._render = function (ctx: TContext2D) {
-    const blur = this.adjustBlur ?? 0;
-    if (blur > 0 && this.canvas) {
-      ctx.save();
-      // Draw the shape to clip the background blur
-      ctx.beginPath();
-      this._renderFill(ctx); // This calls the specific shape drawing logic
-      ctx.clip();
-
-      // Reset transform to draw the canvas background
-      const m = ctx.getTransform();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-      // Apply blur to the already rendered canvas content
-      // Note: This only blurs what's *already* drawn behind this object.
-      // Since we sync in z-index order, this works for elements lower in the stack.
-      ctx.filter = `blur(${blur / 2}px)`;
-      ctx.drawImage(ctx.canvas, 0, 0);
-
-      ctx.setTransform(m);
-      ctx.restore();
-    }
-    origRender.call(this, ctx);
-  };
-}
+import { syncBackdropBlur } from '../posterBackdropBlur';
 
 /** Stable signature of text font stacks for poster font preload + Fabric sync gating. */
 function posterFontSignature(elements: PosterElement[]): string {
@@ -826,9 +793,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
         }
 
         if (existing && (el.type === 'rect' || el.type === 'circle' || el.type === 'triangle' || el.type === 'ellipse' || el.type === 'polygon' || el.type === 'path')) {
-          const shape = el as PosterShapeElement | PosterPathElement;
-          (existing as any).adjustBlur = shape.adjustBlur ?? 0;
-          existing.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
+          syncBackdropBlur(existing, canvas, el as PosterShapeElement | PosterPathElement);
         }
 
         if (el.type === 'line' && existing) {
@@ -1267,6 +1232,11 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             updates.fillRule = pathEl.fillRule ?? 'nonzero';
           }
           existing.set(updates);
+
+          if (el.type === 'rect' || el.type === 'circle' || el.type === 'triangle' || el.type === 'ellipse' || el.type === 'polygon' || el.type === 'path') {
+            syncBackdropBlur(existing, canvas, el as PosterShapeElement | PosterPathElement);
+          }
+
           if (
             el.type === 'rect' &&
             rectHasPerCornerRadii(el as PosterShapeElement) &&
@@ -2734,9 +2704,7 @@ async function createFabricObject(
           ry: rx,
         });
       }
-      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
-      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
-      setupBackdropBlur(obj);
+      syncBackdropBlur(obj, canvasRef.current!, shape);
       return obj;
     }
     case 'circle': {
@@ -2753,9 +2721,7 @@ async function createFabricObject(
         stroke,
         strokeWidth,
       });
-      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
-      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
-      setupBackdropBlur(obj);
+      syncBackdropBlur(obj, canvasRef.current!, shape);
       return obj;
     }
     case 'triangle': {
@@ -2773,9 +2739,7 @@ async function createFabricObject(
         stroke,
         strokeWidth,
       });
-      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
-      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
-      setupBackdropBlur(obj);
+      syncBackdropBlur(obj, canvasRef.current!, shape);
       return obj;
     }
     case 'ellipse': {
@@ -2793,9 +2757,7 @@ async function createFabricObject(
         stroke,
         strokeWidth,
       });
-      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
-      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
-      setupBackdropBlur(obj);
+      syncBackdropBlur(obj, canvasRef.current!, shape);
       return obj;
     }
     case 'line': {
@@ -2844,9 +2806,7 @@ async function createFabricObject(
         stroke,
         strokeWidth,
       });
-      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
-      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
-      setupBackdropBlur(obj);
+      syncBackdropBlur(obj, canvasRef.current!, shape);
       return obj;
     }
     case 'path': {
@@ -2872,11 +2832,7 @@ async function createFabricObject(
         fillRule: pathEl.fillRule ?? 'nonzero',
         objectCaching: false,
       });
-      (obj as any).adjustBlur = pathEl.adjustBlur ?? 0;
-      if ((pathEl.adjustBlur ?? 0) > 0) {
-        obj.set({ objectCaching: false });
-      }
-      setupBackdropBlur(obj);
+      syncBackdropBlur(obj, canvasRef.current!, pathEl);
       return obj;
     }
     case 'text': {
