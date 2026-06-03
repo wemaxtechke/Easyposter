@@ -70,51 +70,63 @@ export function captureBackdropBelowObject(canvas: Canvas, fabricObj: FabricObje
 
 /**
  * Build a Path2D or set a clip region on the context matching the element's shape.
+ * Should be called with 'this' bound to the Fabric object.
  */
-export function buildShapeClipPath(ctx: TContext2D, el: PosterShapeElement | PosterPathElement) {
+export function buildShapeClipPath(this: any, ctx: TContext2D, el: PosterShapeElement | PosterPathElement) {
+  const w = this.width;
+  const h = this.height;
+  const x = -w / 2;
+  const y = -h / 2;
+
   ctx.beginPath();
   if (el.type === 'rect') {
     const shape = el as PosterShapeElement;
-    const w = shape.width ?? 100;
-    const h = shape.height ?? 80;
     if (rectHasPerCornerRadii(shape)) {
       const { tl, tr, br, bl } = perCornerRadiiFromShape(shape);
       const d = roundedRectPathD(w, h, tl, tr, br, bl);
       const p2d = new Path2D(d);
+      const m = ctx.getTransform();
+      ctx.translate(x, y);
       ctx.clip(p2d);
+      ctx.setTransform(m);
       return;
     } else {
       const rx = shape.rx ?? 0;
-      (ctx as any).roundRect(0, 0, w, h, rx);
+      (ctx as any).roundRect(x, y, w, h, rx);
     }
   } else if (el.type === 'circle') {
-    const r = (el as PosterShapeElement).radius ?? 50;
-    ctx.arc(r, r, r, 0, Math.PI * 2);
+    const r = this.radius || (el as PosterShapeElement).radius || (w / 2);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
   } else if (el.type === 'ellipse') {
-    const rx = (el as PosterShapeElement).rx ?? 60;
-    const ry = (el as PosterShapeElement).ry ?? 40;
-    ctx.ellipse(rx, ry, rx, ry, 0, 0, Math.PI * 2);
+    const rx = this.rx || (el as PosterShapeElement).rx || (w / 2);
+    const ry = this.ry || (el as PosterShapeElement).ry || (h / 2);
+    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
   } else if (el.type === 'triangle') {
-    const w = (el as PosterShapeElement).width ?? 100;
-    const h = (el as PosterShapeElement).height ?? 100;
-    ctx.moveTo(w / 2, 0);
-    ctx.lineTo(w, h);
-    ctx.lineTo(0, h);
+    ctx.moveTo(0, y);
+    ctx.lineTo(x + w, y + h);
+    ctx.lineTo(x, y + h);
     ctx.closePath();
   } else if (el.type === 'polygon') {
-    const pts = (el as PosterShapeElement).polygonPoints;
+    const pts = this.points || (el as PosterShapeElement).polygonPoints;
     if (pts && pts.length > 0) {
-      ctx.moveTo(pts[0].x, pts[0].y);
+      const areCentered = !!this.points;
+      const ox = areCentered ? 0 : x;
+      const oy = areCentered ? 0 : y;
+      ctx.moveTo(pts[0].x + ox, pts[0].y + oy);
       for (let i = 1; i < pts.length; i++) {
-        ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.lineTo(pts[i].x + ox, pts[i].y + oy);
       }
       ctx.closePath();
     }
   } else if (el.type === 'path') {
-    const p = el as PosterPathElement;
-    const d = pathPointsToPathD(p.pathPoints, p.closed ?? false, p.islands);
+    const d = pathPointsToPathD(el.pathPoints, (el as PosterPathElement).closed ?? false, (el as PosterPathElement).islands);
     const p2d = new Path2D(d);
-    ctx.clip(p2d, p.fillRule ?? 'nonzero');
+    const m = ctx.getTransform();
+    if (this.pathOffset) {
+        ctx.translate(-this.pathOffset.x, -this.pathOffset.y);
+    }
+    ctx.clip(p2d, (el as PosterPathElement).fillRule ?? 'nonzero');
+    ctx.setTransform(m);
     return;
   }
   ctx.clip();
@@ -148,13 +160,7 @@ export function installBackdropBlur(obj: any) {
     ctx.save();
 
     // 1. Clip to shape
-    const w = this.width;
-    const h = this.height;
-    const offsetX = this._getLeftOffset();
-    const offsetY = this._getTopOffset();
-    ctx.translate(offsetX, offsetY);
-
-    buildShapeClipPath(ctx, el);
+    buildShapeClipPath.call(this, ctx, el);
 
     // 2. Draw blurred backdrop
     const m = ctx.getTransform();
@@ -166,14 +172,16 @@ export function installBackdropBlur(obj: any) {
     try {
       ctx.drawImage(backdrop, 0, 0);
     } catch (e) {
-      // Gracefully handle CORS tainted canvas errors
       console.warn("Backdrop blur skipped: Poster contains cross-origin content.");
     }
 
     // Optional white tint for frosted effect
     ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
     ctx.setTransform(m);
-    ctx.fillRect(-w, -h, w * 2, h * 2);
+
+    const w = this.width;
+    const h = this.height;
+    ctx.fillRect(-w/2, -h/2, w, h);
 
     ctx.restore();
 
