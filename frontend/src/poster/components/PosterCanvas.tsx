@@ -14,8 +14,8 @@ import {
   ActiveSelection,
   util,
 } from 'fabric';
-
-import { usePosterStore } from '../store/posterStore';
+import type { TContext2D } from 'fabric';
+import { usePosterStore, type PathNodeSelection } from '../store/posterStore';
 import { useMagicLayerStore } from '../store/magicLayerStore';
 import { setFabricCanvasRef } from '../canvasRef';
 import { ObjectSelectionEngine } from '../selection/ObjectSelectionEngine';
@@ -67,11 +67,40 @@ import {
   exitFabricReflectSuppress,
   isFabricReflectSuppressed,
 } from '../posterFabricReflectGuard';
-import {
-  registerBackdropBlurOnCanvas,
-  syncBackdropBlur,
-  posterElementSupportsBackdropBlur,
-} from '../posterBackdropBlur';
+
+/**
+ * Patch a Fabric object to support backdrop blur (glassmorphism).
+ */
+function setupBackdropBlur(obj: any) {
+  if (obj.__backdropBlurPatched) return;
+  obj.__backdropBlurPatched = true;
+
+  const origRender = obj._render;
+  obj._render = function (ctx: TContext2D) {
+    const blur = this.adjustBlur ?? 0;
+    if (blur > 0 && this.canvas) {
+      ctx.save();
+      // Draw the shape to clip the background blur
+      ctx.beginPath();
+      this._renderFill(ctx); // This calls the specific shape drawing logic
+      ctx.clip();
+
+      // Reset transform to draw the canvas background
+      const m = ctx.getTransform();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+      // Apply blur to the already rendered canvas content
+      // Note: This only blurs what's *already* drawn behind this object.
+      // Since we sync in z-index order, this works for elements lower in the stack.
+      ctx.filter = `blur(${blur / 2}px)`;
+      ctx.drawImage(ctx.canvas, 0, 0);
+
+      ctx.setTransform(m);
+      ctx.restore();
+    }
+    origRender.call(this, ctx);
+  };
+}
 
 /** Stable signature of text font stacks for poster font preload + Fabric sync gating. */
 function posterFontSignature(elements: PosterElement[]): string {
@@ -176,14 +205,21 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
   const pushHistory = usePosterStore((s) => s.pushHistory);
   const pathEditTargetId = usePosterStore((s) => s.pathEditTargetId);
   const setPathEditTargetId = usePosterStore((s) => s.setPathEditTargetId);
+  const activeIslandIndex = usePosterStore((s) => s.activeIslandIndex);
+  const setActiveIslandIndex = usePosterStore((s) => s.setActiveIslandIndex);
   const pathToolMode = usePosterStore((s) => s.pathToolMode);
   const setPathToolMode = usePosterStore((s) => s.setPathToolMode);
   const activePathId = usePosterStore((s) => s.activePathId);
   const setActivePathId = usePosterStore((s) => s.setActivePathId);
+  const selectedPathNode = usePosterStore((s) => s.selectedPathNode);
   const setSelectedPathNode = usePosterStore((s) => s.setSelectedPathNode);
   const setSelectedPathHandle = usePosterStore((s) => s.setSelectedPathHandle);
   const setMarqueePath = usePosterStore((s) => s.setMarqueePath);
-  const marqueePath = usePosterStore((s) => s.marqueePath);
+  const marqueeLocalPath = usePosterStore((s) => s.marqueeLocalPath);
+  const isSpacePanning = usePosterStore((s) => s.isSpacePanning);
+  const setCanvasPan = usePosterStore((s) => s.setCanvasPan);
+  const pathPointSize = usePosterStore((s) => s.pathPointSize);
+
   const initCanvas = useCallback(() => {
     const host = containerRef.current;
     if (!host) return;
@@ -213,7 +249,6 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       selectionColor: 'rgba(99, 102, 241, 0.15)',
     });
     canvasRef.current = canvas;
-    registerBackdropBlurOnCanvas(canvas);
     (canvas as any).posterStore = store;
     const detectionEngine = new DetectionEngine(canvas);
     (canvas as any).detectionEngine = detectionEngine;
@@ -250,15 +285,25 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       setSelected(getPosterIdsFromFabricActive(canvas));
     };
 
+    let lastBrushTime = 0;
+    let brushUpdateThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+
     canvas.on('mouse:move', (opt) => {
       const { activeTool: tool } = usePosterStore.getState();
       if (tool === 'magic-brush' && opt.e.buttons === 1) {
+        const now = Date.now();
+        if (now - lastBrushTime < 16) return; // ~60fps throttle
+        lastBrushTime = now;
+
         const { activeMagicLayerId, brushSettings, magicLayers, updateMagicLayerMask } = useMagicLayerStore.getState();
         if (!activeMagicLayerId) return;
         const layer = magicLayers.find(l => l.id === activeMagicLayerId);
         if (!layer) return;
 
-        const obj = canvas.getObjects().find((o: any) => o.data?.posterId === activeMagicLayerId);
+        let obj = canvas.getObjects().find((o: any) => o.data?.posterId === activeMagicLayerId) as FabricImage | undefined;
+        if (!obj && layer.sourceObjectId) {
+          obj = canvas.getObjects().find((o: any) => o.data?.posterId === layer.sourceObjectId) as FabricImage | undefined;
+        }
         if (!obj) return;
 
         const pointer = obj.getLocalPointer(opt.e);
@@ -276,7 +321,55 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           layer.bounds.width,
           layer.bounds.height
         );
-        if (newMask) updateMagicLayerMask(activeMagicLayerId, newMask);
+
+        if (newMask) {
+          // 1. Immediate visual update on Fabric object bypassing store/toDataURL
+          const sourceCanvas = document.createElement('canvas');
+          sourceCanvas.width = layer.bounds.width;
+          sourceCanvas.height = layer.bounds.height;
+          const sCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+          if (sCtx) {
+            const temp = document.createElement('canvas');
+            temp.width = layer.sourceImageData.width;
+            temp.height = layer.sourceImageData.height;
+            temp.getContext('2d')?.putImageData(layer.sourceImageData, 0, 0);
+            const processedSource = temp;
+
+            sCtx.drawImage(processedSource as HTMLCanvasElement, 0, 0);
+            sCtx.globalCompositeOperation = 'destination-in';
+
+            const maskCanvas = document.createElement('canvas');
+            maskCanvas.width = layer.bounds.width;
+            maskCanvas.height = layer.bounds.height;
+            const mCtx = maskCanvas.getContext('2d');
+            if (mCtx) {
+                const mData = mCtx.createImageData(layer.bounds.width, layer.bounds.height);
+                for (let i = 0; i < newMask.length; i++) {
+                    mData.data[i*4+3] = newMask[i];
+                }
+                mCtx.putImageData(mData, 0, 0);
+                sCtx.drawImage(maskCanvas, 0, 0);
+            }
+
+            // Directly update the image element
+            const imgElement = obj.getElement() as HTMLImageElement | HTMLCanvasElement;
+            if (imgElement instanceof HTMLCanvasElement) {
+                const ctx = imgElement.getContext('2d');
+                ctx?.clearRect(0, 0, imgElement.width, imgElement.height);
+                ctx?.drawImage(sourceCanvas, 0, 0);
+            } else {
+                obj.setElement(sourceCanvas);
+            }
+            canvas.requestRenderAll();
+          }
+
+          // 2. Throttled store update for persistence
+          if (brushUpdateThrottleTimer) clearTimeout(brushUpdateThrottleTimer);
+          brushUpdateThrottleTimer = setTimeout(() => {
+            updateMagicLayerMask(activeMagicLayerId, newMask);
+            brushUpdateThrottleTimer = null;
+          }, 100);
+        }
       }
     });
 
@@ -284,11 +377,18 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       const { activeTool: tool } = usePosterStore.getState();
       if (tool === 'magic-brush') {
         const { activeMagicLayerId, brushSettings, magicLayers, updateMagicLayerMask } = useMagicLayerStore.getState();
-        if (!activeMagicLayerId) return;
-        const layer = magicLayers.find(l => l.id === activeMagicLayerId);
+        const { selectedIds, elements } = usePosterStore.getState();
+
+        let targetId = activeMagicLayerId;
+
+        if (!targetId) return;
+        const layer = magicLayers.find(l => l.id === targetId);
         if (!layer) return;
 
-        const obj = canvas.getObjects().find((o: any) => o.data?.posterId === activeMagicLayerId);
+        let obj = canvas.getObjects().find((o: any) => o.data?.posterId === targetId);
+        if (!obj && layer.sourceObjectId) {
+          obj = canvas.getObjects().find((o: any) => o.data?.posterId === layer.sourceObjectId);
+        }
         if (!obj) return;
 
         const pointer = obj.getLocalPointer(opt.e);
@@ -307,7 +407,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           layer.bounds.width,
           layer.bounds.height
         );
-        if (newMask) updateMagicLayerMask(activeMagicLayerId, newMask);
+        if (newMask) updateMagicLayerMask(targetId, newMask);
         return;
       }
       if (tool === 'text' && !opt.target) {
@@ -318,21 +418,6 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           fontSize: 32,
           fontFamily: 'Arial, sans-serif',
           fill: '#000000',
-          left: ptr.x,
-          top: ptr.y,
-          scaleX: 1,
-          scaleY: 1,
-          angle: 0,
-          opacity: 1,
-        } as any);
-        usePosterStore.getState().setActiveTool('select');
-      } else if (tool === 'shape' && !opt.target) {
-        const ptr = canvas.getScenePoint(opt.e);
-        usePosterStore.getState().addElement({
-          type: 'rect',
-          fill: '#6366f1',
-          width: 100,
-          height: 100,
           left: ptr.x,
           top: ptr.y,
           scaleX: 1,
@@ -477,6 +562,10 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     const isDirect = activeTool === 'direct';
     const isObjSel = activeTool === 'object-selection';
 
+    const isHand = activeTool === 'hand' || isSpacePanning;
+
+    const isBrushActive = activeTool === 'magic-brush';
+
     for (const obj of canvas.getObjects()) {
       const id = (obj as { data?: { posterId?: string } }).data?.posterId;
       const el = id ? els.find((e) => e.id === id) : null;
@@ -484,21 +573,22 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       const lockAll = locked || readOnly || (id != null && id === pathEditTargetId);
 
       const updates: Record<string, unknown> = {
-        selectable: !readOnly,
-        evented: !isObjSel,
+        selectable: !readOnly && !isHand && !isBrushActive,
+        evented: !isObjSel && !isHand && !isBrushActive,
         lockMovementX: lockAll,
         lockMovementY: lockAll,
         lockScalingX: lockAll,
         lockScalingY: lockAll,
         lockRotation: lockAll,
-        hasControls: !isDirect && !lockAll,
-        hasBorders: !isDirect && !lockAll,
+        hasControls: !isDirect && !lockAll && !isBrushActive,
+        hasBorders: !isDirect && !lockAll && !isBrushActive,
       };
       if (obj instanceof Textbox) {
-        updates.editable = !readOnly && activeTool === 'text';
+        updates.editable = !readOnly && (activeTool === 'text' || activeTool === 'select');
       }
       obj.set(updates);
     }
+    canvas.selection = !isBrushActive && !readOnly;
     canvas.requestRenderAll();
   }, [readOnly, elements, pathEditTargetId, activeTool]);
 
@@ -566,30 +656,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
       }
 
       const key = e.key.toLowerCase();
-      if (key === 'v') {
-        e.preventDefault();
-        setActiveTool('select');
-      } else if (key === 'p') {
-        e.preventDefault();
-        setActiveTool('pen');
-        setPathToolMode(e.shiftKey ? 'pen-curve' : 'pen-straight');
-      } else if (key === 'a') {
-        e.preventDefault();
-        setActiveTool('direct');
-        setPathToolMode('direct');
-      } else if (key === 't') {
-        e.preventDefault();
-        setActiveTool('text');
-      } else if (key === 'u') {
-        e.preventDefault();
-        setActiveTool('shape');
-      } else if (key === 'w') {
-        e.preventDefault();
-        setActiveTool('object-selection');
-      } else if (key === 'c' && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        setPathToolMode('convert');
-      } else if (e.key === 'Escape') {
+      if (e.key === 'Escape') {
         setPathEditTargetId(null);
         setActivePathId(null);
         setSelectedPathNode(null);
@@ -650,7 +717,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           lockRotation: lockAll,
         });
         if (obj instanceof Textbox) {
-          obj.set({ editable: !readOnly });
+          const { activeTool } = usePosterStore.getState();
+          obj.set({ editable: !readOnly && (activeTool === 'text' || activeTool === 'select') });
         }
       }
       c.selection = true;
@@ -757,6 +825,12 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           }
         }
 
+        if (existing && (el.type === 'rect' || el.type === 'circle' || el.type === 'triangle' || el.type === 'ellipse' || el.type === 'polygon' || el.type === 'path')) {
+          const shape = el as PosterShapeElement | PosterPathElement;
+          (existing as any).adjustBlur = shape.adjustBlur ?? 0;
+          existing.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
+        }
+
         if (el.type === 'line' && existing) {
           const shape = el as PosterShapeElement;
           const wantsPath = !!shape.curveControl;
@@ -799,6 +873,24 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           !needsSrcRecreate &&
           !needsInPlaceImageEffects &&
           (data?.adjustmentsKey ?? '') !== newAdjKey;
+
+        const needsIsolatedSrcUpdate =
+          el.type === 'magic-layer' &&
+          !!existing &&
+          data?.imageSrc !== (el as MagicLayerElement).isolatedSrc;
+
+        if (existing && needsIsolatedSrcUpdate) {
+          const img = existing as FabricImage;
+          const magicEl = el as MagicLayerElement;
+          (img as { data?: Record<string, unknown> }).data = {
+            ...(img as { data?: Record<string, unknown> }).data,
+            imageSrc: magicEl.isolatedSrc,
+          };
+          img.setSrc(magicEl.isolatedSrc).then(() => {
+            canvasRef.current?.requestRenderAll();
+          });
+          // Continue to common updates below (pos, scale etc)
+        }
 
         if (existing && needsInPlaceImageEffects) {
           const img = existing as FabricImage;
@@ -920,8 +1012,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
         if (el.type === 'path' && existing && existing instanceof Path) {
           const p = el as PosterPathElement;
-          const d = pathPointsToPathD(p.pathPoints, p.closed ?? false);
-          const geomKey = `${p.closed ?? false}\0${d}`;
+          const d = pathPointsToPathD(p.pathPoints, p.closed ?? false, p.islands);
+          const geomKey = `${p.closed ?? false}\0${d}\0${p.fillRule ?? 'nonzero'}`;
           const prevGeomKey = (existing as { data?: { pathGeomKey?: string } }).data?.pathGeomKey;
           const geomChanged = prevGeomKey !== geomKey;
           const refLocal = p.pathPoints[0] ? { x: p.pathPoints[0].x, y: p.pathPoints[0].y } : null;
@@ -956,7 +1048,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           const fb = shapeFillFallbackForType('polygon');
           const stroke = p.stroke && (p.strokeWidth ?? 0) > 0 ? p.stroke : '';
           const strokeWidth = stroke ? (p.strokeWidth ?? 2) : 0;
-          const pathSize = getPathLocalSize(p.pathPoints);
+          const pathSize = getPathLocalSize(p.pathPoints, p.islands);
           const fill =
             fillNorm.type === 'pattern'
               ? existing.fill
@@ -974,6 +1066,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             stroke: stroke || lineStrokeFromFill({ type: 'solid', color: fb }, fb),
             strokeWidth,
             fill,
+            fillRule: p.fillRule ?? 'nonzero',
             objectCaching: false,
           });
           existing.setCoords();
@@ -996,7 +1089,6 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
               }));
             }
           }
-          syncBackdropBlur(existing, canvas, p);
           continue;
         }
 
@@ -1168,10 +1260,11 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             const fillOpacity = pathEl.fillOpacity ?? 1;
             const stroke = pathEl.stroke && (pathEl.strokeWidth ?? 0) > 0 ? pathEl.stroke : '';
             const strokeWidth = stroke ? (pathEl.strokeWidth ?? 2) : 0;
-            const size = getPathLocalSize(pathEl.pathPoints);
+            const size = getPathLocalSize(pathEl.pathPoints, pathEl.islands);
             updates.fill = posterShapeFillToFabric(fillNorm, size.w, size.h, fillOpacity);
             updates.stroke = stroke;
             updates.strokeWidth = strokeWidth;
+            updates.fillRule = pathEl.fillRule ?? 'nonzero';
           }
           existing.set(updates);
           if (
@@ -1186,9 +1279,6 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             existing.set({ left: el.left, top: el.top });
           }
           existing.setCoords();
-          if (posterElementSupportsBackdropBlur(el)) {
-            syncBackdropBlur(existing, canvas, el);
-          }
         } else if (needsSrcRecreate && existing) {
           posterFabricSrcRecreatePending.add(el.id);
           canvas.remove(existing);
@@ -1200,7 +1290,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           .find((o) => (o as { data?: { posterId?: string } }).data?.posterId === el.id);
         if (!stillExists && !creatingRef.current.has(el.id)) {
           creatingRef.current.add(el.id);
-          createFabricObject(el, readOnly, canvas)
+          createFabricObject(el, readOnly)
             .then((obj) => {
               creatingRef.current.delete(el.id);
               if (obj && canvasRef.current) {
@@ -1219,7 +1309,8 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                     ? `${(el as PosterPathElement).closed ?? false}\0${pathPointsToPathD(
                         (el as PosterPathElement).pathPoints,
                         (el as PosterPathElement).closed ?? false,
-                      )}`
+                        (el as PosterPathElement).islands
+                      )}\0${(el as PosterPathElement).fillRule ?? 'nonzero'}`
                     : undefined;
                 (obj as { data?: Record<string, unknown> }).data = {
                   posterId: el.id,
@@ -1468,9 +1559,9 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
 
   const objectSelectionMode = usePosterStore((s) => s.objectSelectionMode);
 
-  const marqueeLocalPath = usePosterStore((s) => s.marqueeLocalPath);
   const marqueeTargetId = usePosterStore((s) => s.marqueeTargetId);
   const updateMarqueePoint = usePosterStore((s) => s.updateMarqueePoint);
+  const confirmSelectionAsVector = usePosterStore((s) => s.confirmSelectionAsVector);
 
   const marqueePathD = useMemo(() => {
     if (!marqueeLocalPath || marqueeLocalPath.length === 0) return null;
@@ -1508,12 +1599,62 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
     }).join(' ');
   }, [marqueeLocalPath, marqueeTargetId, activeTool, objectSelectionMode, elements]);
 
+  const showSelectionPopup = !!marqueeLocalPath && (activeTool === 'object-selection' || activeTool === 'direct');
+  const isPanningActive = activeTool === 'hand' || isSpacePanning;
+  const isBrushActive = activeTool === 'magic-brush';
+
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const brushRadius = useMagicLayerStore((s) => s.brushSettings.radius);
+
   return (
     <div
       ref={viewportRef}
       className={`h-full min-h-0 w-full min-w-0 flex-1 ${isCompact ? 'overflow-hidden' : 'overflow-auto'}`}
-      style={{ touchAction: isCompact ? 'none' : 'auto' }}
+      style={{
+        touchAction: isCompact ? 'none' : 'auto',
+        cursor: isPanningActive ? 'grab' : (isBrushActive ? 'none' : 'auto'),
+      }}
+      onPointerMove={(e) => {
+        if (!isBrushActive) {
+          if (mousePos) setMousePos(null);
+          return;
+        }
+        const rect = zoomWrapperRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        setMousePos({
+          x: (e.clientX - rect.left) / scale,
+          y: (e.clientY - rect.top) / scale,
+        });
+      }}
+      onPointerLeave={() => setMousePos(null)}
       title="Ctrl+Scroll to zoom toward cursor"
+      onPointerDown={(e) => {
+        if (!isPanningActive) return;
+        const v = viewportRef.current;
+        if (!v) return;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const startPanX = canvasPan.x;
+        const startPanY = canvasPan.y;
+        v.setPointerCapture(e.pointerId);
+        v.style.cursor = 'grabbing';
+
+        const onPointerMove = (moveEvent: PointerEvent) => {
+          const dx = moveEvent.clientX - startX;
+          const dy = moveEvent.clientY - startY;
+          setCanvasPan({ x: startPanX + dx, y: startPanY + dy });
+        };
+
+        const onPointerUp = () => {
+          v.releasePointerCapture(e.pointerId);
+          v.style.cursor = '';
+          window.removeEventListener('pointermove', onPointerMove);
+          window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+      }}
     >
       <div
         className="relative"
@@ -1524,29 +1665,6 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
           minHeight: viewportHeight,
         }}
       >
-        {!readOnly && (
-          <div className="absolute left-3 top-3 z-40 flex items-center gap-1 rounded-md border border-zinc-300 bg-white/90 p-1 text-[11px] shadow dark:border-zinc-700 dark:bg-zinc-900/90">
-            {([
-              ['pen-straight', 'Straight Pen (P)'],
-              ['pen-curve', 'Curve Pen (Shift+P)'],
-              ['direct', 'Direct (A)'],
-              ['convert', 'Convert (C)'],
-            ] as const).map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setPathToolMode(mode)}
-                className={`rounded px-2 py-1 ${
-                  pathToolMode === mode
-                    ? 'bg-amber-500 text-white'
-                    : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
         <div
           ref={zoomWrapperRef}
           className="absolute shadow-xl ring-1 ring-zinc-200 dark:ring-zinc-700"
@@ -1694,6 +1812,40 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
               readOnly={readOnly}
             />
           )}
+          {isBrushActive && mousePos && (
+            <div
+              className="absolute pointer-events-none z-[100] border border-white/50 rounded-full bg-white/10 mix-blend-difference"
+              style={{
+                left: mousePos.x,
+                top: mousePos.y,
+                width: brushRadius * 2,
+                height: brushRadius * 2,
+                transform: 'translate(-50%, -50%)',
+                boxShadow: '0 0 0 1px rgba(0,0,0,0.5)',
+              }}
+            />
+          )}
+          {showSelectionPopup && (
+            <div
+              className="absolute bottom-6 left-1/2 z-[60] -translate-x-1/2 flex items-center gap-2 rounded-lg border border-zinc-200 bg-white/95 p-2 shadow-xl backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/95"
+              style={{ transform: `translateX(-50%) scale(${1/scale})`, transformOrigin: 'bottom center' }}
+            >
+              <button
+                type="button"
+                onClick={() => confirmSelectionAsVector()}
+                className="rounded bg-amber-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-600 active:scale-95 transition-transform"
+              >
+                Convert to Path
+              </button>
+              <button
+                type="button"
+                onClick={() => setMarqueePath(null)}
+                className="rounded border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 active:scale-95 transition-transform"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
           {pathOverlayEnabled && (
             <PathEditOverlay
               target={(pathEditTarget as PosterShapeElement | PosterPathElement | null) ?? null}
@@ -1736,19 +1888,24 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
                 const nextId = usePosterStore.getState().selectedIds[0] ?? null;
                 if (nextId) setActivePathId(nextId);
               }}
-              onSelectPathNode={(idx) => {
+              onSelectPathNode={(idx, islandIdx) => {
                 const id =
                   pathEditTarget?.type === 'path' ? pathEditTargetId : activePathId;
                 if (idx == null || !id) {
                   setSelectedPathNode(null);
                   setSelectedPathHandle(null);
+                  setActiveIslandIndex(null);
                   return;
                 }
-                setSelectedPathNode({ elementId: id, nodeIndex: idx });
+                setSelectedPathNode({ elementId: id, nodeIndex: idx, islandIndex: islandIdx });
                 setSelectedPathHandle(null);
+                setActiveIslandIndex(islandIdx ?? null);
               }}
+              activeIslandIndex={activeIslandIndex}
               fabricPathTransform={fabricPathTransform}
               fabricCanvasRef={canvasRef}
+              pathPointSize={pathPointSize}
+              selectedPathNode={selectedPathNode}
             />
           )}
         </div>
@@ -1769,10 +1926,11 @@ function rebuildPosterPerCornerPath(
   fabricPath.set({ left: shape.left, top: shape.top });
 }
 
-function getPathLocalSize(points: PosterPathPoint[]): { w: number; h: number } {
-  if (!points.length) return { w: 100, h: 100 };
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
+function getPathLocalSize(points: PosterPathPoint[], islands?: PosterPathPoint[][]): { w: number; h: number } {
+  const allPts = [points, ...(islands ?? [])].flat();
+  if (!allPts.length) return { w: 100, h: 100 };
+  const xs = allPts.map((p) => p.x);
+  const ys = allPts.map((p) => p.y);
   return {
     w: Math.max(1, Math.max(...xs) - Math.min(...xs)),
     h: Math.max(1, Math.max(...ys) - Math.min(...ys)),
@@ -1812,10 +1970,13 @@ type PathEditOverlayProps = {
     y: number,
     opts?: { smoothFromLocal?: { x: number; y: number } },
   ) => void;
-  onSelectPathNode: (nodeIndex: number | null) => void;
+  onSelectPathNode: (nodeIndex: number | null, islandIndex?: number) => void;
+  activeIslandIndex: number | null;
   fabricPathTransform?: FabricPathXform;
   /** Use Fabric scene space for clicks — matches path `calcTransformMatrix` (fixes drift vs hand-divided coords). */
   fabricCanvasRef: RefObject<Canvas | null>;
+  pathPointSize: number;
+  selectedPathNode: PathNodeSelection | null;
 };
 
 function PathEditOverlay({
@@ -1827,8 +1988,11 @@ function PathEditOverlay({
   activePath,
   onCreatePathAt,
   onSelectPathNode,
+  activeIslandIndex,
   fabricPathTransform,
   fabricCanvasRef,
+  pathPointSize,
+  selectedPathNode,
 }: PathEditOverlayProps) {
   const [dragging, setDragging] = useState<string | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -1862,6 +2026,13 @@ function PathEditOverlay({
   if (!target && !isPenMode) return null;
 
   const coordSource = target ?? (isPenMode ? activePath : null);
+  const activeSubPts = (() => {
+    if (activeIslandIndex != null && coordSource?.type === 'path') {
+      return (coordSource as PosterPathElement).islands?.[activeIslandIndex] ?? [];
+    }
+    return coordSource?.type === 'path' ? (coordSource as PosterPathElement).pathPoints : [];
+  })();
+
   const polygonPts =
     target?.type === 'polygon' ? (target.polygonPoints ?? []).map((p) => ({ x: p.x, y: p.y })) : [];
   const pathPts = target?.type === 'path' ? target.pathPoints : [];
@@ -1911,7 +2082,7 @@ function PathEditOverlay({
     return { x: xUnrot / safeSx, y: yUnrot / safeSy };
   };
 
-  const applyNode = (idx: number, p: { x: number; y: number }) => {
+  const applyNode = (idx: number, p: { x: number; y: number }, islandIdx?: number) => {
     if (!target) return;
     const local = toLocal(p);
     if (target.type === 'polygon') {
@@ -1927,10 +2098,44 @@ function PathEditOverlay({
       return;
     }
     if (target.type === 'path') {
-      const next = [...pathPts];
-      if (!next[idx]) return;
-      next[idx] = { ...next[idx], x: local.x, y: local.y };
-      onChange({ pathPoints: next });
+      const pTarget = target as PosterPathElement;
+      if (islandIdx != null && pTarget.islands && pTarget.islands[islandIdx]) {
+        const nextIslands = [...pTarget.islands];
+        const nextPts = [...nextIslands[islandIdx]];
+        const node = nextPts[idx];
+        if (!node) return;
+        const dx = local.x - node.x;
+        const dy = local.y - node.y;
+        const updated: PosterPathPoint = { ...node, x: local.x, y: local.y };
+        if (node.inX != null && node.inY != null) {
+          updated.inX = node.inX + dx;
+          updated.inY = node.inY + dy;
+        }
+        if (node.outX != null && node.outY != null) {
+          updated.outX = node.outX + dx;
+          updated.outY = node.outY + dy;
+        }
+        nextPts[idx] = updated;
+        nextIslands[islandIdx] = nextPts;
+        onChange({ islands: nextIslands });
+      } else {
+        const next = [...pathPts];
+        const node = next[idx];
+        if (!node) return;
+        const dx = local.x - node.x;
+        const dy = local.y - node.y;
+        const updated: PosterPathPoint = { ...node, x: local.x, y: local.y };
+        if (node.inX != null && node.inY != null) {
+          updated.inX = node.inX + dx;
+          updated.inY = node.inY + dy;
+        }
+        if (node.outX != null && node.outY != null) {
+          updated.outX = node.outX + dx;
+          updated.outY = node.outY + dy;
+        }
+        next[idx] = updated;
+        onChange({ pathPoints: next });
+      }
     }
   };
 
@@ -1938,7 +2143,8 @@ function PathEditOverlay({
     idx: number,
     kind: 'in' | 'out',
     p: { x: number; y: number },
-    altBreak: boolean
+    altBreak: boolean,
+    islandIdx?: number
   ) => {
     if (!target) return;
     const local = toLocal(p);
@@ -1949,25 +2155,50 @@ function PathEditOverlay({
       return;
     }
     if (target.type !== 'path') return;
-    const next = [...pathPts];
-    const node = next[idx];
-    if (!node) return;
-    const updated = kind === 'in'
-      ? { ...node, inX: local.x, inY: local.y }
-      : { ...node, outX: local.x, outY: local.y };
-    if (!altBreak) {
-      const dx = local.x - node.x;
-      const dy = local.y - node.y;
-      if (kind === 'in') {
-        updated.outX = node.x - dx;
-        updated.outY = node.y - dy;
-      } else {
-        updated.inX = node.x - dx;
-        updated.inY = node.y - dy;
+    const pTarget = target as PosterPathElement;
+    if (islandIdx != null && pTarget.islands && pTarget.islands[islandIdx]) {
+      const nextIslands = [...pTarget.islands];
+      const nextPts = [...nextIslands[islandIdx]];
+      const node = nextPts[idx];
+      if (!node) return;
+      const updated = kind === 'in'
+        ? { ...node, inX: local.x, inY: local.y }
+        : { ...node, outX: local.x, outY: local.y };
+      if (!altBreak) {
+        const dx = local.x - node.x;
+        const dy = local.y - node.y;
+        if (kind === 'in') {
+          updated.outX = node.x - dx;
+          updated.outY = node.y - dy;
+        } else {
+          updated.inX = node.x - dx;
+          updated.inY = node.y - dy;
+        }
       }
+      nextPts[idx] = updated;
+      nextIslands[islandIdx] = nextPts;
+      onChange({ islands: nextIslands });
+    } else {
+      const next = [...pathPts];
+      const node = next[idx];
+      if (!node) return;
+      const updated = kind === 'in'
+        ? { ...node, inX: local.x, inY: local.y }
+        : { ...node, outX: local.x, outY: local.y };
+      if (!altBreak) {
+        const dx = local.x - node.x;
+        const dy = local.y - node.y;
+        if (kind === 'in') {
+          updated.outX = node.x - dx;
+          updated.outY = node.y - dy;
+        } else {
+          updated.inX = node.x - dx;
+          updated.inY = node.y - dy;
+        }
+      }
+      next[idx] = updated;
+      onChange({ pathPoints: next });
     }
-    next[idx] = updated;
-    onChange({ pathPoints: next });
   };
 
   const finalizePenPoint = (anchorCanvas: { x: number; y: number }, endCanvas: { x: number; y: number }) => {
@@ -1975,6 +2206,22 @@ function PathEditOverlay({
     const dyCanvas = endCanvas.y - anchorCanvas.y;
     const dragged = Math.hypot(dxCanvas, dyCanvas) > 2 / scale;
     const smooth = isCurvePenMode || dragged;
+
+    if (activePath && activeIslandIndex != null) {
+      const anchorL = toLocal(anchorCanvas);
+      const endL = toLocal(endCanvas);
+      const smoothEndL = dragged ? endL : { x: anchorL.x + Math.max(12 / scale, 8), y: anchorL.y };
+      const islands = [...(activePath.islands ?? [])];
+      const pts = islands[activeIslandIndex] ?? [];
+      const nextPts = smooth
+        ? appendSmoothAnchor(pts, anchorL, smoothEndL)
+        : appendCornerAnchor(pts, anchorL.x, anchorL.y);
+      islands[activeIslandIndex] = nextPts;
+      onChange({ islands });
+      onSelectPathNode(nextPts.length - 1, activeIslandIndex);
+      return;
+    }
+
     if (!activePath) {
       if (smooth) {
         const vec = dragged
@@ -2000,9 +2247,10 @@ function PathEditOverlay({
       ? appendSmoothAnchor(activePath.pathPoints, anchorL, smoothEndL)
       : appendCornerAnchor(activePath.pathPoints, anchorL.x, anchorL.y);
     onChange({ pathPoints: nextPts, closed: false });
+    onSelectPathNode(nextPts.length - 1);
   };
 
-  const anchors: Array<{ key: string; x: number; y: number; idx: number }> = (() => {
+  const anchors: Array<{ key: string; x: number; y: number; idx: number; islandIdx?: number }> = (() => {
     if (target?.type === 'line') {
       return [
         { key: 'line-start', idx: 0, ...toCanvas({ x: target.x1 ?? 0, y: target.y1 ?? 0 }) },
@@ -2017,19 +2265,38 @@ function PathEditOverlay({
       }));
     }
     if (target?.type === 'path') {
-      return pathPts.map((p, idx) => ({
+      const pTarget = target as PosterPathElement;
+      const main = pathPts.map((p, idx) => ({
         key: `node-${idx}`,
         idx,
         ...toCanvas(p),
       }));
+      const islands = (pTarget.islands ?? []).flatMap((island, iIdx) =>
+        island.map((p, idx) => ({
+          key: `island-${iIdx}-node-${idx}`,
+          idx,
+          islandIdx: iIdx,
+          ...toCanvas(p),
+        }))
+      );
+      return [...main, ...islands];
     }
     // Pen with path edit Off: still show existing vertices on the active path.
     if (isPenMode && activePath) {
-      return activePath.pathPoints.map((p, idx) => ({
+      const main = activePath.pathPoints.map((p, idx) => ({
         key: `node-${idx}`,
         idx,
         ...toCanvas(p),
       }));
+      const islands = (activePath.islands ?? []).flatMap((island, iIdx) =>
+        island.map((p, idx) => ({
+          key: `island-${iIdx}-node-${idx}`,
+          idx,
+          islandIdx: iIdx,
+          ...toCanvas(p),
+        }))
+      );
+      return [...main, ...islands];
     }
     return [];
   })();
@@ -2042,15 +2309,18 @@ function PathEditOverlay({
           const pt = getLocalPoint(e);
           const pathForPenClose = target?.type === 'path' ? target : activePath;
 
-          if (isPenMode && pathForPenClose && pathForPenClose.pathPoints.length >= 3) {
-            const firstPt = pathForPenClose.pathPoints[0]!;
-            const first = toCanvas({ x: firstPt.x, y: firstPt.y });
-            const dist = Math.hypot(pt.x - first.x, pt.y - first.y);
-            if (dist <= 8 / scale) {
-              onChange({ closed: true });
-              onCommit();
-              setPenRubber(null);
-              return;
+          if (isPenMode && pathForPenClose) {
+            const subPts = activeIslandIndex != null ? (pathForPenClose.islands?.[activeIslandIndex] ?? []) : pathForPenClose.pathPoints;
+            if (subPts.length >= 3) {
+              const firstPt = subPts[0]!;
+              const first = toCanvas({ x: firstPt.x, y: firstPt.y });
+              const dist = Math.hypot(pt.x - first.x, pt.y - first.y);
+              if (dist <= 8 / scale) {
+                onCommit();
+                setPenRubber(null);
+                onSelectPathNode(null);
+                return;
+              }
             }
           }
 
@@ -2113,22 +2383,44 @@ function PathEditOverlay({
               local = { x: dragStartRef.current.x, y: local.y };
             }
           }
-          const [kind, idxRaw, handleKind] = dragging.split(':');
+          const [kind, idxRaw, handleKind, islandIdxRaw] = dragging.split(':');
           const idx = parseInt(idxRaw ?? '0', 10) || 0;
-          if (kind === 'node') applyNode(idx, local);
-          if (kind === 'handle') applyHandle(idx, handleKind === 'in' ? 'in' : 'out', local, e.altKey);
+          const rawIslandIdx = (islandIdxRaw && islandIdxRaw !== '') ? parseInt(islandIdxRaw, 10) : undefined;
+          const islandIdx = isNaN(rawIslandIdx as number) ? undefined : rawIslandIdx;
+
+          if (kind === 'node') applyNode(idx, local, islandIdx);
+          if (kind === 'handle') applyHandle(idx, handleKind === 'in' ? 'in' : 'out', local, e.altKey, islandIdx);
           if (kind === 'convert' && target?.type === 'path') {
-            const next = [...pathPts];
-            const n = next[idx];
-            if (!n) return;
-            const localPathPoint = toLocal(local);
-            const dx = localPathPoint.x - n.x;
-            const dy = localPathPoint.y - n.y;
-            n.inX = n.x - dx;
-            n.inY = n.y - dy;
-            n.outX = n.x + dx;
-            n.outY = n.y + dy;
-            onChange({ pathPoints: next });
+            const pTarget = target as PosterPathElement;
+            if (islandIdx != null && pTarget.islands && pTarget.islands[islandIdx]) {
+              const nextIslands = [...pTarget.islands];
+              const nextPts = [...nextIslands[islandIdx]];
+              const n = nextPts[idx];
+              if (!n) return;
+              const localPathPoint = toLocal(local);
+              const dx = localPathPoint.x - n.x;
+              const dy = localPathPoint.y - n.y;
+              n.inX = n.x - dx;
+              n.inY = n.y - dy;
+              n.outX = n.x + dx;
+              n.outY = n.y + dy;
+              nextPts[idx] = n;
+              nextIslands[islandIdx] = nextPts;
+              onChange({ islands: nextIslands });
+            } else {
+              const next = [...pathPts];
+              const n = next[idx];
+              if (!n) return;
+              const localPathPoint = toLocal(local);
+              const dx = localPathPoint.x - n.x;
+              const dy = localPathPoint.y - n.y;
+              n.inX = n.x - dx;
+              n.inY = n.y - dy;
+              n.outX = n.x + dx;
+              n.outY = n.y + dy;
+              next[idx] = n;
+              onChange({ pathPoints: next });
+            }
           }
         }}
         onPointerUp={(e) => {
@@ -2149,57 +2441,94 @@ function PathEditOverlay({
             className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
             aria-hidden
           >
-            <line
-              x1={penRubber.ax}
-              y1={penRubber.ay}
-              x2={penRubber.px}
-              y2={penRubber.py}
-              stroke="rgb(245 158 11)"
-              strokeWidth={Math.max(0.5, 1 / scale)}
-              strokeDasharray={`${4 / scale} ${4 / scale}`}
-            />
+            {(() => {
+              const lastNode = selectedPathNode && selectedPathNode.nodeIndex >= 0 ? activeSubPts[selectedPathNode.nodeIndex] : null;
+              const start = lastNode ? toCanvas(lastNode) : { x: penRubber.ax, y: penRubber.ay };
+              return (
+                <line
+                  x1={start.x}
+                  y1={start.y}
+                  x2={penRubber.px}
+                  y2={penRubber.py}
+                  stroke="rgb(245 158 11)"
+                  strokeWidth={Math.max(0.5, 1 / scale)}
+                  strokeDasharray={`${4 / scale} ${4 / scale}`}
+                />
+              );
+            })()}
           </svg>
         )}
         {anchors.map((a) => (
           <button
             key={a.key}
             type="button"
-            className="absolute h-3 w-3 -translate-x-1.5 -translate-y-1.5 rounded-full border border-white bg-amber-500 shadow"
-            style={{ left: a.x, top: a.y }}
+            className="absolute rounded-full border border-white bg-amber-500 shadow"
+            style={{
+              left: a.x,
+              top: a.y,
+              width: pathPointSize,
+              height: pathPointSize,
+              transform: 'translate(-50%, -50%)',
+            }}
             onPointerDown={(e) => {
               e.preventDefault();
               e.stopPropagation();
               if (toolMode === 'direct') {
-                if (target?.type === 'path') onSelectPathNode(a.idx);
+                onSelectPathNode(a.idx, a.islandIdx);
                 dragStartRef.current = { x: a.x, y: a.y };
-                setDragging(`node:${a.idx}`);
+                setDragging(`node:${a.idx}:main:${a.islandIdx ?? ''}`);
                 return;
               }
               if (toolMode === 'convert') {
-                if (target?.type === 'path') {
-                  onSelectPathNode(a.idx);
-                  const next = [...pathPts];
-                  const n = next[a.idx];
+                const p = (target?.type === 'path' ? target : activePath) as PosterPathElement;
+                if (p) {
+                  onSelectPathNode(a.idx, a.islandIdx);
+                  const isMain = a.islandIdx == null;
+                  const pts = isMain ? p.pathPoints : (p.islands?.[a.islandIdx!] ?? []);
+                  const n = pts[a.idx];
                   if (!n) return;
+
                   const has = n.inX != null || n.outX != null;
                   if (has && e.altKey) {
-                    next[a.idx] = { x: n.x, y: n.y };
-                    onChange({ pathPoints: next });
+                    const nextPts = [...pts];
+                    nextPts[a.idx] = { x: n.x, y: n.y };
+                    if (isMain) {
+                      onChange({ pathPoints: nextPts });
+                    } else {
+                      const nextIslands = [...(p.islands ?? [])];
+                      nextIslands[a.islandIdx!] = nextPts;
+                      onChange({ islands: nextIslands });
+                    }
                     onCommit();
                   } else {
                     if (!has) {
-                      next[a.idx] = { ...n, inX: n.x - 20, inY: n.y, outX: n.x + 20, outY: n.y };
-                      onChange({ pathPoints: next });
+                      const nextPts = [...pts];
+                      nextPts[a.idx] = { ...n, inX: n.x - 20, inY: n.y, outX: n.x + 20, outY: n.y };
+                      if (isMain) {
+                        onChange({ pathPoints: nextPts });
+                      } else {
+                        const nextIslands = [...(p.islands ?? [])];
+                        nextIslands[a.islandIdx!] = nextPts;
+                        onChange({ islands: nextIslands });
+                      }
                     }
                     dragStartRef.current = { x: a.x, y: a.y };
-                    setDragging(`convert:${a.idx}`);
+                    setDragging(`convert:${a.idx}:main:${a.islandIdx ?? ''}`);
                   }
                 }
                 return;
               }
-              if (isPenMode && (target?.type === 'path' || activePath) && a.idx === 0 && anchors.length >= 3) {
-                onChange({ closed: true });
-                onCommit();
+              if (isPenMode && (target?.type === 'path' || activePath)) {
+                const p = (target?.type === 'path' ? target : activePath) as PosterPathElement;
+                const subPts = a.islandIdx != null ? (p.islands?.[a.islandIdx] ?? []) : p.pathPoints;
+                if (a.idx === 0 && subPts.length >= 3) {
+                  onChange({ closed: true });
+                  onCommit();
+                  setDragging(null);
+                  setPenRubber(null);
+                  onSelectPathNode(null);
+                  return;
+                }
               }
             }}
             aria-label="Path anchor"
@@ -2208,8 +2537,14 @@ function PathEditOverlay({
         {target?.type === 'line' && target.curveControl && (
           <button
             type="button"
-            className="absolute h-2.5 w-2.5 -translate-x-1.5 -translate-y-1.5 rounded-full border border-white bg-cyan-500 shadow"
-            style={{ left: toCanvas(target.curveControl).x, top: toCanvas(target.curveControl).y }}
+            className="absolute rounded-full border border-white bg-cyan-500 shadow"
+            style={{
+              left: toCanvas(target.curveControl).x,
+              top: toCanvas(target.curveControl).y,
+              width: pathPointSize * 0.8,
+              height: pathPointSize * 0.8,
+              transform: 'translate(-50%, -50%)',
+            }}
             onPointerDown={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -2219,40 +2554,63 @@ function PathEditOverlay({
           />
         )}
         {target?.type === 'path' &&
-          pathPts.map((p, idx) => (
-            <div key={`handles-${idx}`}>
-              {p.inX != null && p.inY != null && (
-                <button
-                  type="button"
-                  className="absolute h-2.5 w-2.5 -translate-x-1.5 -translate-y-1.5 rounded-full border border-white bg-cyan-500 shadow"
-                  style={{ left: toCanvas({ x: p.inX, y: p.inY }).x, top: toCanvas({ x: p.inX, y: p.inY }).y }}
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onSelectPathNode(idx);
-                    if (toolMode === 'direct' || toolMode === 'convert') setDragging(`handle:${idx}:in`);
-                    dragStartRef.current = toCanvas({ x: p.inX!, y: p.inY! });
-                  }}
-                  aria-label="In handle"
-                />
-              )}
-              {p.outX != null && p.outY != null && (
-                <button
-                  type="button"
-                  className="absolute h-2.5 w-2.5 -translate-x-1.5 -translate-y-1.5 rounded-full border border-white bg-cyan-500 shadow"
-                  style={{ left: toCanvas({ x: p.outX, y: p.outY }).x, top: toCanvas({ x: p.outX, y: p.outY }).y }}
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onSelectPathNode(idx);
-                    if (toolMode === 'direct' || toolMode === 'convert') setDragging(`handle:${idx}:out`);
-                    dragStartRef.current = toCanvas({ x: p.outX!, y: p.outY! });
-                  }}
-                  aria-label="Out handle"
-                />
-              )}
-            </div>
-          ))}
+          [pathPts, ...( (target as PosterPathElement).islands ?? [])].map((subPts, iIdx) => {
+            const islandIdx = iIdx === 0 ? undefined : iIdx - 1;
+            return subPts.map((p, idx) => {
+              const isSelected =
+                selectedPathNode &&
+                selectedPathNode.elementId === target.id &&
+                selectedPathNode.nodeIndex === idx &&
+                selectedPathNode.islandIndex === islandIdx;
+              if (!isSelected) return null;
+              return (
+                <div key={`island-${iIdx}-handles-${idx}`}>
+                  {p.inX != null && p.inY != null && (
+                    <button
+                      type="button"
+                      className="absolute rounded-full border border-white bg-cyan-500 shadow"
+                      style={{
+                        left: toCanvas({ x: p.inX, y: p.inY }).x,
+                        top: toCanvas({ x: p.inX, y: p.inY }).y,
+                        width: pathPointSize * 0.8,
+                        height: pathPointSize * 0.8,
+                        transform: 'translate(-50%, -50%)',
+                      }}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onSelectPathNode(idx, islandIdx);
+                        if (toolMode === 'direct' || toolMode === 'convert') setDragging(`handle:${idx}:in:${islandIdx ?? ''}`);
+                        dragStartRef.current = toCanvas({ x: p.inX!, y: p.inY! });
+                      }}
+                      aria-label="In handle"
+                    />
+                  )}
+                  {p.outX != null && p.outY != null && (
+                    <button
+                      type="button"
+                      className="absolute rounded-full border border-white bg-cyan-500 shadow"
+                      style={{
+                        left: toCanvas({ x: p.outX, y: p.outY }).x,
+                        top: toCanvas({ x: p.outX, y: p.outY }).y,
+                        width: pathPointSize * 0.8,
+                        height: pathPointSize * 0.8,
+                        transform: 'translate(-50%, -50%)',
+                      }}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onSelectPathNode(idx, islandIdx);
+                        if (toolMode === 'direct' || toolMode === 'convert') setDragging(`handle:${idx}:out:${islandIdx ?? ''}`);
+                        dragStartRef.current = toCanvas({ x: p.outX!, y: p.outY! });
+                      }}
+                      aria-label="Out handle"
+                    />
+                  )}
+                </div>
+              );
+            });
+          })}
       </div>
     </div>
   );
@@ -2290,8 +2648,7 @@ function syncFabricStackOrder(canvas: Canvas, elements: PosterElement[]) {
 
 async function createFabricObject(
   el: PosterElement,
-  readOnly = false,
-  canvas: Canvas,
+  readOnly = false
 ): Promise<
   | InstanceType<typeof Rect>
   | InstanceType<typeof Path>
@@ -2328,12 +2685,6 @@ async function createFabricObject(
   const fs = toFabricShadow(el.shadow);
   if (fs) common.shadow = fs;
 
-  function applyBackdropBlurIfCreated(obj: InstanceType<typeof Path> | InstanceType<typeof Rect> | InstanceType<typeof Circle> | InstanceType<typeof Triangle> | InstanceType<typeof Ellipse> | InstanceType<typeof Polygon>) {
-    if (posterElementSupportsBackdropBlur(el)) {
-      syncBackdropBlur(obj, canvas, el);
-    }
-  }
-
   async function resolveShapeFill(
     shape: PosterShapeElement,
     w: number,
@@ -2359,22 +2710,20 @@ async function createFabricObject(
       const stroke = shape.stroke && (shape.strokeWidth ?? 0) > 0 ? shape.stroke : '';
       const strokeWidth = stroke ? (shape.strokeWidth ?? 2) : 0;
       const fillValue = await resolveShapeFill(shape, w, h);
+      let obj;
       if (rectHasPerCornerRadii(shape)) {
         const { tl, tr, br, bl } = perCornerRadiiFromShape(shape);
         const d = roundedRectPathD(w, h, tl, tr, br, bl);
-        const obj = new Path(d, {
+        obj = new Path(d, {
           ...common,
           fill: fillValue,
           stroke,
           strokeWidth,
         });
-        applyBackdropBlurIfCreated(obj);
-        return obj;
-      }
-      const maxR = Math.min(w, h) / 2;
-      const rx = Math.min(Math.max(0, shape.rx ?? 0), maxR);
-      {
-        const obj = new Rect({
+      } else {
+        const maxR = Math.min(w, h) / 2;
+        const rx = Math.min(Math.max(0, shape.rx ?? 0), maxR);
+        obj = new Rect({
           ...common,
           width: w,
           height: h,
@@ -2384,9 +2733,11 @@ async function createFabricObject(
           rx,
           ry: rx,
         });
-        applyBackdropBlurIfCreated(obj);
-        return obj;
       }
+      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
+      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
+      setupBackdropBlur(obj);
+      return obj;
     }
     case 'circle': {
       const shape = el as PosterShapeElement;
@@ -2395,17 +2746,17 @@ async function createFabricObject(
       const stroke = shape.stroke && (shape.strokeWidth ?? 0) > 0 ? shape.stroke : '';
       const strokeWidth = stroke ? (shape.strokeWidth ?? 2) : 0;
       const fillValue = await resolveShapeFill(shape, d, d);
-      {
-        const obj = new Circle({
-          ...common,
-          radius: r,
-          fill: fillValue,
-          stroke,
-          strokeWidth,
-        });
-        applyBackdropBlurIfCreated(obj);
-        return obj;
-      }
+      const obj = new Circle({
+        ...common,
+        radius: r,
+        fill: fillValue,
+        stroke,
+        strokeWidth,
+      });
+      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
+      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
+      setupBackdropBlur(obj);
+      return obj;
     }
     case 'triangle': {
       const shape = el as PosterShapeElement;
@@ -2414,18 +2765,18 @@ async function createFabricObject(
       const stroke = shape.stroke && (shape.strokeWidth ?? 0) > 0 ? shape.stroke : '';
       const strokeWidth = stroke ? (shape.strokeWidth ?? 2) : 0;
       const fillValue = await resolveShapeFill(shape, w, h);
-      {
-        const obj = new Triangle({
-          ...common,
-          width: w,
-          height: h,
-          fill: fillValue,
-          stroke,
-          strokeWidth,
-        });
-        applyBackdropBlurIfCreated(obj);
-        return obj;
-      }
+      const obj = new Triangle({
+        ...common,
+        width: w,
+        height: h,
+        fill: fillValue,
+        stroke,
+        strokeWidth,
+      });
+      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
+      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
+      setupBackdropBlur(obj);
+      return obj;
     }
     case 'ellipse': {
       const shape = el as PosterShapeElement;
@@ -2434,18 +2785,18 @@ async function createFabricObject(
       const stroke = shape.stroke && (shape.strokeWidth ?? 0) > 0 ? shape.stroke : '';
       const strokeWidth = stroke ? (shape.strokeWidth ?? 2) : 0;
       const fillValue = await resolveShapeFill(shape, rx * 2, ry * 2);
-      {
-        const obj = new Ellipse({
-          ...common,
-          rx,
-          ry,
-          fill: fillValue,
-          stroke,
-          strokeWidth,
-        });
-        applyBackdropBlurIfCreated(obj);
-        return obj;
-      }
+      const obj = new Ellipse({
+        ...common,
+        rx,
+        ry,
+        fill: fillValue,
+        stroke,
+        strokeWidth,
+      });
+      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
+      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
+      setupBackdropBlur(obj);
+      return obj;
     }
     case 'line': {
       const shape = el as PosterShapeElement;
@@ -2487,21 +2838,21 @@ async function createFabricObject(
       const stroke = shape.stroke && (shape.strokeWidth ?? 0) > 0 ? shape.stroke : '';
       const strokeWidth = stroke ? (shape.strokeWidth ?? 2) : 0;
       const fillValue = await resolveShapeFill(shape, w, h);
-      {
-        const obj = new Polygon(pts, {
-          ...common,
-          fill: fillValue,
-          stroke,
-          strokeWidth,
-        });
-        applyBackdropBlurIfCreated(obj);
-        return obj;
-      }
+      const obj = new Polygon(pts, {
+        ...common,
+        fill: fillValue,
+        stroke,
+        strokeWidth,
+      });
+      (obj as any).adjustBlur = shape.adjustBlur ?? 0;
+      obj.set({ objectCaching: (shape.adjustBlur ?? 0) <= 0 });
+      setupBackdropBlur(obj);
+      return obj;
     }
     case 'path': {
       const pathEl = el as PosterPathElement;
-      const d = pathPointsToPathD(pathEl.pathPoints, pathEl.closed ?? false);
-      const size = getPathLocalSize(pathEl.pathPoints);
+      const d = pathPointsToPathD(pathEl.pathPoints, pathEl.closed ?? false, pathEl.islands);
+      const size = getPathLocalSize(pathEl.pathPoints, pathEl.islands);
       const fillNorm = normalizePosterShapeFill(pathEl.fill, '#14b8a6');
       const fillOpacity = pathEl.fillOpacity ?? 1;
       const fillValue = fillNorm.type === 'pattern'
@@ -2513,17 +2864,20 @@ async function createFabricObject(
         : posterShapeFillToFabric(fillNorm, size.w, size.h, fillOpacity);
       const stroke = pathEl.stroke && (pathEl.strokeWidth ?? 0) > 0 ? pathEl.stroke : '';
       const strokeWidth = stroke ? (pathEl.strokeWidth ?? 2) : 0;
-      {
-        const obj = new Path(d, {
-          ...common,
-          fill: fillValue,
-          stroke,
-          strokeWidth,
-          objectCaching: false,
-        });
-        applyBackdropBlurIfCreated(obj);
-        return obj;
+      const obj = new Path(d, {
+        ...common,
+        fill: fillValue,
+        stroke,
+        strokeWidth,
+        fillRule: pathEl.fillRule ?? 'nonzero',
+        objectCaching: false,
+      });
+      (obj as any).adjustBlur = pathEl.adjustBlur ?? 0;
+      if ((pathEl.adjustBlur ?? 0) > 0) {
+        obj.set({ objectCaching: false });
       }
+      setupBackdropBlur(obj);
+      return obj;
     }
     case 'text': {
       const t = el as PosterTextElement;
@@ -2546,9 +2900,10 @@ async function createFabricObject(
       }
       const stroke = t.stroke && (t.strokeWidth ?? 0) > 0 ? t.stroke : undefined;
       const strokeWidth = stroke ? (t.strokeWidth ?? 2) : 0;
+      const { activeTool } = usePosterStore.getState();
       const text = new Textbox(t.text, {
         ...common,
-        editable: !readOnly,
+        editable: !readOnly && (activeTool === 'text' || activeTool === 'select'),
         fontSize: t.fontSize,
         fontFamily: t.fontFamily,
         fill: textFill,
