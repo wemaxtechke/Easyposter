@@ -954,7 +954,7 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             const y2 = shape.y2 ?? 80;
             const c = shape.curveControl!;
             const d = `M ${x1} ${y1} Q ${c.x} ${c.y} ${x2} ${y2}`;
-            (existing as unknown as { _setPath(p: string, adjust?: boolean): void })._setPath(d, false);
+            existing.set({ path: util.parsePathD(d) });
             const fb = shapeFillFallbackForType('line');
             existing.set({
               left: el.left,
@@ -995,12 +995,9 @@ export function PosterCanvas({ readOnly = false, viewportWidth, viewportHeight }
             y: m[1] * (pt.x - ox) + m[3] * (pt.y - oy) + m[5],
           });
           const refCanvasBefore = refLocal ? localToCanvasWith(refLocal, oldMatrix, oldOx, oldOy) : null;
-          const setPath = (existing as unknown as { _setPath(path: string, adjust?: boolean): void })._setPath.bind(
-            existing,
-          );
           // Rebuild without Fabric's position adjustment. `left/top` is our stable poster-space
           // origin; Fabric's internal pathOffset may change as points are added.
-          setPath(d, false);
+          existing.set({ path: util.parsePathD(d) });
           // Path geometry edits can stay visually stale when Fabric reuses object cache for
           // same-size bounds; force cache invalidation so handle drags update in real time.
           (existing as { dirty?: boolean }).dirty = true;
@@ -1892,8 +1889,7 @@ function rebuildPosterPerCornerPath(
   const h = shape.height ?? 80;
   const { tl, tr, br, bl } = perCornerRadiiFromShape(shape);
   const d = roundedRectPathD(w, h, tl, tr, br, bl);
-  (fabricPath as unknown as { _setPath(p: string, adjust?: boolean): void })._setPath(d, false);
-  fabricPath.set({ left: shape.left, top: shape.top });
+  fabricPath.set({ path: util.parsePathD(d), left: shape.left, top: shape.top });
 }
 
 function getPathLocalSize(points: PosterPathPoint[], islands?: PosterPathPoint[][]): { w: number; h: number } {
@@ -2612,7 +2608,7 @@ function syncFabricStackOrder(canvas: Canvas, elements: PosterElement[]) {
   if (!needsReorder) return;
 
   for (let i = 0; i < desired.length; i++) {
-    canvas.moveObjectTo(desired[i], i);
+    desired[i].moveTo(i);
   }
 }
 

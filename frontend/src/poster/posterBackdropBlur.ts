@@ -75,8 +75,9 @@ export function captureBackdropBelowObject(canvas: Canvas, fabricObj: FabricObje
 export function buildShapeClipPath(this: any, ctx: TContext2D, el: PosterShapeElement | PosterPathElement) {
   const w = this.width;
   const h = this.height;
-  const x = -w / 2;
-  const y = -h / 2;
+  const isCentered = this.originX === 'center' && this.originY === 'center';
+  const x = isCentered ? -w / 2 : 0;
+  const y = isCentered ? -h / 2 : 0;
 
   ctx.beginPath();
   if (el.type === 'rect') {
@@ -96,13 +97,13 @@ export function buildShapeClipPath(this: any, ctx: TContext2D, el: PosterShapeEl
     }
   } else if (el.type === 'circle') {
     const r = this.radius || (el as PosterShapeElement).radius || (w / 2);
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.arc(x + r, y + r, r, 0, Math.PI * 2);
   } else if (el.type === 'ellipse') {
     const rx = this.rx || (el as PosterShapeElement).rx || (w / 2);
     const ry = this.ry || (el as PosterShapeElement).ry || (h / 2);
-    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.ellipse(x + rx, y + ry, rx, ry, 0, 0, Math.PI * 2);
   } else if (el.type === 'triangle') {
-    ctx.moveTo(0, y);
+    ctx.moveTo(x + w / 2, y);
     ctx.lineTo(x + w, y + h);
     ctx.lineTo(x, y + h);
     ctx.closePath();
@@ -181,7 +182,10 @@ export function installBackdropBlur(obj: any) {
 
     const w = this.width;
     const h = this.height;
-    ctx.fillRect(-w/2, -h/2, w, h);
+    const isCentered = this.originX === 'center' && this.originY === 'center';
+    const rx = isCentered ? -w / 2 : 0;
+    const ry = isCentered ? -h / 2 : 0;
+    ctx.fillRect(rx, ry, w, h);
 
     ctx.restore();
 
