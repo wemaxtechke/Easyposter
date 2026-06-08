@@ -14,6 +14,7 @@ export const CLOUDINARY_UPLOAD_TIMEOUT_MS = Math.max(
 
 export const TEXTURE_FOLDER = process.env.CLOUDINARY_TEXTURE_FOLDER || '3d-text-editor/textures';
 export const FONT_FOLDER = process.env.CLOUDINARY_FONT_FOLDER || '3d-text-editor/fonts';
+export const HDR_FOLDER = process.env.CLOUDINARY_HDR_FOLDER || '3d-text-editor/hdrs';
 export const POSTER_TEMPLATE_FOLDER =
   process.env.CLOUDINARY_POSTER_TEMPLATE_FOLDER || '3d-text-editor/poster-templates';
 export const CUSTOM_ELEMENTS_FOLDER =

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listHdrs } from '../controllers/hdrController.js';
+import { listHdrs, uploadHdr, deleteHdr } from '../controllers/hdrController.js';
 import { getHealth } from '../controllers/healthController.js';
 import authRoutes from './authRoutes.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
@@ -38,6 +38,8 @@ const router = Router();
 
 router.use('/auth', authRoutes);
 router.get('/hdrs', listHdrs);
+router.post('/hdrs/upload', authenticateToken, requireAdmin, ...uploadHdr);
+router.delete('/hdrs/:id', authenticateToken, requireAdmin, deleteHdr);
 router.get('/health', getHealth);
 router.post('/magic-layers', authenticateToken, upload.single('image'), magicLayersFromPoster);
 router.post('/remove-bg', authenticateToken, upload.single('image'), removeBg);
