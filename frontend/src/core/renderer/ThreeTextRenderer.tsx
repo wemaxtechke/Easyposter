@@ -50,6 +50,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
   frontMetalness = 0.6,
   frontRoughness = 0.2,
   frontEnvMapIntensity = 2,
+  extrusionEnvMapIntensity = 2,
   extrusionGlass = false,
   frontTextureEnabled = false,
   frontTextureId = '',
@@ -257,6 +258,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
           frontMetalness,
           frontRoughness,
           frontEnvMapIntensity,
+          extrusionEnvMapIntensity,
           extrusionGlass,
           frontTextureEnabled,
           frontTextureId,
@@ -446,6 +448,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
     frontMetalness,
     frontRoughness,
     frontEnvMapIntensity,
+    extrusionEnvMapIntensity,
     extrusionGlass,
     frontTextureEnabled,
     frontTextureId,
@@ -608,10 +611,19 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
         if (extrusionGlass) {
           side.metalness = 1;
           side.roughness = 0.1;
+          side.envMapIntensity = 2.5;
         } else {
-          side.metalness = effectiveMetalness;
-          side.roughness = effectiveRoughness;
+          const sideRefl = computeFrontReflectivity(
+            extrusionEnvMapIntensity,
+            effectiveRoughness,
+            effectiveMetalness,
+            false
+          );
+          side.envMapIntensity = sideRefl.envMapIntensity;
+          side.metalness = sideRefl.metalness ?? effectiveMetalness;
+          side.roughness = sideRefl.roughness ?? effectiveRoughness;
         }
+        side.needsUpdate = true;
       }
     }
   }, [
@@ -622,6 +634,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
     ambientIntensity,
     effectiveMetalness,
     effectiveRoughness,
+    extrusionEnvMapIntensity,
     extrusionGlass,
   ]);
 

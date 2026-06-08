@@ -154,6 +154,7 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
   const inflate = useEditorStore((s) => s.inflate ?? 0);
   /** Front face only: scales HDR environment reflections (MeshPhysicalMaterial envMapIntensity). */
   const frontEnvMapIntensity = useEditorStore((s) => s.frontEnvMapIntensity ?? 2);
+  const extrusionEnvMapIntensity = useEditorStore((s) => s.extrusionEnvMapIntensity ?? 2);
   const frontTextureEnabled = useEditorStore((s) => s.frontTextureEnabled ?? false);
   const frontTextureId = useEditorStore((s) => s.frontTextureId ?? '');
   const textureIntensity = useEditorStore((s) => s.textureIntensity ?? 0.5);
@@ -1924,6 +1925,14 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                 />
                 {renderEngine === 'webgl' && (
                   <>
+                    <Slider
+                      label="Extrusion reflectiveness"
+                      value={extrusionEnvMapIntensity}
+                      min={0}
+                      max={4}
+                      step={0.05}
+                      onChange={(v) => setState({ extrusionEnvMapIntensity: v })}
+                    />
                     <Slider
                       label="Inflate (pillow)"
                       value={inflate}
