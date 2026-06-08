@@ -96,17 +96,35 @@ export const FRONT_REFLECTIVENESS_MAX = 4;
 export function computeFrontReflectivity(
   frontEnvMapIntensity: number | undefined,
   baseRoughness: number,
+  baseMetalness: number,
   hasRoughnessMap: boolean
-): { envMapIntensity: number; roughness?: number; glossT: number } {
+): { envMapIntensity: number; roughness?: number; metalness?: number; glossT: number } {
   const v = THREE.MathUtils.clamp(frontEnvMapIntensity ?? 2, 0, FRONT_REFLECTIVENESS_MAX);
-  const glossT = THREE.MathUtils.clamp((frontEnvMapIntensity ?? 2) / 2, 0, 1);
+  const val = frontEnvMapIntensity ?? 2;
+
+  // 0.0 to 2.0 -> glossT 0.0 to 1.0 (Matte to Standard)
+  // 2.0 to 4.0 -> extraT 0.0 to 1.0 (Standard to Mirror)
+  const glossT = THREE.MathUtils.clamp(val / 2, 0, 1);
+  const extraT = THREE.MathUtils.clamp((val - 2) / 2, 0, 1);
+
   if (hasRoughnessMap) {
     return { envMapIntensity: v, glossT };
   }
   const matteRough = 0.94;
-  const br = Math.max(0.04, baseRoughness);
-  const roughness = THREE.MathUtils.lerp(matteRough, br, glossT);
-  return { envMapIntensity: v, roughness, glossT };
+  const br = Math.max(0.001, baseRoughness);
+
+  let roughness: number;
+  let metalness: number;
+
+  if (val <= 2) {
+    roughness = THREE.MathUtils.lerp(matteRough, br, glossT);
+    metalness = THREE.MathUtils.lerp(0, baseMetalness, glossT);
+  } else {
+    roughness = THREE.MathUtils.lerp(br, 0.001, extraT);
+    metalness = THREE.MathUtils.lerp(baseMetalness, 1, extraT);
+  }
+
+  return { envMapIntensity: v, roughness, metalness, glossT };
 }
 
 export interface ThreeTextRendererProps {
@@ -581,9 +599,14 @@ export async function finalizeExtrudedMeshGroup(
       }
       const baseMetalness = useGlossyFront ? (frontMetalness ?? 0.6) : 0;
       const baseRoughness = useGlossyFront ? (frontRoughness ?? 0.2) : 0.35;
-      const effectiveFrontMetalness = loaded.metalnessMap ? 1 : baseMetalness;
-      const effectiveFrontRoughness = roughnessMapForMat ? 1 : baseRoughness;
-      const refl = computeFrontReflectivity(frontEnvMapIntensity, baseRoughness, !!roughnessMapForMat);
+      const refl = computeFrontReflectivity(
+        frontEnvMapIntensity,
+        baseRoughness,
+        baseMetalness,
+        !!roughnessMapForMat
+      );
+      const effectiveFrontMetalness = loaded.metalnessMap ? 1 : (refl.metalness ?? baseMetalness);
+      const effectiveFrontRoughness = roughnessMapForMat ? 1 : (refl.roughness ?? baseRoughness);
 
       const normalStrength = Math.max(0, Math.min(10, frontNormalStrength ?? 1));
       const normalScaleVal = (loaded.normalMap ? 1 : FRONT_NORMAL_SCALE) * normalStrength;
@@ -591,7 +614,7 @@ export async function finalizeExtrudedMeshGroup(
       const basePhys: Record<string, unknown> = {
         color: frontColor,
         metalness: effectiveFrontMetalness,
-        roughness: refl.roughness ?? effectiveFrontRoughness,
+        roughness: effectiveFrontRoughness,
         map: blendedMap,
         normalScale: normalScaleVec,
         ...frontOpFields,
@@ -616,12 +639,17 @@ export async function finalizeExtrudedMeshGroup(
       frontMaterial = new THREE.MeshPhysicalMaterial(basePhys as THREE.MeshPhysicalMaterialParameters);
     } else {
       loadedTexturesOut = null;
-      const glossyR = computeFrontReflectivity(frontEnvMapIntensity, frontRoughness ?? 0.2, false);
-      const flatR = computeFrontReflectivity(frontEnvMapIntensity, 0.35, false);
+      const glossyR = computeFrontReflectivity(
+        frontEnvMapIntensity,
+        frontRoughness ?? 0.2,
+        frontMetalness ?? 0.6,
+        false
+      );
+      const flatR = computeFrontReflectivity(frontEnvMapIntensity, 0.35, 0, false);
       frontMaterial = useGlossyFront
         ? new THREE.MeshPhysicalMaterial({
             color: frontColor,
-            metalness: frontMetalness ?? 0.6,
+            metalness: glossyR.metalness ?? (frontMetalness ?? 0.6),
             roughness: glossyR.roughness ?? (frontRoughness ?? 0.2),
             clearcoat: (frontClearcoat ?? 1) * glossyR.glossT,
             clearcoatRoughness: frontClearcoatRoughness ?? 0.1,
@@ -630,7 +658,7 @@ export async function finalizeExtrudedMeshGroup(
           })
         : new THREE.MeshStandardMaterial({
             color: frontColor,
-            metalness: 0,
+            metalness: flatR.metalness ?? 0,
             roughness: flatR.roughness ?? 0.35,
             envMapIntensity: flatR.envMapIntensity,
             ...frontOpFields,
@@ -638,12 +666,17 @@ export async function finalizeExtrudedMeshGroup(
     }
   } else {
     loadedTexturesOut = null;
-    const glossyR = computeFrontReflectivity(frontEnvMapIntensity, frontRoughness ?? 0.2, false);
-    const flatR = computeFrontReflectivity(frontEnvMapIntensity, 0.35, false);
+    const glossyR = computeFrontReflectivity(
+      frontEnvMapIntensity,
+      frontRoughness ?? 0.2,
+      frontMetalness ?? 0.6,
+      false
+    );
+    const flatR = computeFrontReflectivity(frontEnvMapIntensity, 0.35, 0, false);
     frontMaterial = useGlossyFront
       ? new THREE.MeshPhysicalMaterial({
           color: frontColor,
-          metalness: frontMetalness ?? 0.6,
+          metalness: glossyR.metalness ?? (frontMetalness ?? 0.6),
           roughness: glossyR.roughness ?? (frontRoughness ?? 0.2),
           clearcoat: (frontClearcoat ?? 1) * glossyR.glossT,
           clearcoatRoughness: frontClearcoatRoughness ?? 0.1,
@@ -652,7 +685,7 @@ export async function finalizeExtrudedMeshGroup(
         })
       : new THREE.MeshStandardMaterial({
           color: frontColor,
-          metalness: 0,
+          metalness: flatR.metalness ?? 0,
           roughness: flatR.roughness ?? 0.35,
           envMapIntensity: flatR.envMapIntensity,
           ...frontOpFields,

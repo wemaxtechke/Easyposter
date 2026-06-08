@@ -524,7 +524,8 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
     const hasRoughnessMap = !!loaded?.roughnessMap;
     const useGlossyFront = frontClearcoat != null && frontClearcoat > 0;
     const baseR = useGlossyFront ? (frontRoughness ?? 0.2) : 0.35;
-    const refl = computeFrontReflectivity(frontEnvMapIntensity, baseR, hasRoughnessMap);
+    const baseM = useGlossyFront ? (frontMetalness ?? 0.6) : 0;
+    const refl = computeFrontReflectivity(frontEnvMapIntensity, baseR, baseM, hasRoughnessMap);
     for (const idx of [0, 2] as const) {
       const mesh = group.children[idx] as THREE.Mesh | undefined;
       if (!mesh?.material) continue;
@@ -533,12 +534,13 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
       if (!m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial) continue;
       m.envMapIntensity = refl.envMapIntensity;
       if (refl.roughness !== undefined) m.roughness = refl.roughness;
+      if (refl.metalness !== undefined) m.metalness = refl.metalness;
       if (useGlossyFront && m.isMeshPhysicalMaterial) {
         m.clearcoat = (frontClearcoat ?? 1) * refl.glossT;
       }
       m.needsUpdate = true;
     }
-  }, [frontEnvMapIntensity, frontRoughness, frontClearcoat, customFrontTextureRoughnessUrl]);
+  }, [frontEnvMapIntensity, frontRoughness, frontMetalness, frontClearcoat, customFrontTextureRoughnessUrl]);
 
   // CPU-heavy params (intensity blending) â€” debounced to avoid lag while dragging sliders.
   const texIntensityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
