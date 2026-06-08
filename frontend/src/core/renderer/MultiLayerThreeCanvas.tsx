@@ -78,7 +78,8 @@ function applyInPlaceFrontReflectivity(group: THREE.Group, layer: EditorSceneLay
   const hasRoughnessMap = !!layer.customFrontTextureRoughnessUrl;
   const useGlossyFront = layer.frontClearcoat != null && layer.frontClearcoat > 0;
   const baseR = useGlossyFront ? (layer.frontRoughness ?? 0.2) : 0.35;
-  const refl = computeFrontReflectivity(layer.frontEnvMapIntensity, baseR, hasRoughnessMap);
+  const baseM = useGlossyFront ? (layer.frontMetalness ?? 0.6) : 0;
+  const refl = computeFrontReflectivity(layer.frontEnvMapIntensity, baseR, baseM, hasRoughnessMap);
   group.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
@@ -88,6 +89,7 @@ function applyInPlaceFrontReflectivity(group: THREE.Group, layer: EditorSceneLay
     if (!m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial) return;
     m.envMapIntensity = refl.envMapIntensity;
     if (refl.roughness !== undefined) m.roughness = refl.roughness;
+    if (refl.metalness !== undefined) m.metalness = refl.metalness;
     if (useGlossyFront && m.isMeshPhysicalMaterial) {
       m.clearcoat = (layer.frontClearcoat ?? 1) * refl.glossT;
     }
