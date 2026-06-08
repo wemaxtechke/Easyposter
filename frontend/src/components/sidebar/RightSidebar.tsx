@@ -246,6 +246,55 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
   const [cloudUploading, setCloudUploading] = useState(false);
   const [cloudUploadLabel, setCloudUploadLabel] = useState('');
   const cloudMapInputRef = useRef<HTMLInputElement>(null);
+
+  const [hdrUploading, setHdrUploading] = useState(false);
+  const [hdrUploadLabel, setHdrUploadLabel] = useState('');
+  const [hdrMsg, setHdrMsg] = useState<string | null>(null);
+  const hdrFileRef = useRef<HTMLInputElement>(null);
+
+  const handleHdrUpload = async () => {
+    const file = hdrFileRef.current?.files?.[0];
+    if (!file) {
+      setHdrMsg('Choose an .hdr file to upload.');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('label', hdrUploadLabel.trim() || file.name.replace(/\.hdr$/i, '') || 'HDR');
+    fd.append('hdr', file);
+    setHdrUploading(true);
+    setHdrMsg(null);
+    try {
+      const res = await apiFetch('/api/hdrs/upload', { method: 'POST', body: fd });
+      const j = (await res.json()) as { id: string; label: string; path: string; error?: string };
+      if (!res.ok) throw new Error(j.error || res.statusText);
+      setState({
+        hdrPresets: [j, ...(hdrPresets ?? [])],
+        environmentId: j.id,
+      });
+      setHdrUploadLabel('');
+      if (hdrFileRef.current) hdrFileRef.current.value = '';
+    } catch (e) {
+      setHdrMsg(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setHdrUploading(false);
+    }
+  };
+
+  const deleteHdrAsset = async (id: string) => {
+    setHdrMsg(null);
+    try {
+      const res = await apiFetch(`/api/hdrs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(j.error || res.statusText);
+      const next = (hdrPresets ?? []).filter((x) => x.id !== id);
+      setState({ hdrPresets: next });
+      if (environmentId === id) {
+        setState({ environmentId: next[0]?.id ?? 'studio' });
+      }
+    } catch (e) {
+      setHdrMsg(e instanceof Error ? e.message : 'Delete failed');
+    }
+  };
   const cloudRoughInputRef = useRef<HTMLInputElement>(null);
   const cloudNormalInputRef = useRef<HTMLInputElement>(null);
   const cloudMetalInputRef = useRef<HTMLInputElement>(null);
@@ -1118,17 +1167,40 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                     Environment
                   </label>
                   {hdrPresets && hdrPresets.length > 0 ? (
-                    <select
-                      value={environmentId}
-                      onChange={(e) => setState({ environmentId: e.target.value })}
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800"
-                    >
-                      {hdrPresets.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex flex-col gap-2">
+                      <select
+                        value={environmentId}
+                        onChange={(e) => setState({ environmentId: e.target.value })}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800"
+                      >
+                        {hdrPresets.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.label} {(p as any).isLocal ? '(local)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {isAdmin && (
+                        <div className="space-y-1">
+                          {hdrPresets
+                            .filter((p) => !(p as any).isLocal)
+                            .map((p) => (
+                              <div
+                                key={p.id}
+                                className="flex items-center justify-between gap-2 rounded border border-zinc-200 bg-zinc-50/50 px-2 py-1 text-[11px] dark:border-zinc-700 dark:bg-zinc-900/30"
+                              >
+                                <span className="truncate text-zinc-600 dark:text-zinc-400">{p.label}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteHdrAsset(p.id)}
+                                  className="text-zinc-400 hover:text-red-500"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
                       {renderEngine === 'webgl'
@@ -1137,6 +1209,39 @@ export const RightSidebar = memo(function RightSidebar({ force3dLayerUI = false 
                     </p>
                   )}
                 </div>
+
+                {isAdmin && renderEngine === 'webgl' && (
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                    <p className="mb-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                      HDR Library (admin)
+                    </p>
+                    <label className="mb-1 block text-xs text-zinc-600 dark:text-zinc-400">Name</label>
+                    <input
+                      type="text"
+                      value={hdrUploadLabel}
+                      onChange={(e) => setHdrUploadLabel(e.target.value)}
+                      placeholder="Label"
+                      className="mb-2 w-full rounded border border-zinc-200 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
+                    />
+                    <input
+                      ref={hdrFileRef}
+                      type="file"
+                      accept=".hdr"
+                      className="mb-2 block w-full text-xs file:mr-1 file:rounded file:border-0 file:bg-zinc-200 file:px-2 file:py-1 dark:file:bg-zinc-700"
+                    />
+                    <button
+                      type="button"
+                      disabled={hdrUploading}
+                      onClick={handleHdrUpload}
+                      className="w-full rounded-lg bg-accent-600 py-1.5 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+                    >
+                      {hdrUploading ? 'Uploading…' : 'Upload HDR'}
+                    </button>
+                    {hdrMsg && (
+                      <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-400">{hdrMsg}</p>
+                    )}
+                  </div>
+                )}
                 <Slider
                   label="Azimuth"
                   value={lighting.azimuth}

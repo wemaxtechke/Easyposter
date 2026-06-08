@@ -5,6 +5,7 @@ import {
   TEXTURE_FOLDER,
   FONT_FOLDER,
   POSTER_TEMPLATE_FOLDER,
+  HDR_FOLDER,
   CUSTOM_ELEMENTS_FOLDER,
   POSTER_PROJECT_FOLDER,
   USER_POSTER_IMAGE_FOLDER,
@@ -29,6 +30,17 @@ export async function uploadToCloudinary(buffer, mimetype) {
     ...uploadOpts,
     folder: TEXTURE_FOLDER,
     resource_type: 'auto',
+    use_filename: true,
+    unique_filename: true,
+  });
+}
+
+export async function uploadHdrToCloudinary(buffer, originalname) {
+  const dataUri = `data:application/octet-stream;base64,${buffer.toString('base64')}`;
+  return cloudinary.uploader.upload(dataUri, {
+    ...uploadOpts,
+    folder: HDR_FOLDER,
+    resource_type: 'raw',
     use_filename: true,
     unique_filename: true,
   });
