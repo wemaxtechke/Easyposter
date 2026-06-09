@@ -170,6 +170,7 @@ export interface ThreeTextRendererProps {
   frontMetalness?: number;
   frontRoughness?: number;
   frontEnvMapIntensity?: number;
+  extrusionEnvMapIntensity?: number;
   /** When true, extrusion is colorless/translucent and reflects environment (glossy glass). */
   extrusionGlass?: boolean;
   /** Front face texture: enabled. */
@@ -504,6 +505,7 @@ export async function finalizeExtrudedMeshGroup(
     frontMetalness = 0.6,
     frontRoughness = 0.2,
     frontEnvMapIntensity = 2,
+    extrusionEnvMapIntensity = 2,
     extrusionGlass = false,
     frontTextureEnabled = false,
     frontTextureId = '',
@@ -525,6 +527,13 @@ export async function finalizeExtrudedMeshGroup(
   const effectiveRoughness = Math.max(0.05, Math.min(1, roughness * (1.2 - filtersShine * 0.5)));
   const useGlossyFront = frontClearcoat != null && frontClearcoat > 0;
 
+  const sideRefl = computeFrontReflectivity(
+    extrusionEnvMapIntensity,
+    effectiveRoughness,
+    effectiveMetalness,
+    false
+  );
+
   const sideMaterial = new THREE.MeshPhysicalMaterial(
     extrusionGlass
       ? {
@@ -539,11 +548,11 @@ export async function finalizeExtrudedMeshGroup(
         }
       : {
           color: extrusionColor,
-          metalness: effectiveMetalness,
-          roughness: effectiveRoughness,
+          metalness: sideRefl.metalness ?? effectiveMetalness,
+          roughness: sideRefl.roughness ?? effectiveRoughness,
           clearcoat: 1,
           clearcoatRoughness: 0.1,
-          envMapIntensity: 2,
+          envMapIntensity: sideRefl.envMapIntensity,
         }
   );
 

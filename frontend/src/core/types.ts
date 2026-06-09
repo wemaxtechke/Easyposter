@@ -110,6 +110,8 @@ export interface EditorState {
   frontRoughness?: number;
   /** WebGL preset: front face envMapIntensity. */
   frontEnvMapIntensity?: number;
+  /** WebGL preset: extrusion envMapIntensity. */
+  extrusionEnvMapIntensity?: number;
   /** Front face texture: enabled when true. */
   frontTextureEnabled?: boolean;
   /** Front face texture preset id: 'grain' | 'rough' | 'brushed' or '' for none. */
@@ -264,6 +266,7 @@ export type EditorPerLayerFields = Pick<
   | 'frontMetalness'
   | 'frontRoughness'
   | 'frontEnvMapIntensity'
+  | 'extrusionEnvMapIntensity'
   | 'frontTextureEnabled'
   | 'frontTextureId'
   | 'textureIntensity'

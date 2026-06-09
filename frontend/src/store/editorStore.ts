@@ -100,6 +100,8 @@ const BASE_FLAT: EditorState = {
   bevelSize: WHITE_GOLD_STATE.bevelSize,
   extrusionDepth: WHITE_GOLD_STATE.extrusionDepth,
   lightIntensity: WHITE_GOLD_STATE.lightIntensity,
+  frontEnvMapIntensity: 2,
+  extrusionEnvMapIntensity: 2,
   inflate: 0,
   selectedCustomFontId: null,
   textureRepeatX: 2,
@@ -182,6 +184,7 @@ function toHistoryEntry(state: EditorState): EditorState {
       frontMetalness: state.frontMetalness,
       frontRoughness: state.frontRoughness,
       frontEnvMapIntensity: state.frontEnvMapIntensity,
+      extrusionEnvMapIntensity: state.extrusionEnvMapIntensity,
       frontTextureEnabled: state.frontTextureEnabled,
       frontTextureId: state.frontTextureId,
       textureIntensity: state.textureIntensity,
@@ -287,6 +290,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         frontMetalness: undefined,
         frontRoughness: undefined,
         frontEnvMapIntensity: 1,
+        extrusionEnvMapIntensity: 1,
         frontTextureEnabled: false,
         frontTextureId: '',
         textureIntensity: 0.5,
@@ -340,6 +344,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         frontRoughness: base.frontRoughness !== undefined ? base.frontRoughness : state.frontRoughness,
         frontEnvMapIntensity:
           base.frontEnvMapIntensity !== undefined ? base.frontEnvMapIntensity : state.frontEnvMapIntensity,
+        extrusionEnvMapIntensity:
+          base.extrusionEnvMapIntensity !== undefined ? base.extrusionEnvMapIntensity : state.extrusionEnvMapIntensity,
         frontTextureEnabled: base.frontTextureEnabled !== undefined ? base.frontTextureEnabled : state.frontTextureEnabled,
         frontTextureId: base.frontTextureId !== undefined ? base.frontTextureId : state.frontTextureId,
         textureIntensity: base.textureIntensity !== undefined ? base.textureIntensity : state.textureIntensity,
