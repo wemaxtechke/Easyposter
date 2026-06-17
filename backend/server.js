@@ -21,6 +21,9 @@ const ALLOWED_ORIGINS = process.env.CORS_ORIGINS
 
 const app = express();
 
+// Trust the reverse proxy (Render) to correctly identify user IPs for rate limiting
+app.set('trust proxy', 1);
+
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 app.use(

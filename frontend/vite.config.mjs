@@ -19,7 +19,21 @@ export default defineConfig(({ mode }) => {
 
   return {
     root: __dirname,
-    build: { outDir: 'dist' },
+    build: {
+      outDir: 'dist',
+      rollupOptions: {
+        output: {
+          manualChunks: (id) => {
+            if (id.includes('node_modules')) {
+              if (id.includes('three')) return 'vendor-three';
+              if (id.includes('fabric')) return 'vendor-fabric';
+              if (id.includes('transformers') || id.includes('xenova')) return 'vendor-ai';
+              return 'vendor';
+            }
+          },
+        },
+      },
+    },
     plugins: [react()],
     server: {
       proxy: apiProxy,
