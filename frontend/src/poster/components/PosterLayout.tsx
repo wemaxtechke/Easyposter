@@ -50,6 +50,41 @@ type TemplateAuthoringState = {
   editSource?: 'cloud';
 };
 
+function computePosterProjectPatch(base: any, current: any) {
+  const patch: any = {};
+  if (base.canvasWidth !== current.canvasWidth) patch.canvasWidth = current.canvasWidth;
+  if (base.canvasHeight !== current.canvasHeight) patch.canvasHeight = current.canvasHeight;
+  if (JSON.stringify(base.canvasBackground) !== JSON.stringify(current.canvasBackground)) {
+    patch.canvasBackground = current.canvasBackground;
+  }
+  const baseById = new Map(base.elements.map((e: any) => [e.id, e]));
+  const curById = new Map(current.elements.map((e: any) => [e.id, e]));
+  const removed = [];
+  for (const id of baseById.keys()) {
+    if (!curById.has(id)) removed.push(id);
+  }
+  if (removed.length) patch.removeElementIds = removed;
+  const upserts = [];
+  for (const [id, el] of curById.entries()) {
+    const prev = baseById.get(id);
+    if (!prev || JSON.stringify(prev) !== JSON.stringify(el)) {
+      upserts.push(el);
+    }
+  }
+  if (upserts.length) patch.upsertElements = upserts;
+  return patch;
+}
+
+function patchIsEmpty(patch: any) {
+  return !(
+    patch.canvasWidth !== undefined ||
+    patch.canvasHeight !== undefined ||
+    patch.canvasBackground !== undefined ||
+    (patch.removeElementIds?.length ?? 0) > 0 ||
+    (patch.upsertElements?.length ?? 0) > 0
+  );
+}
+
 export function PosterLayout() {
   const location = useLocation();
   const navigate = useNavigate();
