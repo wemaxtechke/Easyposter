@@ -98,7 +98,7 @@ export async function bakePosterImageCrop(
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('No 2D context');
   ctx.drawImage(bitmap, sx0, sy0, sw, sh, 0, 0, sw, sh);
-  const dataUrl = canvas.toDataURL('image/png');
+  const dataUrl = canvas.toDataURL('image/webp', 0.85);
 
   const signX = el.scaleX < 0 ? -1 : 1;
   const signY = el.scaleY < 0 ? -1 : 1;

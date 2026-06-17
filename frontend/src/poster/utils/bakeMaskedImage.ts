@@ -122,5 +122,5 @@ export async function bakeMaskedImage(params: BakeMaskParams): Promise<string> {
   );
   ctx.restore();
 
-  return canvas.toDataURL('image/png');
+  return canvas.toDataURL('image/webp', 0.85);
 }

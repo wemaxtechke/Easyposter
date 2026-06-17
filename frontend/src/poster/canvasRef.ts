@@ -38,9 +38,9 @@ export async function capturePosterThumbnail(
   let fabricDataUrl: string;
   try {
     fabricDataUrl = fabricCanvas.toDataURL({
-      format: 'png',
+      format: 'webp',
       multiplier: scale,
-      quality: 1,
+      quality: 0.8,
     });
   } catch {
     // Tainted canvas (e.g. cross-origin images without CORS) cannot be exported
@@ -65,5 +65,5 @@ export async function capturePosterThumbnail(
     img.src = fabricDataUrl;
   });
 
-  return temp.toDataURL('image/png');
+  return temp.toDataURL('image/webp', 0.8);
 }

@@ -194,7 +194,7 @@ export async function featherImageEdges(
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
 
-    const dataUrl = canvas.toDataURL('image/png');
+    const dataUrl = canvas.toDataURL('image/webp', 0.85);
     trimFadeCache();
     fadeCache.set(key, dataUrl);
     return dataUrl;
@@ -251,7 +251,7 @@ async function applyTextureOverlay(
   }
   ctx.globalAlpha = 1;
 
-  return c.toDataURL('image/png');
+  return c.toDataURL('image/webp', 0.85);
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {

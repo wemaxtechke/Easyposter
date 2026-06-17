@@ -35,7 +35,7 @@ function cropDataUrl(dataUrl: string, px: { minX: number; minY: number; maxX: nu
       }
       try {
         ctx.drawImage(img, px.minX, px.minY, w, h, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/png'));
+        resolve(canvas.toDataURL('image/webp', 0.85));
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Crop failed'));
       }

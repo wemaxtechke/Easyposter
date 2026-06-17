@@ -91,8 +91,8 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
       angle: sourceElement.angle,
       opacity: 1,
       sourceObjectId: marqueeTargetId,
-      isolatedSrc: isolatedCanvas.toDataURL('image/png'),
-      sourceSrc: sourceCanvas.toDataURL('image/png'),
+      isolatedSrc: isolatedCanvas.toDataURL('image/webp', 0.85),
+      sourceSrc: sourceCanvas.toDataURL('image/webp', 0.85),
       contourPath: marqueeLocalPath[0] || [],
       islands: marqueeLocalPath.length > 1 ? marqueeLocalPath : undefined,
     } as MagicLayerElement);
@@ -117,7 +117,7 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
     }));
 
     usePosterStore.getState().updateElement(id, {
-      isolatedSrc: isolatedCanvas.toDataURL('image/png'),
+      isolatedSrc: isolatedCanvas.toDataURL('image/webp', 0.85),
     } as Partial<MagicLayerElement>);
   },
 
@@ -167,7 +167,7 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
       sourceCtx!.putImageData(layer.sourceImageData, 0, 0);
 
       const subtractedCanvas = await DetectionEngine.subtractMaskFromImage(sourceCanvas, layer.alphaMask);
-      const newSrc = subtractedCanvas.toDataURL('image/png');
+      const newSrc = subtractedCanvas.toDataURL('image/webp', 0.85);
 
       const posterStore = usePosterStore.getState();
       const sourceElement = posterStore.elements.find(e => e.id === layer.sourceObjectId);
@@ -280,8 +280,8 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
           angle: sourceElement.angle,
           opacity: 1,
           sourceObjectId: elementId,
-          isolatedSrc: isolatedCanvas.toDataURL('image/png'),
-          sourceSrc: sourceCanvas.toDataURL('image/png'),
+          isolatedSrc: isolatedCanvas.toDataURL('image/webp', 0.85),
+          sourceSrc: sourceCanvas.toDataURL('image/webp', 0.85),
           contourPath: contours[0] || [],
           islands: contours.length > 1 ? contours : undefined,
         } as MagicLayerElement);
@@ -339,8 +339,8 @@ export const useMagicLayerStore = create<MagicLayerStore>((set, get) => ({
           angle: sourceElement.angle,
           opacity: 1,
           sourceObjectId: elementId,
-          isolatedSrc: isolatedCanvas.toDataURL('image/png'),
-          sourceSrc: sourceCanvas.toDataURL('image/png'),
+          isolatedSrc: isolatedCanvas.toDataURL('image/webp', 0.85),
+          sourceSrc: sourceCanvas.toDataURL('image/webp', 0.85),
           contourPath: contours[0] || [],
           islands: contours.length > 1 ? contours : undefined,
         } as MagicLayerElement);

@@ -49,7 +49,7 @@ function dataUrlFromDrawableSource(el: HTMLImageElement | HTMLCanvasElement): st
     const ctx = c.getContext('2d');
     if (!ctx) return null;
     ctx.drawImage(el, 0, 0);
-    const url = c.toDataURL('image/png');
+    const url = c.toDataURL('image/webp', 0.85);
     return url.startsWith('data:') ? url : null;
   } catch {
     return null;
@@ -78,7 +78,7 @@ function dataUrlFromObjectToCanvasElement(obj: object): string | null {
   try {
     const cel = o.toCanvasElement({ multiplier: 1 });
     if (!(cel instanceof HTMLCanvasElement)) return null;
-    const url = cel.toDataURL('image/png');
+    const url = cel.toDataURL('image/webp', 0.85);
     return url.startsWith('data:') ? url : null;
   } catch {
     return null;
@@ -93,7 +93,8 @@ function dataUrlFromCanvasLayerExport(canvas: Canvas, target: FabricImageLike): 
     const br =
       typeof withBounds.getBoundingRect === 'function' ? withBounds.getBoundingRect() : null;
     const opts: {
-      format: 'png';
+      format: 'webp' | 'png';
+      quality?: number;
       multiplier: number;
       filter: (o: unknown) => boolean;
       left?: number;
@@ -101,7 +102,8 @@ function dataUrlFromCanvasLayerExport(canvas: Canvas, target: FabricImageLike): 
       width?: number;
       height?: number;
     } = {
-      format: 'png',
+      format: 'webp',
+      quality: 0.85,
       multiplier: 1,
       filter: (o: unknown) => o === target,
     };
@@ -146,7 +148,7 @@ function extractDataUrlFromFabricCanvas(posterId: string, blobUrl: string): stri
 
   // Strategy 1: Fabric object toDataURL
   try {
-    const url = match.toDataURL({ format: 'png', multiplier: 1 });
+    const url = match.toDataURL({ format: 'webp', quality: 0.85, multiplier: 1 });
     if (typeof url === 'string' && url.startsWith('data:') && url.length > 100) return url;
   } catch { /* try next */ }
 
@@ -203,7 +205,7 @@ function convertBlobToDataUrlViaImage(blobUrl: string): Promise<string> {
         const ctx = c.getContext('2d');
         if (!ctx) return reject(new Error('Could not get 2D context'));
         ctx.drawImage(img, 0, 0);
-        const url = c.toDataURL('image/png');
+        const url = c.toDataURL('image/webp', 0.85);
         resolve(url.startsWith('data:') ? url : '');
       } catch (e) {
         reject(e);
