@@ -352,7 +352,7 @@ export function PosterLayout() {
 
       // Also save a private snapshot to "My stuff" (per-user library)
       const fabric = getFabricCanvasRef();
-      const thumb = fabric ? fabric.toDataURL({ format: 'png', multiplier: 0.35, quality: 0.8 }) : undefined;
+      const thumb = fabric ? fabric.toDataURL({ format: 'webp', multiplier: 0.35, quality: 0.8 }) : undefined;
       const editId =
         typeof sessionStorage !== 'undefined'
           ? sessionStorage.getItem('poster_edit_my_project_id')

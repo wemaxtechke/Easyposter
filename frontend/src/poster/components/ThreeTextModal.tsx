@@ -77,7 +77,7 @@ export function ThreeTextModal({
         setSendError('3D preview is still loading. Please wait a moment and try again.');
         return;
       }
-      const HI_RES_SCALE = 4;
+      const HI_RES_SCALE = 2;
       const dataUrl = api.toDataURL(HI_RES_SCALE);
       if (!dataUrl) {
         setSendError('Could not export the 3D image. Please try again.');

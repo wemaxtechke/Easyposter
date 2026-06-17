@@ -38,12 +38,23 @@ export async function removeBackground(input: File | Blob | string): Promise<str
   }
 
   const resultBlob = await res.blob();
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
-    r.onerror = () => reject(r.error ?? new Error('read failed'));
-    r.readAsDataURL(resultBlob);
-  });
+  const bitmap = await createImageBitmap(resultBlob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    bitmap.close();
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(r.error ?? new Error('read failed'));
+      r.readAsDataURL(resultBlob);
+    });
+  }
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return canvas.toDataURL('image/webp', 0.85);
 }
 
 function getImageDimensions(src: string): Promise<{ width: number; height: number }> {

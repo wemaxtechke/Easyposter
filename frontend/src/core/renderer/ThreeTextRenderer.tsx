@@ -353,7 +353,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
           if (!r) return '';
           if (!scale || scale <= 1) {
             r.render(scene, camera);
-            return r.domElement.toDataURL('image/png');
+            return r.domElement.toDataURL('image/webp', 0.85);
           }
           const prevSize = r.getSize(new THREE.Vector2());
           const prevRatio = r.getPixelRatio();
@@ -363,7 +363,7 @@ export const ThreeTextRenderer = memo(function ThreeTextRenderer({
           r.setSize(hiW, hiH, false);
           camera.updateProjectionMatrix();
           r.render(scene, camera);
-          const dataUrl = r.domElement.toDataURL('image/png');
+          const dataUrl = r.domElement.toDataURL('image/webp', 0.85);
           r.setPixelRatio(prevRatio);
           r.setSize(prevSize.x, prevSize.y, false);
           camera.updateProjectionMatrix();

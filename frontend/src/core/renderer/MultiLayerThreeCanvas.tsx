@@ -399,7 +399,7 @@ export const MultiLayerThreeCanvas = memo(function MultiLayerThreeCanvas({
         if (!r || !sc || !cam) return '';
         if (!scale || scale <= 1) {
           r.render(sc, cam);
-          return r.domElement.toDataURL('image/png');
+          return r.domElement.toDataURL('image/webp', 0.85);
         }
         const prevSize = r.getSize(new THREE.Vector2());
         const prevRatio = r.getPixelRatio();
@@ -409,7 +409,7 @@ export const MultiLayerThreeCanvas = memo(function MultiLayerThreeCanvas({
         r.setSize(hiW, hiH, false);
         cam.updateProjectionMatrix();
         r.render(sc, cam);
-        const dataUrl = r.domElement.toDataURL('image/png');
+        const dataUrl = r.domElement.toDataURL('image/webp', 0.85);
         r.setPixelRatio(prevRatio);
         r.setSize(prevSize.x, prevSize.y, false);
         cam.updateProjectionMatrix();
