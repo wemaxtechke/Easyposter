@@ -197,6 +197,7 @@ export async function updateMySavedPosterProject(req, res) {
       .lean();
     if (!existing) return res.status(404).json({ error: 'Not found' });
     const oldCloudinaryIds = existing.cloudinaryPublicIds ?? [];
+    let publicIds = [...oldCloudinaryIds];
 
     if (typeof thumbnail === 'string') {
       if (thumbnail.length > 500_000) {
@@ -210,6 +211,7 @@ export async function updateMySavedPosterProject(req, res) {
           const r = await uploadPosterProjectImage(thumbParsed.buffer, thumbParsed.mime);
           processedThumbnail = r.secure_url;
           if (r.public_id) publicIds.push(r.public_id);
+          updates.cloudinaryPublicIds = publicIds;
         }
       }
       updates.thumbnail = processedThumbnail;
@@ -228,12 +230,13 @@ export async function updateMySavedPosterProject(req, res) {
         return res.status(400).json({ error: 'Missing project with elements array' });
       }
       let processedProject = project;
-      let publicIds = [];
+      let projectPublicIds = [];
       if (hasCloudinaryConfig()) {
         try {
           const result = await uploadDataUrlsInPosterProject(project, 'project');
           processedProject = result.project;
-          publicIds = result.publicIds;
+          projectPublicIds = result.publicIds;
+          publicIds = [...new Set([...publicIds, ...projectPublicIds])];
         } catch (e) {
           const status = e?.statusCode === 400 ? 400 : 500;
           return res.status(status).json({
@@ -260,13 +263,14 @@ export async function updateMySavedPosterProject(req, res) {
       }
       const fullDoc = await SavedPosterProject.findOne({ _id: id, userId }).select('project').lean();
       let patched;
-      let publicIds;
+      let patchPublicIds;
       try {
-        ({ project: patched, publicIds } = await applyPosterProjectPatch(
+        ({ project: patched, publicIds: patchPublicIds } = await applyPosterProjectPatch(
           fullDoc?.project ?? {},
           patch,
-          oldCloudinaryIds
+          publicIds // Use current accumulated publicIds
         ));
+        publicIds = patchPublicIds;
       } catch (e) {
         const status = e?.statusCode === 400 ? 400 : 500;
         return res.status(status).json({ error: String(e?.message || e) });
