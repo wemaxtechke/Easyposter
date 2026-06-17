@@ -21,6 +21,7 @@ import { loadPosterProjectFromStorage, savePosterProjectToStorage } from '../pos
 import { loadPosterProjectFromCloud, savePosterProjectToCloud, savePosterProjectToMyCloud, updateMyPosterProject } from '../services/posterProjectsApi';
 import { syncLinkedUserPosterImagesAfterCloudSave } from '../services/userPosterImagesApi';
 import { resolveBlobUrlsInProject, applyProcessedProjectUrlsToStore } from '../utils/resolveBlobUrlsInProject';
+import { computePosterProjectPatch, patchIsEmpty } from '../utils/projectPatch';
 import { projectHasBlobImageUrls, warnIfPosterHasBlobRefs } from '../userTemplatesStorage';
 import { removePathAnchorAt } from '../path/penToolMath';
 import type { PosterTemplateCategory, PosterTemplateFieldBinding } from '../templateTypes';
