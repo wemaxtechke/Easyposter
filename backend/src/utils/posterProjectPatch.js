@@ -8,8 +8,9 @@ import { uploadDataUrlsInPosterProject, assertNoBlobImageRefsInProject } from '.
  *
  * @param {object} baseProject
  * @param {{canvasWidth?: number, canvasHeight?: number, canvasBackground?: any, removeElementIds?: string[], upsertElements?: any[]}} patch
+ * @param {string[]} [existingPublicIds=[]]
  */
-export async function applyPosterProjectPatch(baseProject, patch) {
+export async function applyPosterProjectPatch(baseProject, patch, existingPublicIds = []) {
   const next = JSON.parse(JSON.stringify(baseProject || {}));
   next.elements = Array.isArray(next.elements) ? next.elements : [];
 
@@ -36,16 +37,40 @@ export async function applyPosterProjectPatch(baseProject, patch) {
 
   // Upload data URLs only for elements we upserted by running the existing uploader
   // against a minimal project containing only those elements, then re-merge.
+  let patchPublicIds = [];
   if (upserts.length) {
     const mini = { canvasWidth: next.canvasWidth, canvasHeight: next.canvasHeight, elements: upserts };
     const { project: processedMini, publicIds } = await uploadDataUrlsInPosterProject(mini, 'project');
+    patchPublicIds = publicIds;
     const processedById = new Map((processedMini.elements || []).map((e) => [e.id, e]));
     next.elements = next.elements.map((e) => processedById.get(e.id) ?? e);
-    assertNoBlobImageRefsInProject(next);
-    return { project: next, publicIds };
   }
 
+  // Recalculate which Cloudinary IDs are still in use across the entire project.
+  // We include existingPublicIds (from untouched layers) plus any new ones from this patch.
+  const allInProject = new Set();
+  for (const el of next.elements) {
+    if (el.type === 'image') {
+      if (typeof el.src === 'string' && !el.src.startsWith('data:') && !el.src.startsWith('blob:'))
+        allInProject.add(el.src);
+      if (typeof el.originalSrc === 'string' && !el.originalSrc.startsWith('data:') && !el.originalSrc.startsWith('blob:'))
+        allInProject.add(el.originalSrc);
+    }
+    if (el.type === '3d-text' && typeof el.image === 'string' && !el.image.startsWith('data:') && !el.image.startsWith('blob:'))
+      allInProject.add(el.image);
+  }
+
+  const finalPublicIds = [
+    ...existingPublicIds,
+    ...patchPublicIds
+  ].filter(id => {
+    // A bit tricky: we store public IDs but elements have URLs.
+    // Most Cloudinary URLs contain the public ID.
+    // For simplicity, we keep any ID that appears as a substring in any element URL.
+    return Array.from(allInProject).some(url => url.includes(id));
+  });
+
   assertNoBlobImageRefsInProject(next);
-  return { project: next, publicIds: [] };
+  return { project: next, publicIds: Array.from(new Set(finalPublicIds)) };
 }
 

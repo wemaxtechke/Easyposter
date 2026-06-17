@@ -348,36 +348,45 @@ export function PosterLayout() {
       const processed = await savePosterProjectToCloud(toSave);
       applyProcessedProjectUrlsToStore(processed);
       void syncLinkedUserPosterImagesAfterCloudSave(processed).catch(() => {});
-      setCloudDirty(false);
 
       // Also save a private snapshot to "My stuff" (per-user library)
-      const fabric = getFabricCanvasRef();
-      const thumb = fabric ? fabric.toDataURL({ format: 'webp', multiplier: 0.35, quality: 0.8 }) : undefined;
-      const editId =
-        typeof sessionStorage !== 'undefined'
-          ? sessionStorage.getItem('poster_edit_my_project_id')
-          : null;
-      const editUpdatedAt =
-        typeof sessionStorage !== 'undefined'
-          ? sessionStorage.getItem('poster_edit_my_project_updated_at')
-          : null;
-      if (editId) {
-        let updated: Awaited<ReturnType<typeof updateMyPosterProject>> | undefined;
-        if (baselineBeforeSave) {
-          const base = JSON.parse(baselineBeforeSave) as typeof processed;
-          const patch = computePosterProjectPatch(base, processed);
-          if (!patchIsEmpty(patch)) {
-            try {
-              updated = await updateMyPosterProject({
-                id: editId,
-                patch,
-                thumbnail: thumb,
-                ifUnmodifiedSince: editUpdatedAt || undefined,
-              });
-            } catch (patchErr) {
-              const msg = patchErr instanceof Error ? patchErr.message : String(patchErr ?? '');
-              const blobStale = msg.includes('blob:') || msg.includes('browser-only');
-              if (!blobStale) throw patchErr;
+      try {
+        const fabric = getFabricCanvasRef();
+        const thumb = fabric ? fabric.toDataURL({ format: 'webp', multiplier: 0.35, quality: 0.8 }) : undefined;
+        const editId =
+          typeof sessionStorage !== 'undefined'
+            ? sessionStorage.getItem('poster_edit_my_project_id')
+            : null;
+        const editUpdatedAt =
+          typeof sessionStorage !== 'undefined'
+            ? sessionStorage.getItem('poster_edit_my_project_updated_at')
+            : null;
+        if (editId) {
+          let updated: Awaited<ReturnType<typeof updateMyPosterProject>> | undefined;
+          if (baselineBeforeSave) {
+            const base = JSON.parse(baselineBeforeSave) as typeof processed;
+            const patch = computePosterProjectPatch(base, processed);
+            if (!patchIsEmpty(patch)) {
+              try {
+                updated = await updateMyPosterProject({
+                  id: editId,
+                  patch,
+                  thumbnail: thumb,
+                  ifUnmodifiedSince: editUpdatedAt || undefined,
+                });
+              } catch (patchErr) {
+                const msg = patchErr instanceof Error ? patchErr.message : String(patchErr ?? '');
+                const blobStale = msg.includes('blob:') || msg.includes('browser-only');
+                if (!blobStale) throw patchErr;
+                updated = await updateMyPosterProject({
+                  id: editId,
+                  project: processed,
+                  thumbnail: thumb,
+                  ifUnmodifiedSince: editUpdatedAt || undefined,
+                });
+              }
+            } else {
+              // Patch diff empty (e.g. rare stringify edge) but user still saved — refresh snapshot + thumbnail.
               updated = await updateMyPosterProject({
                 id: editId,
                 project: processed,
@@ -386,7 +395,8 @@ export function PosterLayout() {
               });
             }
           } else {
-            // Patch diff empty (e.g. rare stringify edge) but user still saved — refresh snapshot + thumbnail.
+            // No baseline means we cannot build a trustworthy diff. Send full project so
+            // "My stuff" never misses changes (including flip state) on this save.
             updated = await updateMyPosterProject({
               id: editId,
               project: processed,
@@ -394,34 +404,30 @@ export function PosterLayout() {
               ifUnmodifiedSince: editUpdatedAt || undefined,
             });
           }
+          // Refresh conflict guard timestamp for next save when we performed an update.
+          if (updated && typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('poster_edit_my_project_updated_at', updated.updatedAt ?? '');
+          }
         } else {
-          // No baseline means we cannot build a trustworthy diff. Send full project so
-          // "My stuff" never misses changes (including flip state) on this save.
-          updated = await updateMyPosterProject({
-            id: editId,
+          const created = await savePosterProjectToMyCloud({
+            name: `Poster ${new Date().toLocaleString()}`,
             project: processed,
             thumbnail: thumb,
-            ifUnmodifiedSince: editUpdatedAt || undefined,
           });
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('poster_edit_my_project_id', created.id);
+            sessionStorage.setItem('poster_edit_my_project_updated_at', created.updatedAt ?? '');
+          }
         }
-        // Refresh conflict guard timestamp for next save when we performed an update.
-        if (updated && typeof sessionStorage !== 'undefined') {
-          sessionStorage.setItem('poster_edit_my_project_updated_at', updated.updatedAt ?? '');
-        }
-      } else {
-        const created = await savePosterProjectToMyCloud({
-          name: `Poster ${new Date().toLocaleString()}`,
-          project: processed,
-          thumbnail: thumb,
-        });
-        if (typeof sessionStorage !== 'undefined') {
-          sessionStorage.setItem('poster_edit_my_project_id', created.id);
-          sessionStorage.setItem('poster_edit_my_project_updated_at', created.updatedAt ?? '');
-        }
+      } catch (err) {
+        console.error('Failed to update "My stuff" snapshot:', err);
+        alert('Your project was auto-saved, but we could not update the "My stuff" snapshot. Please try again.');
+        return; // Keep dirty if My stuff failed
       }
 
       // Set baseline to current after successful save(s)
       lastCloudSaveRef.current = JSON.stringify(processed);
+      setCloudDirty(false);
     } finally {
       setSavingToCloud(false);
     }

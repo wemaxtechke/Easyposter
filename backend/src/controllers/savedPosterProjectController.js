@@ -199,7 +199,11 @@ export async function updateMySavedPosterProject(req, res) {
       let patched;
       let publicIds;
       try {
-        ({ project: patched, publicIds } = await applyPosterProjectPatch(fullDoc?.project ?? {}, patch));
+        ({ project: patched, publicIds } = await applyPosterProjectPatch(
+          fullDoc?.project ?? {},
+          patch,
+          oldCloudinaryIds
+        ));
       } catch (e) {
         const status = e?.statusCode === 400 ? 400 : 500;
         return res.status(status).json({ error: String(e?.message || e) });

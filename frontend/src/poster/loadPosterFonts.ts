@@ -1,6 +1,8 @@
-import type { PosterElement } from './types';
+import opentype from 'opentype.js';
+import type { PosterElement, Poster3DTextElement } from './types';
 import { apiUrl } from '../lib/apiUrl';
 import {
+  addCustomFont,
   ensureFontPreviewFromUrl,
   familyNameForPreviewKey,
   getAllCustomFonts,
@@ -23,17 +25,28 @@ function firstFamilyName(stack: string): string | null {
  */
 export async function loadFontsForPosterElements(elements: PosterElement[]): Promise<void> {
   const families = new Set<string>();
+  const customFontIds3D = new Set<string>();
+
   for (const el of elements) {
     if (el.type === 'text' && typeof el.fontFamily === 'string') {
       const f = el.fontFamily.trim();
       if (f) families.add(f);
     }
+    if (el.type === '3d-text') {
+      const e3d = el as Poster3DTextElement;
+      if (e3d.config?.selectedCustomFontId) {
+        customFontIds3D.add(e3d.config.selectedCustomFontId);
+      }
+      if (e3d.config?.text?.fontFamily) {
+        families.add(e3d.config.text.fontFamily);
+      }
+    }
   }
-  if (families.size === 0) return;
+  if (families.size === 0 && customFontIds3D.size === 0) return;
 
   const neededCustom = new Set([...families].filter((f) => f.startsWith('Editor3DCustom_')));
 
-  if (neededCustom.size > 0) {
+  if (neededCustom.size > 0 || customFontIds3D.size > 0) {
     let savedFonts: SavedFontEntry[] = [];
     try {
       const res = await fetch(apiUrl('/api/fonts'));
@@ -46,9 +59,20 @@ export async function loadFontsForPosterElements(elements: PosterElement[]): Pro
     for (const entry of savedFonts) {
       const key = `cloud-font-${entry.id}`;
       const fam = familyNameForPreviewKey(key);
-      if (!neededCustom.has(fam)) continue;
+      const isNeededFor3D = customFontIds3D.has(key);
+      if (!neededCustom.has(fam) && !isNeededFor3D) continue;
+
       try {
         await ensureFontPreviewFromUrl(key, entry.fontUrl);
+        if (isNeededFor3D && !getCustomFont(key)) {
+          const fres = await fetch(entry.fontUrl);
+          if (fres.ok) {
+            const buf = await fres.arrayBuffer();
+            const font = opentype.parse(buf);
+            const name = font.names?.fontFamily?.en || font.names?.fullName?.en || entry.label;
+            addCustomFont(key, name, font, entry.fontUrl);
+          }
+        }
       } catch {
         /* CORS / bad file */
       }

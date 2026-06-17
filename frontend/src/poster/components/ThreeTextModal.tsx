@@ -6,6 +6,7 @@ import { RightSidebar } from '../../components/sidebar/RightSidebar';
 import { LeftSidebar } from '../../components/sidebar/LeftSidebar';
 import { getToken } from '../../lib/api';
 import { serializeEditorState } from '../utils/serializeEditorState';
+import { loadFontsForPosterElements } from '../loadPosterFonts';
 import {
   replaceUserPosterImageFromDataUrl,
   uploadRasterToUserLibrary,
@@ -62,8 +63,12 @@ export function ThreeTextModal({
     if (typeof mode === 'object' && 'editId' in mode) {
       const el = usePosterStore.getState().elements.find((e) => e.id === mode.editId);
       if (el && el.type === '3d-text') {
-        loadPoster3DConfig(el.config);
-        setCanvasRemountKey((k) => k + 1);
+        const e3d = el as Poster3DTextElement;
+        // Ensure fonts are in cache before mounting 3D canvas
+        void loadFontsForPosterElements([e3d]).finally(() => {
+          loadPoster3DConfig(e3d.config);
+          setCanvasRemountKey((k) => k + 1);
+        });
       }
     }
   }, [mode, loadPoster3DConfig]);
