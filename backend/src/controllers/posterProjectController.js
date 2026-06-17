@@ -76,7 +76,7 @@ export async function savePosterProject(req, res) {
     const doc = await PosterProject.findOneAndUpdate(
       { userId },
       { project: processedProject, cloudinaryPublicIds: publicIds },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     const removed = diffRemovedIds(oldIds, publicIds);

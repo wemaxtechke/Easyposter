@@ -217,7 +217,7 @@ export async function updateMySavedPosterProject(req, res) {
     }
 
     const doc = await SavedPosterProject.findOneAndUpdate({ _id: id, userId }, updates, {
-      new: true,
+      returnDocument: 'after',
     }).lean();
     if (!doc) return res.status(404).json({ error: 'Not found' });
 
