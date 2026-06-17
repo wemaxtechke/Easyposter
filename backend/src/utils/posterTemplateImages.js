@@ -40,6 +40,14 @@ export function assertNoBlobImageRefsInProject(project) {
     if (el.type === '3d-text' && typeof el.image === 'string' && el.image.startsWith('blob:')) {
       problems.push(`3d-text ${id}`);
     }
+    if (el.type === 'magic-layer') {
+      if (typeof el.isolatedSrc === 'string' && el.isolatedSrc.startsWith('blob:')) {
+        problems.push(`magic-layer ${id} (isolatedSrc)`);
+      }
+      if (typeof el.sourceSrc === 'string' && el.sourceSrc.startsWith('blob:')) {
+        problems.push(`magic-layer ${id} (sourceSrc)`);
+      }
+    }
   }
   if (problems.length === 0) return;
   const err = new Error(
@@ -89,6 +97,24 @@ export async function uploadDataUrlsInPosterProject(project, target = 'template'
         const r = await upload(parsed.buffer, parsed.mime);
         el.image = r.secure_url;
         if (r.public_id) publicIds.push(r.public_id);
+      }
+    }
+    if (el.type === 'magic-layer') {
+      if (typeof el.isolatedSrc === 'string') {
+        const parsed = parseDataUrl(el.isolatedSrc);
+        if (parsed) {
+          const r = await upload(parsed.buffer, parsed.mime);
+          el.isolatedSrc = r.secure_url;
+          if (r.public_id) publicIds.push(r.public_id);
+        }
+      }
+      if (typeof el.sourceSrc === 'string') {
+        const parsed = parseDataUrl(el.sourceSrc);
+        if (parsed) {
+          const r = await upload(parsed.buffer, parsed.mime);
+          el.sourceSrc = r.secure_url;
+          if (r.public_id) publicIds.push(r.public_id);
+        }
       }
     }
   }
