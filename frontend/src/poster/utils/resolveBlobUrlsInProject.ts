@@ -63,14 +63,7 @@ function dataUrlFromFabricImageInternals(obj: object): string | null {
     _originalElement?: HTMLImageElement | HTMLCanvasElement;
     _element?: HTMLImageElement | HTMLCanvasElement;
   };
-  // Prioritize _originalElement and _element to get the raw source before canvas-level
-  // flips or object-cache transforms.
-  for (const el of [
-    anyObj._originalElement,
-    anyObj._element,
-    anyObj._filteredEl,
-    anyObj._cacheCanvas,
-  ]) {
+  for (const el of [anyObj._cacheCanvas, anyObj._filteredEl, anyObj._originalElement, anyObj._element]) {
     if (el instanceof HTMLCanvasElement || el instanceof HTMLImageElement) {
       const u = dataUrlFromDrawableSource(el);
       if (u) return u;
@@ -153,39 +146,15 @@ function extractDataUrlFromFabricCanvas(posterId: string, blobUrl: string): stri
 
   if (!match || !isFabricImageObject(match)) return null;
 
-  // Strategy 1: read raw internal HTMLImageElement / HTMLCanvasElement.
-  // This bypasses Fabric object scaling (flips) and rotation entirely.
+  // Strategy 1: Fabric object toDataURL
+  try {
+    const url = match.toDataURL({ format: 'webp', quality: 0.85, multiplier: 1 });
+    if (typeof url === 'string' && url.startsWith('data:') && url.length > 100) return url;
+  } catch { /* try next */ }
+
+  // Strategy 2: read raw internal HTMLImageElement / HTMLCanvasElement
   const fromInternals = dataUrlFromFabricImageInternals(match);
   if (fromInternals && fromInternals.length > 100) return fromInternals;
-
-  // Strategy 2: Fabric object toDataURL with temporary transform neutralization.
-  // Used if strategy 1 fails (e.g. cross-origin issues or complex filters).
-  try {
-    const obj = match as any;
-    const oldSX = obj.scaleX;
-    const oldSY = obj.scaleY;
-    const oldAngle = obj.angle;
-
-    // Neutralize transforms so the flip isn't baked into the image pixels
-    // (since flipHorizontal/flipVertical properties are already in the project JSON).
-    obj.set({
-      scaleX: Math.abs(oldSX),
-      scaleY: Math.abs(oldSY),
-      angle: 0,
-    });
-    obj.setCoords();
-
-    try {
-      const url = match.toDataURL({ format: 'webp', quality: 0.85, multiplier: 1 });
-      if (typeof url === 'string' && url.startsWith('data:') && url.length > 100) return url;
-    } finally {
-      // Always restore original transforms
-      obj.set({ scaleX: oldSX, scaleY: oldSY, angle: oldAngle });
-      obj.setCoords();
-    }
-  } catch {
-    /* try next */
-  }
 
   // Strategy 3: object.toCanvasElement → canvas.toDataURL
   const fromObjCanvas = dataUrlFromObjectToCanvasElement(match);
