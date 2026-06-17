@@ -15,6 +15,7 @@ import {
 import { getPosterProject, savePosterProject } from '../controllers/posterProjectController.js';
 import {
   listMySavedPosterProjects,
+  getMySavedPosterProject,
   createMySavedPosterProject,
   deleteMySavedPosterProject,
   updateMySavedPosterProject,
@@ -54,6 +55,7 @@ router.post('/poster-projects', authenticateToken, savePosterProject);
 
 // User-private saved posters ("My stuff")
 router.get('/my-poster-projects', authenticateToken, listMySavedPosterProjects);
+router.get('/my-poster-projects/:id', authenticateToken, getMySavedPosterProject);
 router.post('/my-poster-projects', authenticateToken, createMySavedPosterProject);
 router.delete('/my-poster-projects/:id', authenticateToken, deleteMySavedPosterProject);
 router.patch('/my-poster-projects/:id', authenticateToken, updateMySavedPosterProject);

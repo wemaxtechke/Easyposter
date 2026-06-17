@@ -15,6 +15,8 @@ const savedPosterProjectSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+savedPosterProjectSchema.index({ userId: 1, updatedAt: -1 });
+
 export default mongoose.models.SavedPosterProject ||
   mongoose.model('SavedPosterProject', savedPosterProjectSchema);
 

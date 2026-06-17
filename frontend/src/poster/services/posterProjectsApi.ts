@@ -9,7 +9,17 @@ export type SavedPosterProjectItem = {
   thumbnail?: string;
   createdAt?: string;
   updatedAt?: string;
-  project: PosterProject;
+  project?: PosterProject; // Optional because list API now excludes it
+};
+
+export type PaginatedSavedPosterProjects = {
+  items: SavedPosterProjectItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
 };
 
 /** Load the current user's auto-saved poster project from the cloud. */
@@ -38,15 +48,37 @@ export async function savePosterProjectToCloud(project: PosterProject): Promise<
   return data.project;
 }
 
-/** List the current user's saved poster snapshots ("My stuff") from the cloud. */
-export async function listMyPosterProjects(): Promise<SavedPosterProjectItem[]> {
-  const res = await apiFetch('/api/my-poster-projects');
+/** List the current user's saved poster snapshots ("My stuff") from the cloud. Support pagination. */
+export async function listMyPosterProjects(params?: {
+  page?: number;
+  limit?: number;
+}): Promise<PaginatedSavedPosterProjects> {
+  const sp = new URLSearchParams();
+  if (params?.page) sp.set('page', String(params.page));
+  if (params?.limit) sp.set('limit', String(params.limit));
+
+  const qs = sp.toString();
+  const res = await apiFetch(`/api/my-poster-projects${qs ? `?${qs}` : ''}`);
   if (!res.ok) {
-    if (res.status === 401) return [];
+    if (res.status === 401) return { items: [], pagination: { page: 1, limit: 24, total: 0, pages: 0 } };
     throw new Error(`Failed to load saved posters (${res.status})`);
   }
-  const data = (await res.json().catch(() => ({}))) as { items?: SavedPosterProjectItem[] };
-  return Array.isArray(data.items) ? data.items : [];
+  const data = (await res.json().catch(() => ({}))) as PaginatedSavedPosterProjects;
+  return {
+    items: Array.isArray(data.items) ? data.items : [],
+    pagination: data.pagination || { page: 1, limit: 24, total: 0, pages: 0 },
+  };
+}
+
+/** Fetch a single saved poster project by ID (including full project data). */
+export async function getMySavedPosterProject(id: string): Promise<SavedPosterProjectItem> {
+  const res = await apiFetch(`/api/my-poster-projects/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    throw new Error(`Failed to load project (${res.status})`);
+  }
+  const data = (await res.json().catch(() => ({}))) as { item?: SavedPosterProjectItem };
+  if (!data.item) throw new Error('Invalid response from server');
+  return data.item;
 }
 
 /** Save a snapshot to the user's private cloud "My stuff". */

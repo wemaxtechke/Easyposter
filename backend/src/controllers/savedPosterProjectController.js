@@ -16,11 +16,22 @@ export async function listMySavedPosterProjects(req, res) {
   if (!isMongoReady()) return res.status(503).json({ error: 'MongoDB not connected.' });
   const userId = req.userId;
   if (!userId) return res.status(401).json({ error: 'Authentication required.' });
+
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 24));
+  const skip = (page - 1) * limit;
+
   try {
-    const docs = await SavedPosterProject.find({ userId })
-      .sort({ updatedAt: -1 })
-      .limit(50)
-      .lean();
+    const [docs, total] = await Promise.all([
+      SavedPosterProject.find({ userId })
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select('-project') // Exclude heavy project data from the list
+        .lean(),
+      SavedPosterProject.countDocuments({ userId }),
+    ]);
+
     res.json({
       items: docs.map((d) => ({
         id: String(d._id),
@@ -28,8 +39,38 @@ export async function listMySavedPosterProjects(req, res) {
         thumbnail: d.thumbnail,
         createdAt: d.createdAt,
         updatedAt: d.updatedAt,
-        project: d.project,
       })),
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+}
+
+export async function getMySavedPosterProject(req, res) {
+  if (!isMongoReady()) return res.status(503).json({ error: 'MongoDB not connected.' });
+  const userId = req.userId;
+  if (!userId) return res.status(401).json({ error: 'Authentication required.' });
+
+  const id = req.params.id;
+  try {
+    const doc = await SavedPosterProject.findOne({ _id: id, userId }).lean();
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+
+    res.json({
+      item: {
+        id: String(doc._id),
+        name: doc.name,
+        thumbnail: doc.thumbnail,
+        createdAt: doc.createdAt,
+        updatedAt: doc.updatedAt,
+        project: doc.project,
+      },
     });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
@@ -55,6 +96,7 @@ export async function createMySavedPosterProject(req, res) {
 
   try {
     let processedProject = project;
+    let processedThumbnail = thumbnail;
     let publicIds = [];
 
     if (hasCloudinaryConfig()) {
@@ -62,6 +104,15 @@ export async function createMySavedPosterProject(req, res) {
         const result = await uploadDataUrlsInPosterProject(project, 'project');
         processedProject = result.project;
         publicIds = result.publicIds;
+
+        const { parseDataUrl } = await import('../utils/posterTemplateImages.js');
+        const thumbParsed = parseDataUrl(thumbnail);
+        if (thumbParsed) {
+          const { uploadPosterProjectImage } = await import('../utils/cloudinary.js');
+          const r = await uploadPosterProjectImage(thumbParsed.buffer, thumbParsed.mime);
+          processedThumbnail = r.secure_url;
+          if (r.public_id) publicIds.push(r.public_id);
+        }
       } catch (e) {
         const status = e?.statusCode === 400 ? 400 : 500;
         return res.status(status).json({
@@ -83,7 +134,7 @@ export async function createMySavedPosterProject(req, res) {
       userId,
       name: typeof name === 'string' && name.trim() ? name.trim() : 'Untitled poster',
       project: processedProject,
-      thumbnail: typeof thumbnail === 'string' && thumbnail ? thumbnail : undefined,
+      thumbnail: typeof processedThumbnail === 'string' && processedThumbnail ? processedThumbnail : undefined,
       cloudinaryPublicIds: publicIds,
     });
 
@@ -137,12 +188,7 @@ export async function updateMySavedPosterProject(req, res) {
 
   const updates = {};
   if (typeof name === 'string' && name.trim()) updates.name = name.trim();
-  if (typeof thumbnail === 'string') {
-    if (thumbnail.length > 500_000) {
-      return res.status(400).json({ error: 'Thumbnail too large (max ~500KB)' });
-    }
-    updates.thumbnail = thumbnail;
-  }
+  let processedThumbnail = thumbnail;
 
   try {
     // Fetch the existing doc upfront so we can diff cloudinary IDs later.
@@ -151,6 +197,23 @@ export async function updateMySavedPosterProject(req, res) {
       .lean();
     if (!existing) return res.status(404).json({ error: 'Not found' });
     const oldCloudinaryIds = existing.cloudinaryPublicIds ?? [];
+
+    if (typeof thumbnail === 'string') {
+      if (thumbnail.length > 500_000) {
+        return res.status(400).json({ error: 'Thumbnail too large (max ~500KB)' });
+      }
+      if (hasCloudinaryConfig()) {
+        const { parseDataUrl } = await import('../utils/posterTemplateImages.js');
+        const thumbParsed = parseDataUrl(thumbnail);
+        if (thumbParsed) {
+          const { uploadPosterProjectImage } = await import('../utils/cloudinary.js');
+          const r = await uploadPosterProjectImage(thumbParsed.buffer, thumbParsed.mime);
+          processedThumbnail = r.secure_url;
+          if (r.public_id) publicIds.push(r.public_id);
+        }
+      }
+      updates.thumbnail = processedThumbnail;
+    }
 
     // Conflict guard: if client provides last-known updatedAt, ensure we don't overwrite newer server data.
     if (typeof ifUnmodifiedSince === 'string' && ifUnmodifiedSince) {

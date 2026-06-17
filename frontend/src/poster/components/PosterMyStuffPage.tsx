@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { usePosterStore } from '../store/posterStore';
 import { savePosterProjectToStorage } from '../posterProjectStorage';
-import { deleteMyPosterProject, listMyPosterProjects, renameMyPosterProject, type SavedPosterProjectItem } from '../services/posterProjectsApi';
+import { deleteMyPosterProject, listMyPosterProjects, renameMyPosterProject, getMySavedPosterProject, type SavedPosterProjectItem } from '../services/posterProjectsApi';
 import { warnIfPosterHasBlobRefs } from '../userTemplatesStorage';
 import { TemplateThumbnail } from './TemplateThumbnail';
 
@@ -27,8 +27,12 @@ export function PosterMyStuffPage() {
 
   const [items, setItems] = useState<SavedPosterProjectItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,8 +40,11 @@ export function PosterMyStuffPage() {
     setError(null);
     (async () => {
       try {
-        const list = await listMyPosterProjects();
-        if (!cancelled) setItems(list);
+        const res = await listMyPosterProjects({ page: 1, limit: 18 });
+        if (!cancelled) {
+          setItems(res.items);
+          setHasMore(res.pagination.page < res.pagination.pages);
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load.');
       } finally {
@@ -49,24 +56,52 @@ export function PosterMyStuffPage() {
     };
   }, []);
 
-  const openProject = (item: SavedPosterProjectItem) => {
-    setError(null);
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
     try {
-      loadProject(item.project);
-      savePosterProjectToStorage(item.project);
+      const nextPage = page + 1;
+      const res = await listMyPosterProjects({ page: nextPage, limit: 18 });
+      setItems((prev) => [...prev, ...res.items]);
+      setPage(nextPage);
+      setHasMore(res.pagination.page < res.pagination.pages);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load more.');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const openProject = async (item: SavedPosterProjectItem) => {
+    setError(null);
+    setOpeningId(item.id);
+    try {
+      let project = item.project;
+      if (!project) {
+        // Fetch full project data if not present in the list item
+        const full = await getMySavedPosterProject(item.id);
+        project = full.project;
+      }
+      if (!project) throw new Error('Could not retrieve project data.');
+
+      loadProject(project);
+      savePosterProjectToStorage(project);
       sessionStorage.setItem('poster_skip_restore', Date.now().toString());
       sessionStorage.setItem('poster_edit_my_project_id', item.id);
       sessionStorage.setItem('poster_edit_my_project_updated_at', item.updatedAt ?? item.createdAt ?? '');
-      warnIfPosterHasBlobRefs(item.project);
+      warnIfPosterHasBlobRefs(project);
       navigate('/poster');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to open project.');
+    } finally {
+      setOpeningId(null);
     }
   };
 
   const refresh = async () => {
-    const list = await listMyPosterProjects();
-    setItems(list);
+    const res = await listMyPosterProjects({ page: 1, limit: page * 18 });
+    setItems(res.items);
+    setHasMore(res.pagination.page < res.pagination.pages);
   };
 
   const handleDelete = async (id: string) => {
@@ -144,13 +179,19 @@ export function PosterMyStuffPage() {
                 <div className="flex w-full flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                   <button
                     type="button"
+                    disabled={openingId === p.id}
                     onClick={() => openProject(p)}
-                    className="flex w-full flex-col items-stretch text-left"
+                    className="flex w-full flex-col items-stretch text-left disabled:opacity-70"
                     title="Open in editor"
                   >
-                    <div className="bg-zinc-100 p-3 dark:bg-zinc-800">
+                    <div className="relative bg-zinc-100 p-3 dark:bg-zinc-800">
+                      {openingId === p.id && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/20 backdrop-blur-[1px]">
+                          <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-800 dark:border-zinc-600 dark:border-t-zinc-200" />
+                        </div>
+                      )}
                       <TemplateThumbnail
-                        project={p.project}
+                        project={p.project || { elements: [], canvasWidth: 800, canvasHeight: 600 }}
                         thumbnail={p.thumbnail}
                         width={280}
                         className="rounded-md shadow-sm"
@@ -167,10 +208,11 @@ export function PosterMyStuffPage() {
                   <div className="flex gap-2 border-t border-zinc-200 p-3 dark:border-zinc-700">
                     <button
                       type="button"
+                      disabled={openingId === p.id}
                       onClick={() => openProject(p)}
-                      className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+                      className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:bg-emerald-700"
                     >
-                      Open
+                      {openingId === p.id ? 'Loading...' : 'Open'}
                     </button>
                     <button
                       type="button"
@@ -191,6 +233,19 @@ export function PosterMyStuffPage() {
               </li>
             ))}
           </ul>
+        )}
+
+        {hasMore && !loading && (
+          <div className="mt-10 flex justify-center">
+            <button
+              type="button"
+              disabled={loadingMore}
+              onClick={loadMore}
+              className="rounded-lg border border-zinc-300 bg-white px-6 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              {loadingMore ? 'Loading more...' : 'Load more'}
+            </button>
+          </div>
         )}
       </main>
     </div>
