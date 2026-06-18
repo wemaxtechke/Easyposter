@@ -59,6 +59,8 @@ export function PosterAiChatPanel({ open, onClose }: PosterAiChatPanelProps) {
   const getProject = usePosterStore((s) => s.getProject);
   const getFieldBindings = usePosterStore((s) => s.getFieldBindings);
   const updateElement = usePosterStore((s) => s.updateElement);
+  const addElement = usePosterStore((s) => s.addElement);
+  const setCanvasBackground = usePosterStore((s) => s.setCanvasBackground);
   const pushHistory = usePosterStore((s) => s.pushHistory);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -106,13 +108,31 @@ export function PosterAiChatPanel({ open, onClose }: PosterAiChatPanelProps) {
         remaining: response.usage.remaining,
       });
 
-      if (response.edits.length > 0) {
+      const hasChanges =
+        (response.edits?.length ?? 0) > 0 ||
+        (response.newElements?.length ?? 0) > 0 ||
+        (response.projectUpdates && Object.keys(response.projectUpdates).length > 0);
+
+      if (hasChanges) {
         pushHistory();
-        const currentElements = usePosterStore.getState().elements;
-        for (const { elementId, updates } of response.edits) {
-          const sanitized = sanitizeUpdates(elementId, updates, currentElements);
-          if (sanitized) {
-            updateElement(elementId, sanitized as Partial<PosterElement>);
+
+        if (response.projectUpdates?.canvasBackground) {
+          setCanvasBackground(response.projectUpdates.canvasBackground);
+        }
+
+        if (response.newElements && response.newElements.length > 0) {
+          for (const el of response.newElements) {
+            addElement(el);
+          }
+        }
+
+        if (response.edits && response.edits.length > 0) {
+          const currentElements = usePosterStore.getState().elements;
+          for (const { elementId, updates } of response.edits) {
+            const sanitized = sanitizeUpdates(elementId, updates, currentElements);
+            if (sanitized) {
+              updateElement(elementId, sanitized as Partial<PosterElement>);
+            }
           }
         }
       }

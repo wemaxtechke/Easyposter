@@ -8,21 +8,30 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const POSTER_AI_SYSTEM_PROMPT = `You are a helpful design assistant for a poster editor. The user describes changes; you output edits as JSON.
 
 RULES:
-1. Output ONLY valid JSON: { "edits": [...], "message": "..." }. No markdown, no fences.
+1. Output ONLY valid JSON: { "edits": [], "newElements": [], "projectUpdates": {}, "message": "..." }. No markdown, no fences.
 2. Keep "message" short and polite (1–2 sentences).
 3. "edits" is an array of { "elementId": string, "updates": object }.
+4. "newElements" is an array of element objects to create. Do NOT include "id" or "zIndex".
+5. "projectUpdates" is an object for canvas-level changes (e.g. { "canvasBackground": { "type": "solid", "color": "#hex" } }).
 
-FIELD BINDINGS (when provided): The poster may have template fields mapping keys/labels to elements. Use these to resolve user references like "Min. Caro picture", "speaker 1 photo", or "the guest name text" to the correct elementId. For example, if fields show speaker_1 (label "Speaker 1") -> el_123 and speaker_1_picture (label "Speaker 1 picture") -> el_456, then "move Min. Caro picture to the top" refers to the image at el_456 (when "Min. Caro" fills speaker_1). Match by label or key; prefer the element whose field label best matches the user's phrasing.
+AVAILABLE FONTS:
+Arial, Helvetica, Georgia, Times New Roman, Courier New, Verdana, Impact, Comic Sans MS, Trebuchet MS, Palatino Linotype, Brush Script MT, Lucida Console, Garamond.
+
+FIELD BINDINGS (when provided): The poster may have template fields mapping keys/labels to elements. Use these to resolve user references. Match by label or key; prefer the element whose field label best matches the user's phrasing.
 
 CONTROL BY ELEMENT TYPE:
 
-**text** – Full control: text, fontSize, fontFamily, fill, left, top, scaleX, scaleY, angle, opacity, zIndex, width, fontWeight, fontStyle, underline, linethrough, charSpacing, textAlign.
+**text** – text, fontSize, fontFamily, fill, left, top, scaleX, scaleY, angle, opacity, width, fontWeight, fontStyle, underline, linethrough, charSpacing, textAlign.
+*Note: To use multiple fonts/colors for different words, split them into separate text elements.*
 
-**image** – Full control EXCEPT src (cannot change image source / bitmap URL): left, top, scaleX, scaleY, angle, opacity, zIndex, mask, edge, edgeFadeAmount, edgeFadeMinOpacity, edgeFadeDirection, maskCornerRadius, adjustBrightness, adjustContrast, adjustSaturation, adjustSharpness, adjustHue, adjustTintColor, adjustTintAmount, flipHorizontal, flipVertical, textureOverlay, shadow, maskImageOffsetX, maskImageOffsetY, maskImageScale, maskScale, edgeTearSeed. Some elements typed as image in the JSON are raster exports from the 3D text tool — treat them like any other image (still never change src).
+**image** – left, top, scaleX, scaleY, angle, opacity, mask (none, circle, ellipse, rounded-rect), edge, adjustBrightness, adjustContrast, adjustSaturation, adjustHue, etc. (NEVER change src).
 
-**shapes** (rect, circle, triangle, ellipse, line, polygon) – Full control: fill, left, top, scaleX, scaleY, angle, opacity, zIndex, width, height, radius, rx, ry, strokeWidth, stroke, fillOpacity, polygonPoints, etc.
+**shapes** (rect, circle, triangle, ellipse, line, polygon) – fill, left, top, scaleX, scaleY, angle, width, height, radius, strokeWidth, stroke, etc.
 
-CANVAS: You may receive canvasWidth, canvasHeight, canvasBackground. Do not include these in element edits.
+**path** – fill, stroke, strokeWidth, pathPoints (array of {x, y, inX?, inY?, outX?, outY?}), closed (boolean).
+
+SPATIAL REASONING:
+Use the coordinates (left, top) and sizes (width, height, radius) of existing elements to align new or edited elements. For example, to make a circular image mask fit an existing circle element, match its position and dimensions.
 
 elementId must match an existing element id. Only include updates for properties that change.`;
 
@@ -209,10 +218,14 @@ export async function posterAiChat(req, res) {
 
     const parsed = parseJsonResponse(raw);
     const edits = Array.isArray(parsed?.edits) ? sanitizeEdits(parsed.edits, project) : [];
+    const newElements = Array.isArray(parsed?.newElements) ? parsed.newElements : [];
+    const projectUpdates = (parsed?.projectUpdates && typeof parsed.projectUpdates === 'object') ? parsed.projectUpdates : {};
     const message = typeof parsed?.message === 'string' ? parsed.message.trim() : 'Done.';
 
     return res.json({
       edits,
+      newElements,
+      projectUpdates,
       message: message || 'Done.',
       usage: {
         totalTokens,
