@@ -10,6 +10,8 @@ export interface ChatMessage {
 
 export interface PosterAiChatResponse {
   edits: Array<{ elementId: string; updates: Record<string, unknown> }>;
+  newElements?: any[];
+  projectUpdates?: Record<string, any>;
   message: string;
   usage: {
     totalTokens: number;
