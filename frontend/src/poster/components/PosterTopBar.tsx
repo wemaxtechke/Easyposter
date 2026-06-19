@@ -11,6 +11,7 @@ interface PosterTopBarProps {
   readOnly?: boolean;
   onOpenCanvasSize?: () => void;
   onOpenAiWizard?: () => void;
+  onOpenReferenceGenerator?: () => void;
   /** Open AI chat panel for poster editing. */
   onOpenAiChat?: () => void;
   /** Enter canvas-first template labeling (banner + per-layer modals). */
@@ -34,6 +35,7 @@ export function PosterTopBar({
   readOnly = false,
   onOpenCanvasSize,
   onOpenAiWizard,
+  onOpenReferenceGenerator,
   onOpenAiChat,
   onBeginTemplateAuthoring,
   templateAuthoringActive = false,
@@ -368,6 +370,17 @@ export function PosterTopBar({
         >
           <span className="hidden lg:inline">Create with AI</span>
           <span className="lg:hidden">AI Wizard</span>
+        </button>
+      )}
+      {onOpenReferenceGenerator && (
+        <button
+          type="button"
+          onClick={guard(onOpenReferenceGenerator)}
+          className="hidden rounded px-2 py-1 text-sm font-medium text-gold-600 hover:bg-gold-50 dark:text-gold-300 dark:hover:bg-gold-950/50 sm:block"
+          title="Create a new poster from a reference image"
+        >
+          <span className="hidden lg:inline">From Reference</span>
+          <span className="lg:hidden">Reference</span>
         </button>
       )}
       {onOpenAiChat && (

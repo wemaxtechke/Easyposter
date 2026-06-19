@@ -9,6 +9,7 @@ import { ThreeTextModal } from './ThreeTextModal';
 import { CanvasSizeModal } from './CanvasSizeModal';
 import { PosterAiWizardModal } from './PosterAiWizardModal';
 import { PosterAiChatPanel } from './PosterAiChatPanel';
+import { PosterReferenceModal } from './PosterReferenceModal';
 import { MobilePropertyBar } from './MobilePropertyBar';
 import { PosterMobileScaleFader } from './PosterMobileScaleFader';
 import { TemplateAuthoringBanner } from './TemplateAuthoringBanner';
@@ -58,6 +59,7 @@ export function PosterLayout() {
   const [showCanvasSizeModal, setShowCanvasSizeModal] = useState(false);
   const [aiWizardOpen, setAiWizardOpen] = useState(false);
   const [aiChatOpen, setAiChatOpen] = useState(false);
+  const [referenceModalOpen, setReferenceModalOpen] = useState(false);
   const [templateAuthoring, setTemplateAuthoring] = useState<TemplateAuthoringState | null>(null);
   const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false);
   const [labelTargetId, setLabelTargetId] = useState<string | null>(null);
@@ -439,6 +441,13 @@ export function PosterLayout() {
     if (threeTextModal) setAiChatOpen(false);
   }, [threeTextModal]);
 
+  useEffect(() => {
+    if (referenceModalOpen) {
+      setAiWizardOpen(false);
+      setAiChatOpen(false);
+    }
+  }, [referenceModalOpen]);
+
   const handleCanvasSizeSelect = (width: number, height: number) => {
     setCanvasSize(width, height);
     setShowCanvasSizeModal(false);
@@ -727,6 +736,7 @@ export function PosterLayout() {
           readOnly={readOnly}
           onOpenCanvasSize={() => setShowCanvasSizeModal(true)}
           onOpenAiWizard={() => setAiWizardOpen(true)}
+          onOpenReferenceGenerator={() => setReferenceModalOpen(true)}
           onOpenAiChat={() => setAiChatOpen(true)}
           onBeginTemplateAuthoring={beginTemplateAuthoring}
           templateAuthoringActive={!!templateAuthoring}
@@ -798,6 +808,7 @@ export function PosterLayout() {
       )}
       <PosterAiWizardModal open={aiWizardOpen} onClose={() => setAiWizardOpen(false)} />
       <PosterAiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} />
+      <PosterReferenceModal open={referenceModalOpen} onClose={() => setReferenceModalOpen(false)} />
       {posterHydrating && (
         <div
           className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-4 bg-zinc-100/95 p-6 dark:bg-zinc-950/95"

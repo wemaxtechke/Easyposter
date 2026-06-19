@@ -5,6 +5,7 @@ import { UserMenu } from '../auth/UserMenu';
 import { useAuthStore } from '../auth/authStore';
 import { usePosterStore } from '../poster/store/posterStore';
 import type { PosterTemplateDefinition } from '../poster/templateTypes';
+import { createPosterFromReferenceImage } from '../poster/services/fromReferenceDesignApi';
 import { recreateDesignFromImage } from '../poster/services/recreateDesignApi';
 
 /** Typographic wordmark: script “Sanaa” + caps “Studio” on one line (shown on large screens next to mark). */
@@ -157,7 +158,9 @@ export function HomePage() {
   const templates = usePosterStore((s) => s.remotePosterTemplates);
   const refreshRemotePosterTemplates = usePosterStore((s) => s.refreshRemotePosterTemplates);
   const [recreateStatus, setRecreateStatus] = useState<string | null>(null);
+  const [referenceStatus, setReferenceStatus] = useState<string | null>(null);
   const recreateInputRef = useRef<HTMLInputElement>(null);
+  const referenceInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void refreshRemotePosterTemplates();
@@ -181,6 +184,25 @@ export function HomePage() {
     } catch (err) {
       setRecreateStatus(null);
       alert(err instanceof Error ? err.message : 'Failed to recreate design');
+    }
+  };
+
+  const handleReferenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    try {
+      setReferenceStatus('AI is studying the reference poster…');
+      const { project } = await createPosterFromReferenceImage(file, setReferenceStatus);
+      usePosterStore.getState().loadProject(project);
+      navigate('/poster');
+    } catch (err) {
+      setReferenceStatus(null);
+      alert(err instanceof Error ? err.message : 'Failed to create poster from reference');
     }
   };
 
@@ -356,12 +378,32 @@ export function HomePage() {
               </span>
               {recreateStatus || 'Recreate from Image'}
             </button>
+            <button
+              type="button"
+              onClick={() => referenceInputRef.current?.click()}
+              disabled={!!referenceStatus}
+              className="w-full rounded-xl border border-accent-500 bg-accent-900/30 px-8 py-3.5 text-base font-semibold text-accent-200 shadow-lg transition-colors hover:bg-accent-800/50 disabled:opacity-60 sm:w-auto"
+            >
+              <span className="mr-1.5 inline-block">
+                <svg className="inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7h16M4 12h10M4 17h16" />
+                </svg>
+              </span>
+              {referenceStatus || 'Create from Reference'}
+            </button>
             <input
               ref={recreateInputRef}
               type="file"
               accept="image/*"
               className="hidden"
               onChange={handleRecreateUpload}
+            />
+            <input
+              ref={referenceInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleReferenceUpload}
             />
             <Link
               to="/poster/templates"
