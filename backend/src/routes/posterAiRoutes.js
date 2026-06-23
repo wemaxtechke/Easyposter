@@ -7,6 +7,7 @@ import {
   wizardGatherFields,
 } from '../controllers/posterAiController.js';
 import { fromReferencePoster } from '../controllers/fromReferenceDesignController.js';
+import { upload } from '../utils/upload.js';
 
 const router = Router();
 
@@ -15,6 +16,6 @@ router.post('/suggest-fields', suggestPosterFields);
 router.get('/usage', posterAiUsage);
 router.post('/wizard-identify', wizardIdentify);
 router.post('/wizard-gather-fields', wizardGatherFields);
-router.post('/from-reference', fromReferencePoster);
+router.post('/from-reference', upload.single('image'), fromReferencePoster);
 
 export default router;
