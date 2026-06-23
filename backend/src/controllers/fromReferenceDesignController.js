@@ -432,7 +432,7 @@ async function runGenerationPass(openai, imageDataUrl, draftProject = null) {
           content: [
             { type: 'text', text: `Reference image and current draft preview image. Improve the draft project JSON while keeping unresolved image regions as placeholders.` },
             { type: 'image_url', image_url: { url: imageDataUrl, detail: 'high' } },
-            ...(draftPreviewDataUrl ? [{ type: 'image_url', image_url: { url: draftPreviewDataUrl, detail: 'high' } }] : []),
+            ...(draftPreviewDataUrl ? [{ type: 'image_url', image_url: { url: draftPreviewDataUrl, detail: 'low' } }] : []),
           ],
         },
       ]
@@ -453,6 +453,7 @@ async function runGenerationPass(openai, imageDataUrl, draftProject = null) {
   const completion = await openai.chat.completions.create({
     model: 'gpt-4o',
     messages,
+    response_format: { type: 'json_object' },
     temperature: draftProject ? 0.15 : 0.2,
     max_tokens: 4096,
   });
