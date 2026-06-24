@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import sharp from 'sharp';
 import User, { FREE_TIER_TOKEN_LIMIT } from '../models/User.js';
 import { incrementTokenUsage } from '../utils/tokenAccounting.js';
 
@@ -186,8 +187,20 @@ export async function recreateDesign(req, res) {
     return res.status(400).json({ error: 'File must be an image (JPEG, PNG, WebP, etc.).' });
   }
 
-  const base64 = file.buffer.toString('base64');
-  const dataUrl = `data:${mime};base64,${base64}`;
+  // Optimize image for OpenAI Vision: resize to max 2048px and compress to JPEG
+  let optimizedBuffer;
+  try {
+    optimizedBuffer = await sharp(file.buffer)
+      .resize({ width: 2048, height: 2048, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+  } catch (err) {
+    console.error('[recreateDesign] Sharp optimization error:', err);
+    optimizedBuffer = file.buffer; // Fallback
+  }
+
+  const base64 = optimizedBuffer.toString('base64');
+  const dataUrl = `data:image/jpeg;base64,${base64}`;
 
   const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
