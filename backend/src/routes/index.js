@@ -34,10 +34,12 @@ import {
   deleteUserPosterImage,
 } from '../controllers/userPosterImageController.js';
 import { upload } from '../utils/upload.js';
+import adminRoutes from './adminRoutes.js';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
+router.use('/admin', adminRoutes);
 router.get('/hdrs', listHdrs);
 router.post('/hdrs/upload', authenticateToken, requireAdmin, ...uploadHdr);
 router.delete('/hdrs/:id', authenticateToken, requireAdmin, deleteHdr);

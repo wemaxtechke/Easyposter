@@ -94,6 +94,15 @@ export function UserMenu({ compact = false, compactUntilMd = false }: UserMenuPr
             )}
           </div>
           <div className="py-1">
+            {isAdmin && (
+              <Link
+                to="/admin"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2 text-sm text-indigo-600 font-medium hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
+              >
+                Admin Dashboard
+              </Link>
+            )}
             <Link
               to="/poster/templates"
               onClick={() => setOpen(false)}
