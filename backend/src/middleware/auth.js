@@ -18,6 +18,11 @@ export function authenticateToken(req, res, next) {
     const payload = jwt.verify(token, JWT_SECRET);
     req.userId = payload.userId;
     req.userRole = payload.role;
+
+    // Async update lastActiveAt without blocking
+    User.findByIdAndUpdate(req.userId, { lastActiveAt: new Date() })
+      .catch(err => console.error('Error updating lastActiveAt in middleware:', err));
+
     next();
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' });

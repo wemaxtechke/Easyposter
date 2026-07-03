@@ -3,6 +3,7 @@ import { HashRouter, Navigate, Routes, Route } from 'react-router-dom';
 import { LoginPage } from './auth/LoginPage';
 import { SignupPage } from './auth/SignupPage';
 import { ProtectedRoute } from './auth/ProtectedRoute';
+import { AdminRoute } from './admin/AdminRoute';
 import { useAuthStore } from './auth/authStore';
 
 const HomePage = lazy(() =>
@@ -23,6 +24,9 @@ const PosterMyStuffPage = lazy(() =>
   import('./poster/components/PosterMyStuffPage').then((m) => ({
     default: m.PosterMyStuffPage,
   }))
+);
+const AdminDashboard = lazy(() =>
+  import('./admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard }))
 );
 
 function LoadingFallback() {
@@ -58,6 +62,14 @@ function App() {
           <Route path="/poster" element={<PosterLayout />} />
           <Route path="/poster/templates" element={<TemplateGalleryPage />} />
           <Route path="/poster/my" element={<PosterMyStuffPage />} />
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminDashboard />
+              </AdminRoute>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

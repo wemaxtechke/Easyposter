@@ -113,8 +113,10 @@ export async function login(req, res) {
 
     if (isAdminEmail(user.email) && user.role !== 'admin') {
       user.role = 'admin';
-      await user.save({ validateBeforeSave: false });
     }
+
+    user.lastActiveAt = new Date();
+    await user.save({ validateBeforeSave: false });
 
     const token = signAccessToken(user);
     const refreshToken = await createRefreshTokenForUser(user._id);

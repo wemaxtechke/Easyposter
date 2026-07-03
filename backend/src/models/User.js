@@ -15,6 +15,7 @@ const userSchema = new mongoose.Schema({
   plan: { type: String, enum: ['free', 'pro'], default: 'free' },
   tokensUsedThisPeriod: { type: Number, default: 0 },
   tokenPeriodStart: { type: Date, default: Date.now },
+  lastActiveAt: { type: Date, default: Date.now },
 });
 
 // Hash password before saving
