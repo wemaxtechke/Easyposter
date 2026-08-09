@@ -15,7 +15,7 @@ export interface FromReferenceDesignResponse {
 export async function createPosterFromReferenceImage(
   file: File,
   onStatus?: (msg: string) => void,
-  reviewPasses = 1
+  reviewPasses = 0
 ): Promise<FromReferenceDesignResponse> {
   onStatus?.('Uploading reference image…');
 
